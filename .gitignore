@@ -1,0 +1,62 @@
+# Sensitive configuration files
+config.php
+.env
+*.env
+
+# Logs
+logs/
+*.log
+
+# Database dumps (will be committed separately)
+# electrox_primary.sql
+# electrox_base.sql
+
+# Uploaded files (user content)
+assets/uploads/
+assets/images/products/
+assets/images/customers/
+assets/images/tradeins/
+uploads/
+
+# Vendor dependencies (managed by composer)
+vendor/
+
+# Node modules
+node_modules/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Compiled files
+*.compiled
+
+# Error logs
+error_log
+php_errors.log
+
+# Session files
+sessions/
+
+# Cache
+cache/
+tmp/
+

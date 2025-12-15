@@ -1,0 +1,16 @@
+{
+    "name": "electrox/pos-system",
+    "description": "ELECTROX-POS Comprehensive Stock Management, Invoicing & POS System",
+    "type": "project",
+    "require": {
+        "php": ">=7.4",
+        "phpmailer/phpmailer": "^6.8",
+        "tecnickcom/tcpdf": "^6.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Electrox\\": "includes/"
+        }
+    }
+}
+
