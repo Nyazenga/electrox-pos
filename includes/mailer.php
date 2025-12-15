@@ -56,8 +56,10 @@ class Mailer {
     public function send($to, $subject, $body, $isHtml = true) {
         try {
             $this->mail->clearAddresses();
-            $this->mail->clearAttachments();
-            // Don't clear embedded images - they may have been added before send() is called
+            // IMPORTANT: Don't clear attachments or embedded images here
+            // They are added before send() is called and must be preserved
+            // clearAttachments() would remove embedded images too!
+            // $this->mail->clearAttachments(); // REMOVED - this was clearing embedded images
             
             if (is_array($to)) {
                 foreach ($to as $email) {
@@ -72,6 +74,9 @@ class Mailer {
             $this->mail->Body = $body;
             
             if (!$isHtml) {
+                $this->mail->AltBody = strip_tags($body);
+            } else {
+                // Create alt body from HTML
                 $this->mail->AltBody = strip_tags($body);
             }
             

@@ -377,12 +377,24 @@ try {
     // Formula: expected_cash = starting + cashSales (full payments) - payOuts (includes change) - refunds
     if ($change > 0) {
         try {
+            // Check if there's enough cash in drawer to give change
+            // Available cash = starting_cash + expected_cash (before this sale) + payment received
+            // We need to check BEFORE we update expected_cash with the payment
+            $availableCash = $shift['starting_cash'] + $shift['expected_cash'] + $totalCashPaid;
+            $borrowedAmount = 0;
+            
+            if ($availableCash < $change) {
+                // Not enough cash in drawer - change is being borrowed from outside
+                $borrowedAmount = $change - $availableCash;
+                $borrowedAmount = max(0, $borrowedAmount); // Ensure non-negative
+            }
+            
             $changeTransaction = [
                 'shift_id' => $shift['id'],
                 'transaction_type' => 'pay_out',
                 'amount' => $change,
                 'reason' => 'Change Given',
-                'notes' => 'Change for receipt ' . $receiptNumber,
+                'notes' => 'Change for receipt ' . $receiptNumber . ($borrowedAmount > 0 ? ' (Borrowed $' . number_format($borrowedAmount, 2) . ' from outside - needs to be repaid)' : ''),
                 'user_id' => $userId,
                 'created_at' => date('Y-m-d H:i:s')
             ];

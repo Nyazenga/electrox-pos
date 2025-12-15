@@ -33,35 +33,26 @@ if ($items === false) {
     $items = [];
 }
 
-// Get payments with currency information
-// First try to get payments with currency join
-$payments = $db->getRows("SELECT sp.*, c.code as currency_code, c.symbol as currency_symbol, c.symbol_position as currency_symbol_position
-                          FROM sale_payments sp
-                          LEFT JOIN currencies c ON sp.currency_id = c.id
-                          WHERE sp.sale_id = :id", [':id' => $id]);
+// Get payments - ALWAYS fetch directly from sale_payments first to ensure we get them
+$payments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $id]);
 if ($payments === false) {
     $payments = [];
 }
 
-// If no payments found, try without currency join (fallback)
-if (empty($payments)) {
-    $checkPayments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $id]);
-    if ($checkPayments !== false && !empty($checkPayments)) {
-        $payments = $checkPayments;
-        // Get currency info separately from main database
-        $mainDb = Database::getMainInstance();
-        foreach ($payments as &$payment) {
-            if (!empty($payment['currency_id'])) {
-                $currency = $mainDb->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $payment['currency_id']]);
-                if ($currency) {
-                    $payment['currency_code'] = $currency['code'];
-                    $payment['currency_symbol'] = $currency['symbol'];
-                    $payment['currency_symbol_position'] = $currency['symbol_position'];
-                }
+// Enrich payments with currency information from main database
+if (!empty($payments)) {
+    $mainDb = Database::getMainInstance();
+    foreach ($payments as &$payment) {
+        if (!empty($payment['currency_id'])) {
+            $currency = $mainDb->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $payment['currency_id']]);
+            if ($currency) {
+                $payment['currency_code'] = $currency['code'];
+                $payment['currency_symbol'] = $currency['symbol'];
+                $payment['currency_symbol_position'] = $currency['symbol_position'];
             }
         }
-        unset($payment);
     }
+    unset($payment);
 }
 
 // Get base currency for display
@@ -824,9 +815,12 @@ require_once APP_PATH . '/includes/header.php';
                         <div style="margin-left: 10px; color: #999; font-style: italic;">No payment information available</div>
                     <?php else: 
                         foreach ($payments as $payment): 
-                            $totalPaid += $payment['base_amount'] ?? $payment['amount'];
+                            // Use base_amount if available, otherwise use amount
+                            $paymentAmount = isset($payment['base_amount']) ? floatval($payment['base_amount']) : floatval($payment['amount']);
+                            $totalPaid += $paymentAmount;
+                            
                             // Display original amount and currency if different from base
-                            $displayAmount = $payment['original_amount'] ?? $payment['amount'];
+                            $displayAmount = isset($payment['original_amount']) ? floatval($payment['original_amount']) : floatval($payment['amount']);
                             $currencyCode = $payment['currency_code'] ?? ($baseCurrency ? $baseCurrency['code'] : 'USD');
                             $currencySymbol = $payment['currency_symbol'] ?? ($baseCurrency ? $baseCurrency['symbol'] : '$');
                             $symbolPosition = $payment['currency_symbol_position'] ?? ($baseCurrency ? $baseCurrency['symbol_position'] : 'before');
@@ -974,19 +968,34 @@ function sendReceiptEmail() {
         },
         body: `receipt_id=${receiptId}&email=${encodeURIComponent(email)}`
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    throw new Error('Invalid JSON response: ' + text.substring(0, 100));
+                }
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             Swal.fire('Success!', data.message, 'success').then(() => {
                 bootstrap.Modal.getInstance(document.getElementById('emailModal')).hide();
             });
         } else {
-            Swal.fire('Error', data.message || 'Failed to send email', 'error');
+            const errorMsg = data.message || (data.debug ? JSON.stringify(data.debug) : 'Failed to send email');
+            Swal.fire('Error', errorMsg, 'error');
+            if (data.debug) {
+                console.error('Email send error details:', data.debug);
+            }
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        Swal.fire('Error', 'An unexpected error occurred', 'error');
+        Swal.fire('Error', 'An unexpected error occurred: ' + error.message, 'error');
     });
 }
 

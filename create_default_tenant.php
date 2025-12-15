@@ -13,9 +13,9 @@ try {
     $pdo = new PDO("mysql:host=$host", $user, $pass);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     
-    echo "Creating default tenant 'demo'...\n";
+    echo "Creating default tenant 'primary'...\n";
     
-    $tenantSlug = 'demo';
+    $tenantSlug = 'primary';
     $databaseName = 'electrox_' . $tenantSlug;
     
     // Check if tenant already exists
@@ -84,11 +84,11 @@ try {
     }
     
     echo "\n=== DEFAULT TENANT CREATED SUCCESSFULLY ===\n";
-    echo "Tenant Slug: demo\n";
-    echo "Database: electrox_demo\n";
+    echo "Tenant Slug: primary\n";
+    echo "Database: electrox_primary\n";
     echo "\nYou can now login with:\n";
     echo "URL: http://localhost/electrox-pos/login.php\n";
-    echo "Tenant Name: demo\n";
+    echo "Tenant Name: primary\n";
     echo "Email: admin@electrox.co.zw\n";
     echo "Password: Admin@123\n";
     

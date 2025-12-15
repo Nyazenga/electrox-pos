@@ -65,15 +65,13 @@ if (isset($_GET['id'])) {
         }
         $selectedSale['items'] = $items;
         
-        // Get payments with currency information
-        // IMPORTANT: Always fetch payments first without currency join to ensure we get them
-        // Then enrich with currency info from main database if needed
+        // Get payments - ALWAYS fetch directly from sale_payments first to ensure we get them
         $payments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $selectedSale['id']]);
         if ($payments === false) {
             $payments = [];
         }
         
-        // If payments exist, enrich with currency information from main database
+        // Enrich payments with currency information from main database
         if (!empty($payments)) {
             require_once APP_PATH . '/includes/currency_functions.php';
             $mainDb = Database::getMainInstance();
@@ -774,9 +772,12 @@ require_once APP_PATH . '/includes/header.php';
                                     <div style="margin-left: 10px; color: #999; font-style: italic;">No payment information available</div>
                                 <?php else: 
                                     foreach ($selectedSale['payments'] as $payment): 
-                                        $totalPaid += $payment['base_amount'] ?? $payment['amount'];
+                                        // Use base_amount if available, otherwise use amount
+                                        $paymentAmount = isset($payment['base_amount']) ? floatval($payment['base_amount']) : floatval($payment['amount']);
+                                        $totalPaid += $paymentAmount;
+                                        
                                         // Display original amount and currency if different from base
-                                        $displayAmount = $payment['original_amount'] ?? $payment['amount'];
+                                        $displayAmount = isset($payment['original_amount']) ? floatval($payment['original_amount']) : floatval($payment['amount']);
                                         $currencyCode = $payment['currency_code'] ?? ($baseCurrency ? $baseCurrency['code'] : 'USD');
                                         $currencySymbol = $payment['currency_symbol'] ?? ($baseCurrency ? $baseCurrency['symbol'] : '$');
                                         $symbolPosition = $payment['currency_symbol_position'] ?? ($baseCurrency ? $baseCurrency['symbol_position'] : 'before');
@@ -931,19 +932,34 @@ function sendReceiptEmail() {
         },
         body: `receipt_id=${receiptId}&email=${encodeURIComponent(email)}`
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    throw new Error('Invalid JSON response: ' + text.substring(0, 100));
+                }
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             Swal.fire('Success!', data.message, 'success').then(() => {
                 bootstrap.Modal.getInstance(document.getElementById('emailModal')).hide();
             });
         } else {
-            Swal.fire('Error', data.message || 'Failed to send email', 'error');
+            const errorMsg = data.message || (data.debug ? JSON.stringify(data.debug) : 'Failed to send email');
+            Swal.fire('Error', errorMsg, 'error');
+            if (data.debug) {
+                console.error('Email send error details:', data.debug);
+            }
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        Swal.fire('Error', 'An unexpected error occurred', 'error');
+        Swal.fire('Error', 'An unexpected error occurred: ' + error.message, 'error');
     });
 }
 

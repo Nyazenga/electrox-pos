@@ -5,7 +5,6 @@
 
 This means:
 - If `tenant_slug = "primary"`, then `database_name = "electrox_primary"`
-- If `tenant_slug = "demo"`, then `database_name = "electrox_demo"`
 - If `tenant_slug = "acme"`, then `database_name = "electrox_acme"`
 
 ## How It Works
@@ -34,7 +33,6 @@ This means:
 ## Current Tenants
 
 - **primary**: `tenant_slug = "primary"`, `database = "electrox_primary"` ✓
-- **demo**: `tenant_slug = "demo"`, `database = "electrox_demo"` ✓
 
 ## Code References
 

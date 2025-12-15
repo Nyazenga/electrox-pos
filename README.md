@@ -10,14 +10,14 @@ Comprehensive Stock Management, Invoicing & POS System for Electronics Retail Bu
 
 ### Login Information
 
-**Default Demo Tenant (Ready to Use):**
+**Default Primary Tenant (Ready to Use):**
 1. Go to: http://localhost/electrox-pos/login.php
-2. Tenant Name: `demo`
+2. Tenant Name: `primary`
 3. Email: `admin@electrox.co.zw`
 4. Password: `Admin@123`
 
 **Test Cashier Account (Same Tenant):**
-- Tenant Name: `demo`
+- Tenant Name: `primary`
 - Email: `cashier@electrox.co.zw`
 - Password: `Admin@123`
 

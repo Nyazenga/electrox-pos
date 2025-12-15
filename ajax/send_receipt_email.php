@@ -5,6 +5,9 @@ require_once APP_PATH . '/includes/auth.php';
 require_once APP_PATH . '/includes/functions.php';
 require_once APP_PATH . '/includes/mailer.php';
 require_once APP_PATH . '/includes/currency_functions.php';
+require_once APP_PATH . '/vendor/autoload.php';
+
+use PHPMailer\PHPMailer\PHPMailer;
 
 initSession();
 
@@ -17,9 +20,10 @@ if (!$auth->isLoggedIn()) {
 
 header('Content-Type: application/json');
 
-// Suppress errors for clean JSON output
-error_reporting(0);
+// Suppress errors for clean JSON output (but log them)
+error_reporting(E_ALL);
 ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 ob_start();
 
 try {
@@ -58,13 +62,26 @@ try {
         $items = [];
     }
     
-    // Get payments with currency information
-    $payments = $db->getRows("SELECT sp.*, c.code as currency_code, c.symbol as currency_symbol, c.symbol_position as currency_symbol_position
-                              FROM sale_payments sp
-                              LEFT JOIN currencies c ON sp.currency_id = c.id
-                              WHERE sp.sale_id = :id", [':id' => $receiptId]);
+    // Get payments - ALWAYS fetch directly from sale_payments first to ensure we get them
+    $payments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $receiptId]);
     if ($payments === false) {
         $payments = [];
+    }
+    
+    // Enrich payments with currency information from main database
+    if (!empty($payments)) {
+        $mainDb = Database::getMainInstance();
+        foreach ($payments as &$payment) {
+            if (!empty($payment['currency_id'])) {
+                $currency = $mainDb->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $payment['currency_id']]);
+                if ($currency) {
+                    $payment['currency_code'] = $currency['code'];
+                    $payment['currency_symbol'] = $currency['symbol'];
+                    $payment['currency_symbol_position'] = $currency['symbol_position'];
+                }
+            }
+        }
+        unset($payment);
     }
     
     // Get base currency
@@ -79,8 +96,9 @@ try {
     // Get receipt logo - prepare for embedding
     $receiptLogoPath = getSetting('pos_receipt_logo', '');
     $receiptLogoUrl = '';
-    $logoEmbedded = false;
     $logoCid = 'receipt_logo_' . time();
+    $logoFullPath = '';
+    $logoMimeType = 'image/png';
     
     if ($receiptLogoPath) {
         $logoPath = ltrim($receiptLogoPath, '/');
@@ -88,8 +106,37 @@ try {
         
         // Check if file exists
         if (file_exists($fullPath)) {
-            $receiptLogoUrl = 'cid:' . $logoCid; // Use CID for embedded image
-            $logoEmbedded = true;
+            try {
+                $logoFullPath = $fullPath;
+                $imageInfo = @getimagesize($fullPath);
+                
+                if ($imageInfo && isset($imageInfo['mime'])) {
+                    $logoMimeType = $imageInfo['mime'];
+                } else {
+                    // Fallback: detect from file extension
+                    $ext = strtolower(pathinfo($fullPath, PATHINFO_EXTENSION));
+                    switch ($ext) {
+                        case 'jpg':
+                        case 'jpeg':
+                            $logoMimeType = 'image/jpeg';
+                            break;
+                        case 'gif':
+                            $logoMimeType = 'image/gif';
+                            break;
+                        case 'png':
+                            $logoMimeType = 'image/png';
+                            break;
+                        case 'webp':
+                            $logoMimeType = 'image/webp';
+                            break;
+                    }
+                }
+                
+                // Use CID reference for embedded image
+                $receiptLogoUrl = 'cid:' . $logoCid;
+            } catch (Exception $e) {
+                logError("Failed to load logo for email: " . $e->getMessage());
+            }
         }
     }
     
@@ -120,8 +167,10 @@ try {
         <div class="receipt-header">';
     
     if ($receiptLogoUrl) {
-        // Use CID reference for embedded image
-        $html .= '<img src="' . htmlspecialchars($receiptLogoUrl) . '" alt="Logo" style="max-width: 200px; max-height: 80px; margin-bottom: 15px;">';
+        // Use CID reference for embedded image - centered
+        $html .= '<div style="text-align: center; margin-bottom: 15px;">
+                    <img src="' . htmlspecialchars($receiptLogoUrl) . '" alt="Logo" style="max-width: 200px; max-height: 80px; display: block; margin: 0 auto;">
+                  </div>';
     }
     
     $html .= '<h2>' . htmlspecialchars($companyName) . '</h2>
@@ -194,24 +243,32 @@ try {
                         <strong>Payment:</strong><br>';
     
     $totalPaid = 0;
-    foreach ($payments as $payment) {
-        $totalPaid += $payment['amount'];
-        $displayAmount = $payment['original_amount'] ?? $payment['amount'];
-        $currencyCode = $payment['currency_code'] ?? ($baseCurrency ? $baseCurrency['code'] : 'USD');
-        $currencySymbol = $payment['currency_symbol'] ?? ($baseCurrency ? $baseCurrency['symbol'] : '$');
-        $symbolPosition = $payment['currency_symbol_position'] ?? ($baseCurrency ? $baseCurrency['symbol_position'] : 'before');
-        
-        if ($symbolPosition === 'before') {
-            $formattedAmount = $currencySymbol . number_format($displayAmount, 2);
-        } else {
-            $formattedAmount = number_format($displayAmount, 2) . ' ' . $currencySymbol;
+    if (!empty($payments)) {
+        foreach ($payments as $payment) {
+            // Use base_amount if available, otherwise use amount
+            $paymentAmount = isset($payment['base_amount']) ? floatval($payment['base_amount']) : floatval($payment['amount']);
+            $totalPaid += $paymentAmount;
+            
+            // Display original amount and currency if different from base
+            $displayAmount = isset($payment['original_amount']) ? floatval($payment['original_amount']) : floatval($payment['amount']);
+            $currencyCode = $payment['currency_code'] ?? ($baseCurrency ? $baseCurrency['code'] : 'USD');
+            $currencySymbol = $payment['currency_symbol'] ?? ($baseCurrency ? $baseCurrency['symbol'] : '$');
+            $symbolPosition = $payment['currency_symbol_position'] ?? ($baseCurrency ? $baseCurrency['symbol_position'] : 'before');
+            
+            if ($symbolPosition === 'before') {
+                $formattedAmount = $currencySymbol . number_format($displayAmount, 2);
+            } else {
+                $formattedAmount = number_format($displayAmount, 2) . ' ' . $currencySymbol;
+            }
+            
+            $html .= '<div style="margin-left: 10px;">' . htmlspecialchars(ucfirst($payment['payment_method'])) . ': ' . $formattedAmount;
+            if ($currencyCode && $currencyCode !== ($baseCurrency ? $baseCurrency['code'] : 'USD')) {
+                $html .= ' <span style="font-size: 0.9em; color: #666;">(' . htmlspecialchars($currencyCode) . ')</span>';
+            }
+            $html .= '</div>';
         }
-        
-        $html .= '<div style="margin-left: 10px;">' . htmlspecialchars(ucfirst($payment['payment_method'])) . ': ' . $formattedAmount;
-        if ($currencyCode && $currencyCode !== ($baseCurrency ? $baseCurrency['code'] : 'USD')) {
-            $html .= ' <span style="font-size: 0.9em; color: #666;">(' . htmlspecialchars($currencyCode) . ')</span>';
-        }
-        $html .= '</div>';
+    } else {
+        $html .= '<div style="margin-left: 10px; color: #999; font-style: italic;">No payment information available</div>';
     }
     
     $html .= '</td>
@@ -240,51 +297,71 @@ try {
     $mailer = new Mailer();
     $subject = 'Receipt #' . $sale['receipt_number'] . ' - ' . $companyName;
     
-    // Embed logo if available
-    if ($logoEmbedded && $receiptLogoPath) {
-        $logoPath = ltrim($receiptLogoPath, '/');
-        $fullPath = APP_PATH . '/' . $logoPath;
-        
-        if (file_exists($fullPath)) {
-            try {
-                $imageData = file_get_contents($fullPath);
-                $imageInfo = getimagesize($fullPath);
-                $mimeType = $imageInfo ? $imageInfo['mime'] : 'image/png';
-                
-                // Base64 encode the image data for PHPMailer
-                $imageDataBase64 = base64_encode($imageData);
-                
-                // Use PHPMailer's addStringEmbeddedImage method via getMailer()
-                // PHPMailer expects base64-encoded data by default
-                $phpmailer = $mailer->getMailer();
-                $phpmailer->addStringEmbeddedImage($imageDataBase64, $logoCid, 'logo', 'base64', $mimeType);
-            } catch (Exception $e) {
-                logError("Failed to embed logo in email: " . $e->getMessage());
+    // Embed logo as attachment if available - MUST be done before send() is called
+    if ($receiptLogoUrl && $logoFullPath && file_exists($logoFullPath)) {
+        try {
+            $phpmailer = $mailer->getMailer();
+            // Use addEmbeddedImage with file path - most reliable method
+            // Parameters: path, CID, name, encoding, MIME type
+            // The CID must match exactly what's in the HTML (cid:receipt_logo_...)
+            $result = $phpmailer->addEmbeddedImage($logoFullPath, $logoCid, 'logo', PHPMailer::ENCODING_BASE64, $logoMimeType);
+            if (!$result) {
+                logError("Failed to add embedded image - PHPMailer returned false. CID: $logoCid, Path: $logoFullPath");
+            } else {
+                logError("Successfully added embedded image. CID: $logoCid, Path: $logoFullPath, MIME: $logoMimeType");
             }
+        } catch (Exception $e) {
+            logError("Failed to embed logo in email: " . $e->getMessage() . " | CID: $logoCid | Path: $logoFullPath");
+            // Continue without logo if embedding fails
+        }
+    } else {
+        if (!$receiptLogoUrl) {
+            logError("No receipt logo URL set - logoPath: " . ($receiptLogoPath ?? 'NULL'));
+        }
+        if (!$logoFullPath || !file_exists($logoFullPath)) {
+            logError("Logo file not found - FullPath: " . ($logoFullPath ?? 'NULL') . " | Exists: " . (file_exists($logoFullPath ?? '') ? 'YES' : 'NO'));
         }
     }
     
-    $sent = $mailer->send($email, $subject, $html, true);
-    
-    if ($sent) {
-        // Log activity
-        try {
-            logActivity($_SESSION['user_id'], 'receipt_sent_email', [
-                'receipt_id' => $receiptId,
-                'receipt_number' => $sale['receipt_number'],
-                'email' => $email
-            ]);
-        } catch (Exception $e) {
-            // Ignore logging errors
-        }
+    try {
+        $sent = $mailer->send($email, $subject, $html, true);
         
-        ob_end_clean();
-        echo json_encode([
-            'success' => true,
-            'message' => 'Receipt sent successfully to ' . htmlspecialchars($email)
-        ]);
-    } else {
-        throw new Exception('Failed to send email. Please check your email configuration.');
+        if ($sent) {
+            // Log activity
+            try {
+                logActivity($_SESSION['user_id'], 'receipt_sent_email', [
+                    'receipt_id' => $receiptId,
+                    'receipt_number' => $sale['receipt_number'],
+                    'email' => $email
+                ]);
+            } catch (Exception $e) {
+                // Ignore logging errors
+            }
+            
+            ob_end_clean();
+            echo json_encode([
+                'success' => true,
+                'message' => 'Receipt sent successfully to ' . htmlspecialchars($email)
+            ]);
+        } else {
+            // Get error info from PHPMailer
+            $errorInfo = 'Unknown error';
+            try {
+                // Try to get error from mailer instance
+                if (method_exists($mailer, 'getMailer')) {
+                    $mailerInstance = $mailer->getMailer();
+                    if ($mailerInstance && isset($mailerInstance->ErrorInfo)) {
+                        $errorInfo = $mailerInstance->ErrorInfo;
+                    }
+                }
+            } catch (Exception $e) {
+                $errorInfo = 'Failed to get error details: ' . $e->getMessage();
+            }
+            throw new Exception('Failed to send email: ' . $errorInfo);
+        }
+    } catch (Exception $mailError) {
+        logError("Email send error: " . $mailError->getMessage());
+        throw $mailError;
     }
     
 } catch (Exception $e) {

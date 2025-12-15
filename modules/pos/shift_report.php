@@ -26,12 +26,25 @@ if (!$shift) {
 }
 
 // Calculate statistics
-$cashSales = $db->getRow("SELECT COALESCE(SUM(sp.amount), 0) as total FROM sale_payments sp 
-                          INNER JOIN sales s ON sp.sale_id = s.id 
-                          WHERE s.shift_id = :shift_id AND LOWER(sp.payment_method) = 'cash'", 
+// Cash sales should show the actual sale amounts (what was sold), not the payment amounts received
+$cashSales = $db->getRow("SELECT COALESCE(SUM(DISTINCT s.total_amount), 0) as total 
+                          FROM sales s 
+                          INNER JOIN sale_payments sp ON s.id = sp.sale_id 
+                          WHERE s.shift_id = :shift_id 
+                            AND LOWER(sp.payment_method) = 'cash'", 
                           [':shift_id' => $id]);
 if ($cashSales === false) {
     $cashSales = ['total' => 0];
+}
+
+// Also get total cash received (for reference - what customers actually paid)
+$cashReceived = $db->getRow("SELECT COALESCE(SUM(COALESCE(sp.base_amount, sp.amount)), 0) as total 
+                              FROM sale_payments sp 
+                              INNER JOIN sales s ON sp.sale_id = s.id 
+                              WHERE s.shift_id = :shift_id AND LOWER(sp.payment_method) = 'cash'", 
+                              [':shift_id' => $id]);
+if ($cashReceived === false) {
+    $cashReceived = ['total' => 0];
 }
 
 $totalSales = $db->getRow("SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total, 
@@ -50,13 +63,39 @@ if ($payIns === false) {
 }
 
 $payOuts = $db->getRow("SELECT COALESCE(SUM(amount), 0) as total FROM drawer_transactions 
-                        WHERE shift_id = :shift_id AND transaction_type = 'pay_out'", 
-                        [':shift_id' => $id]);
+                       WHERE shift_id = :shift_id AND transaction_type = 'pay_out'", 
+                       [':shift_id' => $id]);
 if ($payOuts === false) {
     $payOuts = ['total' => 0];
 }
 
+// Calculate borrowed cash (change given when drawer didn't have enough)
+// This is cash that was borrowed from outside and needs to be repaid
+$borrowedCash = 0;
+$changeTransactions = $db->getRows("SELECT * FROM drawer_transactions 
+                                    WHERE shift_id = :shift_id 
+                                    AND transaction_type = 'pay_out' 
+                                    AND reason = 'Change Given'
+                                    AND notes LIKE '%Borrowed%'", 
+                                    [':shift_id' => $id]);
+if ($changeTransactions !== false) {
+    foreach ($changeTransactions as $trans) {
+        // Extract borrowed amount from notes if available
+        if (preg_match('/Borrowed \$([\d,]+\.?\d*)/', $trans['notes'], $matches)) {
+            $borrowedCash += floatval(str_replace(',', '', $matches[1]));
+        }
+    }
+}
+
+// Calculate outstanding borrowed amount
+// Note: This assumes pay ins are used to repay borrowed cash
+// In a real scenario, you might want to track repayments separately
+$outstandingBorrowed = max(0, $borrowedCash - $payIns['total']);
+
 // Get payment types with currency breakdown
+$baseCurrency = getBaseCurrency($db);
+$baseCurrencyId = $baseCurrency ? $baseCurrency['id'] : 1;
+
 $paymentTypes = $db->getRows("SELECT sp.payment_method, 
                                       COALESCE(sp.currency_id, :base_currency_id) as currency_id,
                                       COALESCE(SUM(sp.base_amount), SUM(sp.amount), 0) as total_base,
@@ -65,12 +104,15 @@ $paymentTypes = $db->getRows("SELECT sp.payment_method,
                                INNER JOIN sales s ON sp.sale_id = s.id 
                                WHERE s.shift_id = :shift_id 
                                GROUP BY sp.payment_method, sp.currency_id", 
-                               [':shift_id' => $id, ':base_currency_id' => getBaseCurrency($db)['id'] ?? 1]);
+                               [':shift_id' => $id, ':base_currency_id' => $baseCurrencyId]);
 if ($paymentTypes === false) {
     $paymentTypes = [];
 }
 
 // Get currency-wise breakdown
+$baseCurrency = getBaseCurrency($db);
+$baseCurrencyId = $baseCurrency ? $baseCurrency['id'] : 1;
+
 $currencies = getActiveCurrencies($db);
 $currencyBreakdown = [];
 foreach ($currencies as $currency) {
@@ -84,7 +126,7 @@ foreach ($currencies as $currency) {
                                      AND COALESCE(sp.currency_id, :base_currency_id) = :currency_id", 
                                    [':shift_id' => $id, 
                                     ':currency_id' => $currency['id'],
-                                    ':base_currency_id' => getBaseCurrency($db)['id'] ?? 1]);
+                                    ':base_currency_id' => $baseCurrencyId]);
     if ($currencySales && ($currencySales['total_base'] > 0 || $currencySales['total_original'] > 0)) {
         $currencyBreakdown[$currency['id']] = [
             'currency' => $currency,
@@ -96,20 +138,33 @@ foreach ($currencies as $currency) {
 }
 
 // Get payment method and currency combination breakdown
+$baseCurrency = getBaseCurrency($db);
+$baseCurrencyId = $baseCurrency ? $baseCurrency['id'] : 1;
+
+// Get payment method and currency breakdown
+// Note: We group by the actual currency_id (including NULL), then normalize NULL to base currency
 $paymentMethodCurrencyBreakdown = $db->getRows("SELECT 
                                                     sp.payment_method,
-                                                    COALESCE(sp.currency_id, :base_currency_id) as currency_id,
+                                                    sp.currency_id,
                                                     COALESCE(SUM(sp.base_amount), SUM(sp.amount), 0) as total_base,
                                                     COALESCE(SUM(sp.original_amount), SUM(sp.amount), 0) as total_original
                                                  FROM sale_payments sp 
                                                  INNER JOIN sales s ON sp.sale_id = s.id 
                                                  WHERE s.shift_id = :shift_id 
-                                                 GROUP BY sp.payment_method, sp.currency_id
-                                                 ORDER BY sp.payment_method, sp.currency_id", 
-                                                 [':shift_id' => $id, ':base_currency_id' => getBaseCurrency($db)['id'] ?? 1]);
+                                                 GROUP BY sp.payment_method, COALESCE(sp.currency_id, :base_currency_id)
+                                                 ORDER BY sp.payment_method, COALESCE(sp.currency_id, :base_currency_id)", 
+                                                 [':shift_id' => $id, ':base_currency_id' => $baseCurrencyId]);
 if ($paymentMethodCurrencyBreakdown === false) {
     $paymentMethodCurrencyBreakdown = [];
 }
+
+// Normalize NULL currency_id to base currency ID
+foreach ($paymentMethodCurrencyBreakdown as &$breakdown) {
+    if (empty($breakdown['currency_id']) || $breakdown['currency_id'] == 0) {
+        $breakdown['currency_id'] = $baseCurrencyId;
+    }
+}
+unset($breakdown);
 
 $companyName = getSetting('company_name', SYSTEM_NAME);
 
@@ -274,9 +329,15 @@ require_once APP_PATH . '/includes/header.php';
                 <td><?= formatCurrency($shift['starting_cash']) ?></td>
             </tr>
             <tr>
-                <td>Cash sale</td>
+                <td>Cash sales</td>
                 <td><?= formatCurrency($cashSales['total']) ?></td>
             </tr>
+            <?php if ($cashReceived['total'] != $cashSales['total']): ?>
+            <tr style="font-size: 11px; color: #666;">
+                <td style="padding-left: 20px;">Cash received</td>
+                <td><?= formatCurrency($cashReceived['total']) ?></td>
+            </tr>
+            <?php endif; ?>
             <tr>
                 <td>Advance payment</td>
                 <td><?= formatCurrency(0) ?></td>
@@ -293,10 +354,28 @@ require_once APP_PATH . '/includes/header.php';
                 <td>Paid Out</td>
                 <td><?= formatCurrency($payOuts['total']) ?></td>
             </tr>
+            <?php if ($outstandingBorrowed > 0): ?>
+            <tr style="background-color: #fff3cd; color: #856404; font-weight: bold;">
+                <td>⚠️ Outstanding Borrowed Cash:</td>
+                <td><?= formatCurrency($outstandingBorrowed) ?></td>
+            </tr>
+            <tr style="font-size: 11px; color: #856404; font-style: italic;">
+                <td colspan="2" style="padding-left: 20px; padding-bottom: 8px;">
+                    This amount was borrowed from outside the drawer to give change and needs to be repaid via "Pay In" transaction.
+                </td>
+            </tr>
+            <?php endif; ?>
             <tr style="font-weight: bold;">
-                <td>Expected cash amount :</td>
+                <td>Expected cash amount:</td>
                 <td><?= formatCurrency($shift['expected_cash']) ?></td>
             </tr>
+            <?php if ($outstandingBorrowed > 0): ?>
+            <tr style="font-size: 11px; color: #856404;">
+                <td colspan="2" style="padding-top: 5px; padding-bottom: 8px;">
+                    Note: Expected cash ($<?= number_format($shift['expected_cash'], 2) ?>) + Outstanding borrowed ($<?= number_format($outstandingBorrowed, 2) ?>) = $<?= number_format($shift['expected_cash'] + $outstandingBorrowed, 2) ?> (total that should be in drawer after repayment)
+                </td>
+            </tr>
+            <?php endif; ?>
             <tr>
                 <td>Gross sales</td>
                 <td><?= formatCurrency($totalSales['total']) ?></td>
@@ -358,12 +437,16 @@ require_once APP_PATH . '/includes/header.php';
             </tr>
             <?php foreach ($currencyBreakdown as $breakdown): 
                 $currency = $breakdown['currency'];
+                
+                // Get base currency safely
+                $baseCurrency = getBaseCurrency($db);
+                $baseCurrencyId = $baseCurrency ? $baseCurrency['id'] : null;
             ?>
                 <tr>
                     <td><strong><?= escapeHtml($currency['code']) ?> - <?= escapeHtml($currency['name']) ?></strong></td>
                     <td><?= $breakdown['transaction_count'] ?></td>
                     <td><?= formatCurrencyAmount($breakdown['total_original'], $currency['id'], $db) ?></td>
-                    <td><?= formatCurrencyAmount($breakdown['total_base'], getBaseCurrency($db)['id'], $db) ?></td>
+                    <td><?= formatCurrencyAmount($breakdown['total_base'], $baseCurrencyId, $db) ?></td>
                 </tr>
             <?php endforeach; ?>
         </table>
@@ -380,14 +463,38 @@ require_once APP_PATH . '/includes/header.php';
                 <th>Amount (Original)</th>
                 <th>Amount (Base)</th>
             </tr>
-            <?php foreach ($paymentMethodCurrencyBreakdown as $breakdown): 
-                $currency = getCurrency($breakdown['currency_id'], $db);
+            <?php 
+            // Get base currency once outside the loop
+            $baseCurrency = getBaseCurrency($db);
+            $baseCurrencyId = $baseCurrency ? $baseCurrency['id'] : null;
+            
+            foreach ($paymentMethodCurrencyBreakdown as $breakdown): 
+                // Get currency ID - use base currency if NULL or 0
+                $currencyId = $breakdown['currency_id'] ?? null;
+                if (!$currencyId || $currencyId == 0) {
+                    $currencyId = $baseCurrencyId;
+                }
+                
+                // Fetch currency from main database (currencies are stored in main DB)
+                $currency = null;
+                if ($currencyId) {
+                    $currency = getCurrency($currencyId, null); // null = use main database
+                }
+                
+                // Fallback to base currency if still no currency
+                if (!$currency && $baseCurrency) {
+                    $currency = $baseCurrency;
+                    $currencyId = $baseCurrencyId;
+                }
+                
+                // Final fallback - if still no currency, use base currency code
+                $currencyCode = $currency ? $currency['code'] : ($baseCurrency ? $baseCurrency['code'] : 'USD');
             ?>
                 <tr>
                     <td><?= escapeHtml(ucfirst($breakdown['payment_method'])) ?></td>
-                    <td><?= escapeHtml($currency ? $currency['code'] : 'N/A') ?></td>
-                    <td><?= formatCurrencyAmount($breakdown['total_original'], $breakdown['currency_id'], $db) ?></td>
-                    <td><?= formatCurrencyAmount($breakdown['total_base'], getBaseCurrency($db)['id'], $db) ?></td>
+                    <td><?= escapeHtml($currencyCode) ?></td>
+                    <td><?= formatCurrencyAmount($breakdown['total_original'] ?? 0, $currencyId, $db) ?></td>
+                    <td><?= formatCurrencyAmount($breakdown['total_base'] ?? 0, $baseCurrencyId, $db) ?></td>
                 </tr>
             <?php endforeach; ?>
         </table>
