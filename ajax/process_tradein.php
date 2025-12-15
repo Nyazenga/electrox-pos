@@ -101,7 +101,7 @@ try {
         $shift = $db->getRow("SELECT * FROM shifts WHERE id = :id", [':id' => $shiftId]);
     }
     
-    // Generate receipt number with retry logic to handle race conditions
+    // Generate receipt number with retry logic to handle race conditions (format: BRANCH-DATE-SEQ)
     $datePart = date('ymd');
     $branchPrefix = $branchId ?? 0;
     $maxRetries = 20;
@@ -109,7 +109,7 @@ try {
     
     for ($retry = 0; $retry < $maxRetries; $retry++) {
         // Get the maximum sequence number for today
-        $pattern = $branchPrefix . '-' . $datePart . '%';
+        $pattern = $branchPrefix . '-' . $datePart . '-%';
         
         if ($branchId !== null) {
             $maxReceipt = $db->getRow("SELECT receipt_number FROM sales WHERE branch_id = :branch_id AND receipt_number LIKE :pattern ORDER BY receipt_number DESC LIMIT 1", [
@@ -126,18 +126,23 @@ try {
         $seq = 1;
         if ($maxReceipt && isset($maxReceipt['receipt_number'])) {
             $receiptNum = $maxReceipt['receipt_number'];
-            $prefix = $branchPrefix . '-' . $datePart;
+            $prefix = $branchPrefix . '-' . $datePart . '-';
             
             if (strpos($receiptNum, $prefix) === 0) {
                 $seqPart = substr($receiptNum, strlen($prefix));
-                $seq = intval($seqPart) + 1;
+                // Remove any suffix (e.g., "-A12") if present
+                if (preg_match('/^(\d+)/', $seqPart, $matches)) {
+                    $seq = intval($matches[1]) + 1;
+                }
             }
         }
         
         // Add retry offset to handle concurrent requests
         $seq += $retry;
         
-        $receiptNumber = $branchPrefix . '-' . $datePart . $seq;
+        // Pad sequence to 4 digits
+        $seqPadded = str_pad($seq, 4, '0', STR_PAD_LEFT);
+        $receiptNumber = $branchPrefix . '-' . $datePart . '-' . $seqPadded;
         
         // Check if this receipt number already exists (race condition check)
         $existing = $db->getRow("SELECT id FROM sales WHERE receipt_number = :receipt_number", [
@@ -155,11 +160,12 @@ try {
         }
     }
     
-    // Fallback: if all retries failed, use microtime + random
+    // Fallback: if all retries failed, use random suffix
     if (!$receiptNumber || $retry >= $maxRetries) {
-        $microtime = substr(str_replace('.', '', microtime(true)), -6);
-        $random = rand(100, 999);
-        $receiptNumber = $branchPrefix . '-' . $datePart . $microtime . $random;
+        $randomSuffix = strtoupper(substr(md5(uniqid(rand(), true)), 0, 2));
+        $seq = ($seq ?? 9999);
+        $seqPadded = str_pad($seq, 4, '0', STR_PAD_LEFT);
+        $receiptNumber = $branchPrefix . '-' . $datePart . '-' . $seqPadded . '-' . $randomSuffix;
     }
     
     // Create sale for trade-in value

@@ -113,7 +113,7 @@ try {
         }
     }
     
-    // Generate receipt number (format: BRANCH-DATE-SEQ where BRANCH is branch_id or 0, DATE is ymd, SEQ is sequence)
+    // Generate receipt number (format: BRANCH-DATE-SEQ where BRANCH is branch_id or 0, DATE is ymd, SEQ is 4-digit padded sequence)
     $datePart = date('ymd');
     $branchPrefix = $branchId ?? 0;
     
@@ -123,7 +123,7 @@ try {
     
     for ($retry = 0; $retry < $maxRetries; $retry++) {
         // Get the maximum sequence number for today (within transaction for consistency)
-        $pattern = $branchPrefix . '-' . $datePart . '%';
+        $pattern = $branchPrefix . '-' . $datePart . '-%';
         
         if ($branchId !== null) {
             $maxReceipt = $db->getRow("SELECT receipt_number FROM sales WHERE branch_id = :branch_id AND receipt_number LIKE :pattern ORDER BY receipt_number DESC LIMIT 1", [
@@ -139,22 +139,27 @@ try {
         // Extract sequence number from the last receipt
         $seq = 1;
         if ($maxReceipt && isset($maxReceipt['receipt_number'])) {
-            // Receipt format: BRANCH-DATESEQ (e.g., "1-25121410" where 10 is the sequence)
+            // Receipt format: BRANCH-DATE-SEQ (e.g., "1-251214-0001" where 0001 is the sequence)
             // Extract the sequence part after the date
             $receiptNum = $maxReceipt['receipt_number'];
-            $prefix = $branchPrefix . '-' . $datePart;
+            $prefix = $branchPrefix . '-' . $datePart . '-';
             
             if (strpos($receiptNum, $prefix) === 0) {
-                // Extract the sequence part (everything after the prefix)
+                // Extract the sequence part (everything after the prefix, before any suffix)
                 $seqPart = substr($receiptNum, strlen($prefix));
-                $seq = intval($seqPart) + 1;
+                // Remove any suffix (e.g., "-A12") if present
+                if (preg_match('/^(\d+)/', $seqPart, $matches)) {
+                    $seq = intval($matches[1]) + 1;
+                }
             }
         }
         
         // Add retry offset to handle concurrent requests
         $seq += $retry;
         
-        $receiptNumber = $branchPrefix . '-' . $datePart . $seq;
+        // Pad sequence to 4 digits (max 9999 per day per branch)
+        $seqPadded = str_pad($seq, 4, '0', STR_PAD_LEFT);
+        $receiptNumber = $branchPrefix . '-' . $datePart . '-' . $seqPadded;
         
         // Check if this receipt number already exists (race condition check)
         $existing = $db->getRow("SELECT id FROM sales WHERE receipt_number = :receipt_number", [
@@ -173,10 +178,11 @@ try {
     }
     
     if (!$receiptNumber || $retry >= $maxRetries) {
-        // Last resort: add microtime to ensure uniqueness
-        $microtime = substr(str_replace('.', '', microtime(true)), -6);
-        $seq = ($seq ?? 1) + intval($microtime);
-        $receiptNumber = $branchPrefix . '-' . $datePart . $seq;
+        // Last resort: use max sequence + random 2-digit suffix to ensure uniqueness
+        $randomSuffix = strtoupper(substr(md5(uniqid(rand(), true)), 0, 2));
+        $seq = ($seq ?? 9999);
+        $seqPadded = str_pad($seq, 4, '0', STR_PAD_LEFT);
+        $receiptNumber = $branchPrefix . '-' . $datePart . '-' . $seqPadded . '-' . $randomSuffix;
     }
     
     // Calculate totals
@@ -238,10 +244,11 @@ try {
                 
                 // Check if it's a duplicate key error
                 if (strpos($error, 'Duplicate entry') !== false || strpos($error, '1062') !== false) {
-                    // Generate a new receipt number with microtime to ensure uniqueness
-                    $microtime = substr(str_replace('.', '', microtime(true)), -6);
-                    $random = rand(100, 999);
-                    $currentReceiptNumber = $branchPrefix . '-' . $datePart . $microtime . $random;
+                    // Generate a new receipt number with random suffix to ensure uniqueness
+                    $randomSuffix = strtoupper(substr(md5(uniqid(rand(), true)), 0, 2));
+                    $seq = rand(9000, 9999);
+                    $seqPadded = str_pad($seq, 4, '0', STR_PAD_LEFT);
+                    $currentReceiptNumber = $branchPrefix . '-' . $datePart . '-' . $seqPadded . '-' . $randomSuffix;
                     
                     // Small delay before retry
                     usleep(rand(10000, 50000));
@@ -254,10 +261,11 @@ try {
         } catch (PDOException $e) {
             // Check if it's a duplicate key error
             if ($e->getCode() == 23000 || strpos($e->getMessage(), 'Duplicate entry') !== false || strpos($e->getMessage(), '1062') !== false) {
-                // Generate a new receipt number with microtime to ensure uniqueness
-                $microtime = substr(str_replace('.', '', microtime(true)), -6);
-                $random = rand(100, 999);
-                $currentReceiptNumber = $branchPrefix . '-' . $datePart . $microtime . $random;
+                // Generate a new receipt number with random suffix to ensure uniqueness
+                $randomSuffix = strtoupper(substr(md5(uniqid(rand(), true)), 0, 2));
+                $seq = rand(9000, 9999);
+                $seqPadded = str_pad($seq, 4, '0', STR_PAD_LEFT);
+                $currentReceiptNumber = $branchPrefix . '-' . $datePart . '-' . $seqPadded . '-' . $randomSuffix;
                 
                 // Small delay before retry
                 usleep(rand(10000, 50000));

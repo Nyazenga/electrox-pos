@@ -313,397 +313,223 @@ require_once APP_PATH . '/includes/header.php';
 ?>
 
 <style>
-        /* Screen view */
-        .receipt-container {
-            max-width: 400px;
-            width: 100%;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        .content-area {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 30px;
-        }
-        
-        .receipt-container {
-            margin-top: 0;
-        }
-        
-        /* Print styles for POS printer (80mm/3 inch width) */
-        @media print {
-            @page {
-                size: 80mm auto;
-                margin: 0;
-            }
-            
-            body {
-                margin: 0;
-                padding: 0;
-                font-size: 12px;
-                background: white !important;
-            }
-            
-            .no-print,
-            .sidebar,
-            .topbar,
-            header,
-            footer,
-            .no-print * {
-                display: none !important;
-            }
-            
-            .content-area {
-                display: block !important;
-                padding: 0 !important;
-                margin: 0 !important;
-            }
-            
-            .receipt-container {
-                max-width: 80mm !important;
-                width: 80mm !important;
-                margin: 0 auto !important;
-                padding: 10mm 5mm !important;
-                box-shadow: none !important;
-                border: none !important;
-                border-radius: 0 !important;
-                display: block !important;
-                visibility: visible !important;
-            }
-            
-            .receipt-container * {
-                visibility: visible !important;
-                display: block !important;
-            }
-            
-            .receipt-container table {
-                width: 100% !important;
-                border-collapse: collapse !important;
-                table-layout: fixed !important;
-            }
-            
-            .receipt-container table,
-            .receipt-container table *,
-            .receipt-container tr,
-            .receipt-container td,
-            .receipt-container th,
-            .receipt-container thead,
-            .receipt-container tbody,
-            .receipt-container tfoot {
-                display: table !important;
-                visibility: visible !important;
-            }
-            
-            .receipt-container tr {
-                display: table-row !important;
-            }
-            
-            .receipt-container td,
-            .receipt-container th {
-                display: table-cell !important;
-                visibility: visible !important;
-                padding: 6px 4px !important;
-            }
-            
-            .receipt-container thead th:nth-child(1) {
-                text-align: left !important;
-            }
-            
-            .receipt-container thead th:nth-child(2) {
-                text-align: center !important;
-            }
-            
-            .receipt-container thead th:nth-child(3),
-            .receipt-container thead th:nth-child(4) {
-                text-align: right !important;
-            }
-            
-            .receipt-container tbody td:nth-child(1) {
-                text-align: left !important;
-            }
-            
-            .receipt-container tbody td:nth-child(2) {
-                text-align: center !important;
-            }
-            
-            .receipt-container tbody td:nth-child(3),
-            .receipt-container tbody td:nth-child(4) {
-                text-align: right !important;
-            }
-            
-            .receipt-container tfoot td {
-                text-align: right !important;
-            }
-            
-            .receipt-container tfoot td[colspan="3"] {
-                text-align: right !important;
-            }
-            
-            .receipt-container tfoot td:first-child,
-            .receipt-container tfoot td:nth-child(2) {
-                text-align: left !important;
-            }
-            
-            .receipt-container tfoot td:nth-child(3) {
-                text-align: right !important;
-            }
-            
-            .receipt-header h2 {
-                font-size: 18px;
-            }
-            
-            .receipt-info {
-                font-size: 10px;
-            }
-            
-            table {
-                font-size: 10px;
-            }
-            
-            table th, table td {
-                padding: 4px 2px;
-            }
-            
-            .total-row {
-                font-size: 12px;
-            }
-            
-            .receipt-footer {
-                font-size: 10px;
-            }
-        }
-        
-        body {
-            font-family: 'Courier New', monospace;
-        }
-        
-        .receipt-header {
-            text-align: center;
-            border-bottom: 2px solid #1e3a8a;
-            padding-bottom: 15px;
-            margin-bottom: 15px;
-        }
-        
-        .receipt-header img {
-            display: block;
-            margin: 0 auto 15px;
-        }
-        
-        @media print {
-            .receipt-header {
-                border-bottom: 1px solid #000;
-                padding-bottom: 8px;
-                margin-bottom: 8px;
-            }
-            
-            .receipt-header img {
-                max-width: 150px !important;
-                max-height: 60px !important;
-                margin-bottom: 8px !important;
-            }
-        }
-        
-        .receipt-header h2 {
-            margin: 0 0 8px 0;
-            color: #1e3a8a;
-            font-size: 20px;
-        }
-        
-        @media print {
-            .receipt-header h2 {
-                color: #000;
-                font-size: 16px;
-            }
-        }
-        
-        .receipt-header .company-info {
-            font-size: 10px;
-            line-height: 1.4;
-        }
-        
-        @media print {
-            .receipt-header .company-info {
-                font-size: 9px;
-            }
-        }
-        
-        .receipt-info {
-            margin: 12px 0;
-            font-size: 11px;
-            line-height: 1.6;
-        }
-        
-        @media print {
-            .receipt-info {
-                margin: 8px 0;
-                font-size: 9px;
-            }
-        }
-        
-        .receipt-info div {
-            margin-bottom: 4px;
-        }
-        
-        .receipt-info strong {
-            display: inline-block;
-            min-width: 80px;
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 12px 0;
-            font-size: 11px;
-        }
-        
-        @media print {
-            table {
-                margin: 8px 0;
-                font-size: 9px;
-            }
-        }
-        
-        table th, table td {
-            padding: 6px 4px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-            vertical-align: top;
-        }
-        
-        table th {
-            text-align: left;
-        }
-        
-        table td:first-child {
-            text-align: left;
-        }
-        
-        @media print {
-            table th, table td {
-                padding: 3px 2px;
-                border-bottom: 1px dashed #ccc;
-                vertical-align: top;
-            }
-        }
-        
-        table th {
-            background: #f3f4f6;
-            font-weight: bold;
-            text-align: left;
-        }
-        
-        @media print {
-            table th {
-                background: transparent;
-                border-bottom: 1px solid #000;
-            }
-        }
-        
-        table tbody td {
-            font-size: 10px;
-            vertical-align: middle;
-        }
-        
-        @media print {
-            table tbody td {
-                font-size: 9px;
-                vertical-align: middle;
-            }
-        }
-        
-        /* Ensure proper alignment for all columns */
-        /* Ensure proper column alignment */
-        table th:nth-child(1),
-        table td:nth-child(1) {
-            text-align: left !important;
-            width: auto;
-            padding-left: 4px;
-        }
-        
-        table th:nth-child(2),
-        table td:nth-child(2) {
-            text-align: center !important;
-            width: 50px;
-            padding: 6px 4px;
-        }
-        
-        table th:nth-child(3),
-        table td:nth-child(3) {
-            text-align: right !important;
-            width: 80px;
-            padding-right: 4px;
-        }
-        
-        table th:nth-child(4),
-        table td:nth-child(4) {
-            text-align: right !important;
-            width: 80px;
-            padding-right: 4px;
-        }
-        
-        /* Ensure tfoot rows align properly */
-        table tfoot td {
-            text-align: right !important;
-            padding-right: 4px;
-        }
-        
-        table tfoot td:first-child {
-            text-align: left !important;
-            padding-left: 4px;
-        }
-        
-        table tfoot td[colspan="3"] {
-            text-align: right !important;
-            padding-right: 4px;
-        }
-        
-        .total-row {
-            font-weight: bold;
-            font-size: 14px;
-            border-top: 2px solid #1e3a8a;
-        }
-        
-        @media print {
-            .total-row {
-                font-size: 11px;
-                border-top: 1px solid #000;
-            }
-        }
-        
-        .receipt-footer {
-            text-align: center;
-            margin-top: 15px;
-            padding-top: 12px;
-            border-top: 2px solid #1e3a8a;
-            font-size: 11px;
-        }
-        
-        @media print {
-            .receipt-footer {
-                margin-top: 10px;
-                padding-top: 8px;
-                border-top: 1px solid #000;
-                font-size: 9px;
-            }
-        }
-        
-        /* Mobile Responsive */
-        @media (max-width: 768px) {
-            .content-area {
-                padding: 15px;
-            }
-            
-            .receipt-container {
-                max-width: 100%;
-                padding: 20px 15px;
-            }
-        }
-    </style>
+/* Receipt container styles (similar to receipt.php) */
+.receipt-container {
+    max-width: 400px;
+    margin: 0 auto;
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.content-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 30px;
+    justify-content: center;
+    min-height: calc(100vh - 100px);
+}
+
+.receipt-header {
+    text-align: center;
+    border-bottom: 2px solid #1e3a8a;
+    padding-bottom: 15px;
+    margin-bottom: 15px;
+}
+
+.receipt-header img {
+    display: block;
+    margin: 0 auto 15px;
+    max-width: 200px;
+    max-height: 80px;
+    object-fit: contain;
+}
+
+.receipt-header h2 {
+    margin: 0 0 8px 0;
+    color: #1e3a8a;
+    font-size: 20px;
+}
+
+.receipt-header .company-info {
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.receipt-info {
+    margin: 12px 0;
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+.receipt-info div {
+    margin-bottom: 4px;
+}
+
+.receipt-info strong {
+    display: inline-block;
+    min-width: 80px;
+}
+
+.receipt-container table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 11px;
+}
+
+.receipt-container table th, 
+.receipt-container table td {
+    padding: 6px 4px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.receipt-container table th {
+    background: #f3f4f6;
+    font-weight: bold;
+}
+
+.receipt-container .total-row {
+    font-weight: bold;
+    font-size: 14px;
+    border-top: 2px solid #1e3a8a;
+}
+
+.receipt-footer {
+    text-align: center;
+    margin-top: 15px;
+    padding-top: 12px;
+    border-top: 2px solid #1e3a8a;
+    font-size: 11px;
+}
+
+/* ========== PRINT STYLES ========== */
+@media print {
+    @page {
+        size: 80mm auto;
+        margin: 0;
+    }
+    
+    .sidebar,
+    .topbar,
+    .no-print,
+    .no-print * {
+        display: none !important;
+    }
+    
+    body {
+        margin: 0;
+        padding: 0;
+        font-size: 12px;
+        background: white !important;
+    }
+    
+    .content-area {
+        display: block !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    
+    .receipt-container {
+        max-width: 80mm !important;
+        width: 80mm !important;
+        margin: 0 auto !important;
+        padding: 10mm 5mm !important;
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        display: block !important;
+    }
+    
+    .receipt-container * {
+        visibility: visible !important;
+    }
+    
+    .receipt-header {
+        border-bottom: 1px solid #000 !important;
+        padding-bottom: 8px !important;
+        margin-bottom: 8px !important;
+        display: block !important;
+    }
+    
+    .receipt-header img {
+        max-width: 150px !important;
+        max-height: 60px !important;
+        margin-bottom: 8px !important;
+    }
+    
+    .receipt-header h2 {
+        color: #000 !important;
+        font-size: 16px !important;
+        display: block !important;
+    }
+    
+    .receipt-header .company-info {
+        font-size: 9px !important;
+        display: block !important;
+    }
+    
+    .receipt-info {
+        margin: 8px 0 !important;
+        font-size: 9px !important;
+        display: block !important;
+    }
+    
+    .receipt-info div {
+        display: block !important;
+    }
+    
+    .receipt-container table {
+        margin: 8px 0 !important;
+        font-size: 9px !important;
+        display: table !important;
+        width: 100% !important;
+    }
+    
+    .receipt-container table thead,
+    .receipt-container table tbody,
+    .receipt-container table tfoot {
+        display: table-row-group !important;
+    }
+    
+    .receipt-container table tr {
+        display: table-row !important;
+    }
+    
+    .receipt-container table th, 
+    .receipt-container table td {
+        padding: 3px 2px !important;
+        border-bottom: 1px dashed #ccc !important;
+        display: table-cell !important;
+    }
+    
+    .receipt-container table th {
+        background: transparent !important;
+        border-bottom: 1px solid #000 !important;
+    }
+    
+    .receipt-container .total-row {
+        font-size: 11px !important;
+        border-top: 1px solid #000 !important;
+    }
+    
+    .receipt-footer {
+        margin-top: 10px !important;
+        padding-top: 8px !important;
+        border-top: 1px solid #000 !important;
+        font-size: 9px !important;
+        display: block !important;
+    }
+    
+    .content-area {
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+}
+</style>
 
 <div class="content-area">
     <!-- Action Buttons - Top -->
@@ -768,10 +594,10 @@ require_once APP_PATH . '/includes/header.php';
         </colgroup>
         <thead>
             <tr>
-                <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd; width: auto;">Item</th>
-                <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd; width: 50px; padding-left: 15px;">Qty</th>
-                <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd; width: 80px;">Price</th>
-                <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd; width: 80px;">Total</th>
+                <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">Item</th>
+                <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">Qty</th>
+                <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Price</th>
+                <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Total</th>
             </tr>
         </thead>
         <tbody>
@@ -786,27 +612,21 @@ require_once APP_PATH . '/includes/header.php';
         </tbody>
         <tfoot>
             <tr>
-                <td style="text-align: left; padding: 6px 4px;"><strong>Subtotal:</strong></td>
-                <td style="text-align: center; padding: 6px 4px;"></td>
-                <td style="text-align: right; padding: 6px 4px;"></td>
+                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Subtotal:</strong></td>
                 <td style="text-align: right; padding: 6px 4px;"><strong><?= formatCurrency($sale['subtotal']) ?></strong></td>
             </tr>
             <?php if ($sale['discount_amount'] > 0): ?>
                 <tr>
-                    <td style="text-align: left; padding: 6px 4px;"><strong>Discount:</strong></td>
-                    <td style="text-align: center; padding: 6px 4px;"></td>
-                    <td style="text-align: right; padding: 6px 4px;"></td>
+                    <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
                     <td style="text-align: right; padding: 6px 4px;"><strong>-<?= formatCurrency($sale['discount_amount']) ?></strong></td>
                 </tr>
             <?php endif; ?>
             <tr class="total-row">
-                <td style="text-align: left; padding: 6px 4px;"><strong>TOTAL:</strong></td>
-                <td style="text-align: center; padding: 6px 4px;"></td>
-                <td style="text-align: right; padding: 6px 4px;"></td>
+                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>TOTAL:</strong></td>
                 <td style="text-align: right; padding: 6px 4px;"><strong><?= formatCurrency($sale['total_amount']) ?></strong></td>
             </tr>
             <tr>
-                <td colspan="4" style="padding-top: 8px;">
+                <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
                     <strong>Payment:</strong><br>
                     <?php 
                     $totalPaid = 0;
@@ -849,9 +669,7 @@ require_once APP_PATH . '/includes/header.php';
             if ($change > 0): 
             ?>
                 <tr>
-                    <td style="text-align: left; padding: 6px 4px;"></td>
-                    <td style="text-align: center; padding: 6px 4px;"></td>
-                    <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
+                    <td colspan="3" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
                     <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong><?= formatCurrency($change) ?></strong></td>
                 </tr>
             <?php endif; ?>

@@ -12,18 +12,23 @@ $auth->requirePermission('settings.view');
 $pageTitle = 'Financial Settings';
 
 $db = Database::getInstance();
-$baseCurrency = getBaseCurrency($db);
-$currencies = getActiveCurrencies($db);
+// Use main database for currencies (they're stored in the base database)
+$mainDb = Database::getMainInstance();
+$baseCurrency = getBaseCurrency($mainDb);
+$currencies = getActiveCurrencies($mainDb);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $baseCurrencyId = intval($_POST['base_currency_id'] ?? 0);
     
     if ($baseCurrencyId) {
+        // Use main database for currencies
+        $mainDb = Database::getMainInstance();
+        
         // Unset all base currencies
-        $db->update('currencies', ['is_base' => 0], []);
+        $mainDb->update('currencies', ['is_base' => 0], []);
         
         // Set new base currency
-        $db->update('currencies', [
+        $mainDb->update('currencies', [
             'is_base' => 1,
             'exchange_rate' => 1.000000
         ], ['id' => $baseCurrencyId]);
@@ -49,12 +54,16 @@ require_once APP_PATH . '/includes/header.php';
             <div class="mb-3">
                 <label class="form-label">Base Currency *</label>
                 <select class="form-select" name="base_currency_id" required>
-                    <?php foreach ($currencies as $currency): ?>
-                        <option value="<?= $currency['id'] ?>" <?= $currency['is_base'] ? 'selected' : '' ?>>
-                            <?= escapeHtml($currency['code']) ?> - <?= escapeHtml($currency['name']) ?>
-                            <?= $currency['is_base'] ? ' (Current Base)' : '' ?>
-                        </option>
-                    <?php endforeach; ?>
+                    <?php if (empty($currencies)): ?>
+                        <option value="">No currencies found. Please add currencies first.</option>
+                    <?php else: ?>
+                        <?php foreach ($currencies as $currency): ?>
+                            <option value="<?= $currency['id'] ?>" <?= $currency['is_base'] ? 'selected' : '' ?>>
+                                <?= escapeHtml($currency['code']) ?> - <?= escapeHtml($currency['name']) ?>
+                                <?= $currency['is_base'] ? ' (Current Base)' : '' ?>
+                            </option>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </select>
                 <small class="text-muted">All amounts will be converted to this base currency for reporting and calculations.</small>
             </div>
@@ -88,35 +97,44 @@ require_once APP_PATH . '/includes/header.php';
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($currencies as $currency): ?>
+                    <?php if (empty($currencies)): ?>
                         <tr>
-                            <td><strong><?= escapeHtml($currency['code']) ?></strong></td>
-                            <td><?= escapeHtml($currency['name']) ?></td>
-                            <td><?= escapeHtml($currency['symbol']) ?></td>
-                            <td>
-                                <?php if ($currency['is_base']): ?>
-                                    <span class="badge bg-primary">Base (1.000000)</span>
-                                <?php else: ?>
-                                    <?= number_format($currency['exchange_rate'], 6) ?>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <?php if ($currency['is_active']): ?>
-                                    <span class="badge bg-success">Active</span>
-                                <?php else: ?>
-                                    <span class="badge bg-danger">Inactive</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <a href="<?= BASE_URL ?>modules/currencies/edit.php?id=<?= $currency['id'] ?>" class="btn btn-sm btn-outline-primary">
-                                    <i class="bi bi-pencil"></i> Edit
-                                </a>
-                                <a href="<?= BASE_URL ?>modules/currencies/exchange_rates.php?currency_id=<?= $currency['id'] ?>" class="btn btn-sm btn-outline-info">
-                                    <i class="bi bi-arrow-left-right"></i> Rates
-                                </a>
+                            <td colspan="6" class="text-center text-muted">
+                                <i class="bi bi-info-circle"></i> No currencies found. 
+                                <a href="<?= BASE_URL ?>modules/currencies/index.php">Add currencies</a> to get started.
                             </td>
                         </tr>
-                    <?php endforeach; ?>
+                    <?php else: ?>
+                        <?php foreach ($currencies as $currency): ?>
+                            <tr>
+                                <td><strong><?= escapeHtml($currency['code']) ?></strong></td>
+                                <td><?= escapeHtml($currency['name']) ?></td>
+                                <td><?= escapeHtml($currency['symbol']) ?></td>
+                                <td>
+                                    <?php if ($currency['is_base']): ?>
+                                        <span class="badge bg-primary">Base (1.000000)</span>
+                                    <?php else: ?>
+                                        <?= number_format($currency['exchange_rate'], 6) ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if ($currency['is_active']): ?>
+                                        <span class="badge bg-success">Active</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-danger">Inactive</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <a href="<?= BASE_URL ?>modules/currencies/edit.php?id=<?= $currency['id'] ?>" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-pencil"></i> Edit
+                                    </a>
+                                    <a href="<?= BASE_URL ?>modules/currencies/exchange_rates.php?currency_id=<?= $currency['id'] ?>" class="btn btn-sm btn-outline-info">
+                                        <i class="bi bi-arrow-left-right"></i> Rates
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </tbody>
             </table>
         </div>

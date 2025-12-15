@@ -274,7 +274,15 @@ window.updateInvoiceStatus = function() {
             status: newStatus
         })
     })
-    .then(response => response.json())
+    .then(async response => {
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('Non-JSON response:', text);
+            throw new Error('Server returned invalid response. Please check the console for details.');
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             Swal.fire({
@@ -299,7 +307,7 @@ window.updateInvoiceStatus = function() {
         Swal.fire({
             icon: 'error',
             title: 'Error!',
-            text: 'An error occurred while updating the status',
+            text: error.message || 'An error occurred while updating the status',
             confirmButtonColor: '#d33'
         });
     });

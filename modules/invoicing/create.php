@@ -65,9 +65,14 @@ require_once APP_PATH . '/includes/header.php';
 }
 
 .invoice-items-table th {
-    background: var(--primary-blue);
-    color: white;
+    background: var(--primary-blue) !important;
+    color: white !important;
     font-weight: 600;
+}
+
+.invoice-items-table thead th {
+    color: white !important;
+    background: var(--primary-blue) !important;
 }
 
 .invoice-summary {
@@ -195,6 +200,28 @@ require_once APP_PATH . '/includes/header.php';
                 <button type="button" class="btn btn-primary w-100" onclick="addManualItem()">
                     <i class="bi bi-plus-circle"></i> Add Manual Item
                 </button>
+            </div>
+        </div>
+        
+        <div class="mb-3">
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0">Apply Discount to All Items:</label>
+                <div class="input-group" style="width: 200px;">
+                    <input type="number" 
+                           class="form-control form-control-sm" 
+                           id="applyDiscountAll" 
+                           step="0.01" 
+                           min="0" 
+                           max="100" 
+                           placeholder="0.00"
+                           value="">
+                    <span class="input-group-text">%</span>
+                    <button type="button" 
+                            class="btn btn-sm btn-primary" 
+                            onclick="applyDiscountToAll()">
+                        Apply
+                    </button>
+                </div>
             </div>
         </div>
         
@@ -368,6 +395,29 @@ function addManualItem() {
 function removeItem(id) {
     invoiceItems = invoiceItems.filter(item => item.id !== id);
     renderItems();
+}
+
+function applyDiscountToAll() {
+    const discountInput = document.getElementById('applyDiscountAll');
+    const discountValue = parseFloat(discountInput.value) || 0;
+    
+    if (discountValue < 0 || discountValue > 100) {
+        Swal.fire('Error', 'Discount must be between 0 and 100', 'error');
+        return;
+    }
+    
+    if (invoiceItems.length === 0) {
+        Swal.fire('Info', 'Please add items to the invoice first', 'info');
+        return;
+    }
+    
+    invoiceItems.forEach(item => {
+        item.discount_percentage = discountValue;
+    });
+    
+    renderItems();
+    
+    Swal.fire('Success', `Applied ${discountValue}% discount to all items`, 'success');
 }
 
 function updateItem(id, field, value) {

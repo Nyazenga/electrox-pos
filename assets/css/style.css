@@ -246,16 +246,28 @@ body {
 
 .branch-option {
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color 0.2s, color 0.2s;
+    color: var(--text-dark);
 }
 
 .branch-option:hover {
     background-color: var(--light-blue);
+    color: var(--primary-blue);
 }
 
 .branch-option.active {
     background-color: var(--light-blue);
+    color: var(--primary-blue) !important;
     font-weight: 600;
+}
+
+.branch-option {
+    color: var(--text-dark);
+}
+
+.branch-option:hover {
+    background-color: var(--light-blue);
+    color: var(--primary-blue);
 }
 
 @media (max-width: 768px) {
