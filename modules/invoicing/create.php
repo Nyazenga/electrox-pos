@@ -32,7 +32,14 @@ $branchId = $_SESSION['branch_id'] ?? null;
 $customers = $db->getRows("SELECT * FROM customers WHERE status = 'Active' ORDER BY first_name, last_name");
 if ($customers === false) $customers = [];
 
-$products = $db->getRows("SELECT * FROM products WHERE status = 'Active' ORDER BY brand, model");
+// Get products - handle both General category (product_name) and others (brand/model)
+$products = $db->getRows("SELECT p.*, 
+                         COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
+                         pc.name as category_name
+                         FROM products p
+                         LEFT JOIN product_categories pc ON p.category_id = pc.id
+                         WHERE p.status = 'Active' 
+                         ORDER BY COALESCE(p.product_name, p.brand, ''), p.model");
 if ($products === false) $products = [];
 
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
@@ -181,16 +188,25 @@ require_once APP_PATH . '/includes/header.php';
                            placeholder="Type to search products..."
                            autocomplete="off">
                     <div class="dropdown-menu position-absolute w-100 product-search-dropdown" id="productDropdown" style="display: none;">
-                        <?php foreach ($products as $product): ?>
+                        <?php foreach ($products as $product): 
+                            // Use display_name which handles both General (product_name) and others (brand + model)
+                            $productDisplayName = $product['display_name'] ?? ($product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')));
+                            if (empty($productDisplayName)) {
+                                $productDisplayName = 'Product #' . $product['id'];
+                            }
+                        ?>
                             <a class="dropdown-item product-item" 
                                href="#" 
                                data-id="<?= $product['id'] ?>"
-                               data-name="<?= escapeHtml($product['brand'] . ' ' . $product['model']) ?>"
+                               data-name="<?= escapeHtml($productDisplayName) ?>"
                                data-price="<?= $product['selling_price'] ?>"
                                data-stock="<?= $product['quantity_in_stock'] ?>">
-                                <?= escapeHtml($product['brand'] . ' ' . $product['model']) ?> - 
+                                <?= escapeHtml($productDisplayName) ?> - 
                                 <?= formatCurrency($product['selling_price']) ?> 
                                 (Stock: <?= $product['quantity_in_stock'] ?>)
+                                <?php if (!empty($product['category_name'])): ?>
+                                    <small class="text-muted"> - <?= escapeHtml($product['category_name']) ?></small>
+                                <?php endif; ?>
                             </a>
                         <?php endforeach; ?>
                     </div>

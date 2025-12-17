@@ -8,17 +8,55 @@ $auth = Auth::getInstance();
 $auth->requireLogin();
 $auth->requirePermission('inventory.create');
 
-$pageTitle = 'New Goods Received Note (GRN)';
-
 $db = Database::getInstance();
 $branchId = $_SESSION['branch_id'] ?? null;
 $userId = $_SESSION['user_id'] ?? null;
+
+// Check if editing existing GRN
+$grnId = isset($_GET['id']) ? intval($_GET['id']) : null;
+$isEdit = $grnId !== null;
+$grn = null;
+$grnItems = [];
+
+if ($isEdit) {
+    // Load existing GRN
+    $grn = $db->getRow("SELECT * FROM goods_received_notes WHERE id = :id", [':id' => $grnId]);
+    if (!$grn) {
+        header('Location: grn.php');
+        exit;
+    }
+    
+    // Check if GRN can be edited (only Draft status)
+    if ($grn['status'] !== 'Draft') {
+        header('Location: grn_view.php?id=' . $grnId);
+        exit;
+    }
+    
+    // Load GRN items
+    $grnItems = $db->getRows("SELECT gi.*, 
+                              COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as product_name
+                              FROM grn_items gi
+                              LEFT JOIN products p ON gi.product_id = p.id
+                              WHERE gi.grn_id = :id", [':id' => $grnId]);
+    if ($grnItems === false) $grnItems = [];
+    
+    $pageTitle = 'Edit Goods Received Note (GRN)';
+} else {
+    $pageTitle = 'New Goods Received Note (GRN)';
+}
 
 // Get data
 $suppliers = $db->getRows("SELECT * FROM suppliers WHERE status = 'Active' ORDER BY name");
 if ($suppliers === false) $suppliers = [];
 
-$products = $db->getRows("SELECT p.*, c.name as category_name FROM products p LEFT JOIN product_categories c ON p.category_id = c.id WHERE p.status = 'Active' ORDER BY p.brand, p.model");
+// Get products - handle both General category (product_name) and others (brand/model)
+$products = $db->getRows("SELECT p.*, 
+                         COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
+                         c.name as category_name 
+                         FROM products p 
+                         LEFT JOIN product_categories c ON p.category_id = c.id 
+                         WHERE p.status = 'Active' 
+                         ORDER BY COALESCE(p.product_name, p.brand, ''), p.model");
 if ($products === false) $products = [];
 
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
@@ -48,22 +86,25 @@ require_once APP_PATH . '/includes/header.php';
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>New Goods Received Note (GRN)</h2>
+    <h2><?= $isEdit ? 'Edit' : 'New' ?> Goods Received Note (GRN)</h2>
     <a href="grn.php" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
 </div>
 
 <div class="card">
     <div class="card-body">
         <form id="grnForm">
+            <?php if ($isEdit): ?>
+                <input type="hidden" id="grn_id" name="grn_id" value="<?= $grnId ?>">
+            <?php endif; ?>
             <div class="row mb-3">
                 <div class="col-md-6">
                     <label class="form-label">GRN Number *</label>
-                    <input type="text" class="form-control" id="grn_number" name="grn_number" readonly required>
-                    <small class="text-muted">Auto-generated</small>
+                    <input type="text" class="form-control" id="grn_number" name="grn_number" value="<?= $isEdit ? escapeHtml($grn['grn_number']) : '' ?>" <?= $isEdit ? '' : 'readonly' ?> required>
+                    <small class="text-muted"><?= $isEdit ? 'GRN Number' : 'Auto-generated' ?></small>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Received Date *</label>
-                    <input type="date" class="form-control" name="received_date" value="<?= date('Y-m-d') ?>" required>
+                    <input type="date" class="form-control" name="received_date" value="<?= $isEdit ? $grn['received_date'] : date('Y-m-d') ?>" required>
                 </div>
             </div>
             
@@ -71,8 +112,15 @@ require_once APP_PATH . '/includes/header.php';
                 <div class="col-md-6">
                     <label class="form-label">Supplier *</label>
                     <div class="position-relative">
-                        <input type="text" class="form-control" id="supplier_search" placeholder="Type to search suppliers..." autocomplete="off">
-                        <input type="hidden" id="supplier_id" name="supplier_id">
+                        <?php 
+                        $supplierName = '';
+                        if ($isEdit && $grn['supplier_id']) {
+                            $supplier = $db->getRow("SELECT name FROM suppliers WHERE id = :id", [':id' => $grn['supplier_id']]);
+                            $supplierName = $supplier ? $supplier['name'] : '';
+                        }
+                        ?>
+                        <input type="text" class="form-control" id="supplier_search" placeholder="Type to search suppliers..." value="<?= escapeHtml($supplierName) ?>" autocomplete="off">
+                        <input type="hidden" id="supplier_id" name="supplier_id" value="<?= $isEdit ? ($grn['supplier_id'] ?? '') : '' ?>">
                         <div class="dropdown-menu position-absolute w-100" id="supplier_dropdown" style="max-height: 300px; overflow-y: auto; z-index: 1050; display: none;">
                             <?php foreach ($suppliers as $supplier): ?>
                                 <a class="dropdown-item supplier-item" href="#" data-id="<?= $supplier['id'] ?>" data-name="<?= escapeHtml($supplier['name']) ?>">
@@ -89,7 +137,7 @@ require_once APP_PATH . '/includes/header.php';
                     <label class="form-label">Branch *</label>
                     <select class="form-select" name="branch_id" required>
                         <?php foreach ($branches as $branch): ?>
-                            <option value="<?= $branch['id'] ?>" <?= $branchId == $branch['id'] ? 'selected' : '' ?>>
+                            <option value="<?= $branch['id'] ?>" <?= ($isEdit ? ($grn['branch_id'] == $branch['id']) : ($branchId == $branch['id'])) ? 'selected' : '' ?>>
                                 <?= escapeHtml($branch['branch_name']) ?>
                             </option>
                         <?php endforeach; ?>
@@ -99,7 +147,7 @@ require_once APP_PATH . '/includes/header.php';
             
             <div class="mb-3">
                 <label class="form-label">Notes</label>
-                <textarea class="form-control" name="notes" rows="3"></textarea>
+                <textarea class="form-control" name="notes" rows="3"><?= $isEdit ? escapeHtml($grn['notes'] ?? '') : '' ?></textarea>
             </div>
             
             <div class="mt-4">
@@ -124,6 +172,9 @@ require_once APP_PATH . '/includes/header.php';
                         </thead>
                         <tbody id="items_tbody">
                             <!-- Items will be added here dynamically -->
+                            <?php if ($isEdit && !empty($grnItems)): ?>
+                                <!-- Pre-populate with existing items -->
+                            <?php endif; ?>
                         </tbody>
                         <tfoot>
                             <tr>
@@ -138,7 +189,7 @@ require_once APP_PATH . '/includes/header.php';
             
             <div class="mt-4 d-flex gap-2">
                 <button type="submit" class="btn btn-primary" id="saveBtn">
-                    <i class="bi bi-save"></i> Save GRN
+                    <i class="bi bi-save"></i> <?= $isEdit ? 'Update' : 'Save' ?> GRN
                 </button>
                 <a href="grn.php" class="btn btn-secondary">Cancel</a>
             </div>
@@ -161,13 +212,18 @@ require_once APP_PATH . '/includes/header.php';
                         <input type="text" class="form-control" id="product_search" placeholder="Type to search products..." autocomplete="off">
                         <input type="hidden" id="selected_product_id">
                         <div class="dropdown-menu position-absolute w-100" id="product_dropdown" style="max-height: 300px; overflow-y: auto; z-index: 1050; display: none;">
-                        <?php foreach ($products as $product): ?>
+                        <?php foreach ($products as $product): 
+                            $productDisplayName = $product['display_name'] ?? ($product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')));
+                            if (empty($productDisplayName)) {
+                                $productDisplayName = 'Product #' . $product['id'];
+                            }
+                        ?>
                             <a class="dropdown-item product-item" href="#" 
                                data-id="<?= $product['id'] ?>"
-                               data-name="<?= escapeHtml(trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? ''))) ?>"
+                               data-name="<?= escapeHtml($productDisplayName) ?>"
                                data-cost="<?= $product['cost_price'] ?? 0 ?>"
                                data-selling="<?= $product['selling_price'] ?? 0 ?>">
-                                <strong><?= escapeHtml(trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? ''))) ?></strong>
+                                <strong><?= escapeHtml($productDisplayName) ?></strong>
                                 <br>
                                 <small class="text-muted">
                                     <?= escapeHtml($product['category_name'] ?? 'N/A') ?> | 
@@ -212,9 +268,40 @@ require_once APP_PATH . '/includes/header.php';
 let grnItems = [];
 let itemCounter = 0;
 
-// Generate GRN number on page load
+// Generate GRN number on page load (only for new GRN)
 document.addEventListener('DOMContentLoaded', function() {
+    <?php if (!$isEdit): ?>
     generateGRNNumber();
+    <?php else: ?>
+    // Load existing items
+    const existingItems = <?= json_encode(array_map(function($item) {
+        return [
+            'product_id' => intval($item['product_id']),
+            'product_name' => $item['product_name'] ?? '',
+            'quantity' => intval($item['quantity']),
+            'serial_numbers' => $item['serial_numbers'] ?? '',
+            'cost_price' => floatval($item['cost_price']),
+            'selling_price' => floatval($item['selling_price']),
+            'total' => floatval($item['cost_price']) * intval($item['quantity'])
+        ];
+    }, $grnItems)) ?>;
+    
+    existingItems.forEach(function(item) {
+        grnItems.push({
+            id: itemCounter++,
+            product_id: item.product_id,
+            product_name: item.product_name,
+            quantity: item.quantity,
+            serial_numbers: item.serial_numbers,
+            cost_price: item.cost_price,
+            selling_price: item.selling_price,
+            total: item.total
+        });
+    });
+    
+    renderItems();
+    updateTotal();
+    <?php endif; ?>
     
     // Supplier search
     const supplierSearch = document.getElementById('supplier_search');
@@ -431,6 +518,9 @@ document.getElementById('grnForm').addEventListener('submit', function(e) {
     }
     
     const formData = new FormData(this);
+    const isEdit = <?= $isEdit ? 'true' : 'false' ?>;
+    const grnId = <?= $isEdit ? $grnId : 'null' ?>;
+    
     const data = {
         grn_number: formData.get('grn_number'),
         supplier_id: formData.get('supplier_id'),
@@ -440,10 +530,14 @@ document.getElementById('grnForm').addEventListener('submit', function(e) {
         items: grnItems
     };
     
-    document.getElementById('saveBtn').disabled = true;
-    document.getElementById('saveBtn').innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+    if (isEdit && grnId) {
+        data.grn_id = grnId;
+    }
     
-    fetch('<?= BASE_URL ?>ajax/create_grn.php', {
+    document.getElementById('saveBtn').disabled = true;
+    document.getElementById('saveBtn').innerHTML = '<span class="spinner-border spinner-border-sm"></span> <?= $isEdit ? 'Updating' : 'Saving' ?>...';
+    
+    fetch('<?= BASE_URL ?>ajax/' + (isEdit ? 'update_grn.php' : 'create_grn.php'), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -456,15 +550,15 @@ document.getElementById('grnForm').addEventListener('submit', function(e) {
             Swal.fire({
                 icon: 'success',
                 title: 'Success!',
-                text: 'GRN created successfully',
+                text: isEdit ? 'GRN updated successfully' : 'GRN created successfully',
                 confirmButtonColor: '#1e3a8a'
             }).then(() => {
                 window.location.href = 'grn.php';
             });
         } else {
-            Swal.fire('Error', data.message || 'Failed to create GRN', 'error');
+            Swal.fire('Error', data.message || (isEdit ? 'Failed to update GRN' : 'Failed to create GRN'), 'error');
             document.getElementById('saveBtn').disabled = false;
-            document.getElementById('saveBtn').innerHTML = '<i class="bi bi-save"></i> Save GRN';
+            document.getElementById('saveBtn').innerHTML = '<i class="bi bi-save"></i> <?= $isEdit ? 'Update' : 'Save' ?> GRN';
         }
     })
     .catch(error => {

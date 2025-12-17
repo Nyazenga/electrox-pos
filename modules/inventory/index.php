@@ -63,17 +63,28 @@ if ($stockLevel !== 'all') {
 }
 
 if ($search) {
-    $whereConditions[] = "(p.brand LIKE :search1 OR p.model LIKE :search2 OR p.product_code LIKE :search3 OR p.description LIKE :search4)";
+    // Search across multiple fields, including concatenated brand+model and product_name
+    // This handles cases where "Apple 20W USB-C Power Adapter" might be split across brand and model
+    $whereConditions[] = "(p.brand LIKE :search1 
+                          OR p.model LIKE :search2 
+                          OR p.product_name LIKE :search5 
+                          OR p.product_code LIKE :search3 
+                          OR p.description LIKE :search4
+                          OR CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, '')) LIKE :search6
+                          OR CONCAT(COALESCE(p.product_name, ''), ' ', COALESCE(p.brand, ''), ' ', COALESCE(p.model, '')) LIKE :search7)";
     $searchTerm = "%$search%";
     $params[':search1'] = $searchTerm;
     $params[':search2'] = $searchTerm;
     $params[':search3'] = $searchTerm;
     $params[':search4'] = $searchTerm;
+    $params[':search5'] = $searchTerm;
+    $params[':search6'] = $searchTerm;
+    $params[':search7'] = $searchTerm;
 }
 
 $whereClause = implode(' AND ', $whereConditions);
 
-$products = $db->getRows("SELECT p.*, pc.name as category_name, b.branch_name 
+$products = $db->getRows("SELECT p.*, pc.name as category_name, pc.id as category_id, b.branch_name 
                           FROM products p 
                           LEFT JOIN product_categories pc ON p.category_id = pc.id 
                           LEFT JOIN branches b ON p.branch_id = b.id 
@@ -140,7 +151,7 @@ require_once APP_PATH . '/includes/header.php';
             </div>
             <div class="col-md-3">
                 <label class="form-label">Search</label>
-                <input type="text" name="search" class="form-control" placeholder="Brand, Model, Code..." value="<?= escapeHtml($search) ?>">
+                <input type="text" name="search" class="form-control" placeholder="Brand, Model, Product Name, Code..." value="<?= escapeHtml($search) ?>">
             </div>
             <div class="col-md-1 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel"></i> Filter</button>
@@ -154,7 +165,7 @@ require_once APP_PATH . '/includes/header.php';
 
 <div class="card">
     <div class="card-body">
-        <table class="table table-striped data-table">
+        <table class="table table-striped" id="inventoryTable">
             <thead>
                 <tr>
                     <th>Product</th>
@@ -169,15 +180,22 @@ require_once APP_PATH . '/includes/header.php';
             <tbody>
                 <?php if (empty($products)): ?>
                     <tr>
-                        <td colspan="7" class="text-center py-4">
-                            <i class="bi bi-inbox" style="font-size: 48px; color: #ccc; display: block; margin-bottom: 10px;"></i>
-                            <p class="text-muted mb-0">No products found matching the selected filters.</p>
-                        </td>
+                        <td></td><td></td><td></td><td></td><td></td><td></td><td></td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($products as $product): ?>
                         <tr>
-                            <td><?= escapeHtml(trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? ''))) ?></td>
+                            <td>
+                                <?php 
+                                // Check if it's General category - use product_name instead of brand/model
+                                $isGeneralCategory = !empty($product['category_name']) && strtolower($product['category_name']) === 'general';
+                                if ($isGeneralCategory && !empty($product['product_name'])) {
+                                    echo escapeHtml($product['product_name']);
+                                } else {
+                                    echo escapeHtml(trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')));
+                                }
+                                ?>
+                            </td>
                             <td><?= escapeHtml($product['category_name'] ?? 'N/A') ?></td>
                             <td><?= escapeHtml($product['branch_name'] ?? 'N/A') ?></td>
                             <td>
@@ -200,3 +218,60 @@ require_once APP_PATH . '/includes/header.php';
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>
 
+<script>
+(function() {
+    function initInventoryTable() {
+        if (typeof jQuery === 'undefined') {
+            setTimeout(initInventoryTable, 100);
+            return;
+        }
+        
+        var $ = jQuery;
+        
+        $(document).ready(function() {
+            var table = $('#inventoryTable');
+            
+            // Check if table has actual data rows (not just empty placeholder)
+            var hasData = table.find('tbody tr').length > 0 && 
+                         table.find('tbody tr').first().find('td').first().text().trim() !== '';
+            
+            if (!hasData) {
+                // Clear empty row so DataTables can show its empty message
+                table.find('tbody').empty();
+            }
+            
+            // Initialize DataTable
+            if ($.fn.DataTable) {
+                if ($.fn.DataTable.isDataTable(table)) {
+                    table.DataTable().destroy();
+                }
+                
+                table.DataTable({
+                    order: [[3, 'asc']], // Sort by stock (column 3)
+                    pageLength: 25,
+                    destroy: true,
+                    autoWidth: false,
+                    language: {
+                        emptyTable: 'No products found matching the selected filters.'
+                    },
+                    columns: [
+                        null, // Product
+                        null, // Category
+                        null, // Branch
+                        null, // Stock
+                        null, // Reorder Level
+                        null, // Status
+                        { orderable: false, searchable: false } // Actions
+                    ]
+                });
+            }
+        });
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initInventoryTable);
+    } else {
+        initInventoryTable();
+    }
+})();
+</script>

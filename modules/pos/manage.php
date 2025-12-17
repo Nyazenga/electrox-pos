@@ -17,6 +17,19 @@ $startDate = $_GET['start_date'] ?? date('Y-m-d');
 $endDate = $_GET['end_date'] ?? date('Y-m-d');
 $search = $_GET['search'] ?? '';
 
+// Check if deleted_at column exists
+$hasDeletedAtColumn = false;
+try {
+    $colCheck = $db->getRow("SELECT COUNT(*) as count FROM information_schema.COLUMNS 
+                            WHERE TABLE_SCHEMA = DATABASE() 
+                            AND TABLE_NAME = 'sales' 
+                            AND COLUMN_NAME = 'deleted_at'");
+    $hasDeletedAtColumn = ($colCheck && $colCheck['count'] > 0);
+} catch (Exception $e) {
+    // Column doesn't exist, continue without it
+    $hasDeletedAtColumn = false;
+}
+
 // Build query with proper null handling for branch_id
 if ($branchId !== null) {
     $sql = "SELECT s.*, c.first_name, c.last_name, u.first_name as cashier_first, u.last_name as cashier_last 
@@ -25,6 +38,9 @@ if ($branchId !== null) {
             LEFT JOIN users u ON s.user_id = u.id 
             WHERE s.branch_id = :branch_id 
             AND DATE(s.sale_date) BETWEEN :start_date AND :end_date";
+    if ($hasDeletedAtColumn) {
+        $sql .= " AND (s.deleted_at IS NULL)";
+    }
     $params = [':branch_id' => $branchId, ':start_date' => $startDate, ':end_date' => $endDate];
 } else {
     $sql = "SELECT s.*, c.first_name, c.last_name, u.first_name as cashier_first, u.last_name as cashier_last 
@@ -33,6 +49,9 @@ if ($branchId !== null) {
             LEFT JOIN users u ON s.user_id = u.id 
             WHERE (s.branch_id IS NULL OR s.branch_id = 0)
             AND DATE(s.sale_date) BETWEEN :start_date AND :end_date";
+    if ($hasDeletedAtColumn) {
+        $sql .= " AND (s.deleted_at IS NULL)";
+    }
     $params = [':start_date' => $startDate, ':end_date' => $endDate];
 }
 
@@ -659,6 +678,9 @@ require_once APP_PATH . '/includes/header.php';
                     <?php if ($selectedSale['payment_status'] !== 'refunded'): ?>
                         <button class="btn btn-warning" onclick="refundSale(<?= $selectedSale['id'] ?>)">
                             <i class="bi bi-arrow-counterclockwise"></i> Refund
+                        </button>
+                        <button class="btn btn-danger" onclick="deleteReceipt(<?= $selectedSale['id'] ?>)">
+                            <i class="bi bi-trash"></i> Delete
                         </button>
                     <?php else: ?>
                         <span class="badge bg-danger">Refunded</span>
@@ -1356,6 +1378,66 @@ function processRefund() {
             .catch(error => {
                 console.error('Refund error:', error);
                 Swal.fire('Error', 'Failed to process refund: ' + error.message, 'error');
+            });
+        }
+    });
+}
+
+function deleteReceipt(saleId) {
+    Swal.fire({
+        title: 'Delete Receipt?',
+        html: `
+            <p>Are you sure you want to delete this receipt?</p>
+            <p class="text-danger"><strong>This action will:</strong></p>
+            <ul class="text-start text-danger">
+                <li>Restore stock for all items</li>
+                <li>Reverse shift cash adjustments</li>
+                <li>Mark the receipt as deleted</li>
+            </ul>
+            <p class="text-muted">This action cannot be undone.</p>
+        `,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Delete',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#dc3545'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'Deleting Receipt...',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            
+            const formData = new FormData();
+            formData.append('sale_id', saleId);
+            
+            fetch('<?= BASE_URL ?>ajax/delete_receipt.php', {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire({
+                        title: 'Success!',
+                        text: data.message || 'Receipt deleted successfully',
+                        icon: 'success',
+                        confirmButtonText: 'OK'
+                    }).then(() => {
+                        // Redirect to manage sales without the deleted receipt
+                        window.location.href = '<?= BASE_URL ?>modules/pos/manage.php?start_date=<?= $startDate ?>&end_date=<?= $endDate ?>';
+                    });
+                } else {
+                    Swal.fire('Error', data.message || 'Failed to delete receipt', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Delete receipt error:', error);
+                Swal.fire('Error', 'Failed to delete receipt: ' + error.message, 'error');
             });
         }
     });

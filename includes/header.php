@@ -132,10 +132,35 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                         <i class="bi bi-chevron-down submenu-arrow"></i>
                     </a>
                     <ul class="submenu">
-                        <li><a href="<?= BASE_URL ?>modules/reports/sales.php" class="<?= strpos($currentUri, '/modules/reports/sales') !== false ? 'active' : '' ?>"><i class="bi bi-cash-stack"></i> <span>Sales Reports</span></a></li>
-                        <li><a href="<?= BASE_URL ?>modules/reports/inventory.php" class="<?= strpos($currentUri, '/modules/reports/inventory') !== false ? 'active' : '' ?>"><i class="bi bi-archive"></i> <span>Inventory Reports</span></a></li>
-                        <li><a href="<?= BASE_URL ?>modules/reports/financial.php" class="<?= strpos($currentUri, '/modules/reports/financial') !== false ? 'active' : '' ?>"><i class="bi bi-wallet2"></i> <span>Financial Reports</span></a></li>
-                        <li><a href="<?= BASE_URL ?>modules/reports/customers.php" class="<?= strpos($currentUri, '/modules/reports/customers') !== false ? 'active' : '' ?>"><i class="bi bi-people"></i> <span>Customer Reports</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/index.php" class="<?= strpos($currentUri, '/modules/reports/index') !== false ? 'active' : '' ?>"><i class="bi bi-speedometer2"></i> <span>Dashboard</span></a></li>
+                        <li class="submenu-header">General Reports</li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/sales_summary.php" class="<?= strpos($currentUri, '/modules/reports/sales_summary') !== false ? 'active' : '' ?>"><i class="bi bi-bar-chart"></i> <span>Sales Summary</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/receipts.php" class="<?= strpos($currentUri, '/modules/reports/receipts') !== false ? 'active' : '' ?>"><i class="bi bi-receipt-cutoff"></i> <span>Receipts</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/refunds.php" class="<?= strpos($currentUri, '/modules/reports/refunds') !== false ? 'active' : '' ?>"><i class="bi bi-arrow-counterclockwise"></i> <span>Refunds</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/sales_by_products.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_products') !== false ? 'active' : '' ?>"><i class="bi bi-box-seam"></i> <span>Sales by Products</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/sales_by_category.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_category') !== false ? 'active' : '' ?>"><i class="bi bi-tags"></i> <span>Sales by Category</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/sales_by_discounts.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_discounts') !== false ? 'active' : '' ?>"><i class="bi bi-percent"></i> <span>Sales by Discounts</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/sales_by_payment_types.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_payment_types') !== false ? 'active' : '' ?>"><i class="bi bi-credit-card"></i> <span>Sales by Payment Types</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/taxes.php" class="<?= strpos($currentUri, '/modules/reports/taxes') !== false ? 'active' : '' ?>"><i class="bi bi-receipt"></i> <span>Taxes</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/shifts.php" class="<?= strpos($currentUri, '/modules/reports/shifts') !== false ? 'active' : '' ?>"><i class="bi bi-clock-history"></i> <span>Shifts</span></a></li>
+                        <li class="submenu-header">Advanced Sales Reports</li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/product_wise_receipt.php" class="<?= strpos($currentUri, '/modules/reports/product_wise_receipt') !== false ? 'active' : '' ?>"><i class="bi bi-file-earmark-text"></i> <span>Product Wise Receipt</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/sales_by_trend.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_trend') !== false ? 'active' : '' ?>"><i class="bi bi-graph-up-arrow"></i> <span>Sales by Trend</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/deleted_receipts.php" class="<?= strpos($currentUri, '/modules/reports/deleted_receipts') !== false ? 'active' : '' ?>"><i class="bi bi-trash"></i> <span>Deleted Receipts</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/order_type_wise_sales.php" class="<?= strpos($currentUri, '/modules/reports/order_type_wise_sales') !== false ? 'active' : '' ?>"><i class="bi bi-list-check"></i> <span>Order Type Wise Sales</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/product_wise_tax_charge.php" class="<?= strpos($currentUri, '/modules/reports/product_wise_tax_charge') !== false ? 'active' : '' ?>"><i class="bi bi-calculator"></i> <span>Product Wise Tax/Charge</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/manual_receipts.php" class="<?= strpos($currentUri, '/modules/reports/manual_receipts') !== false ? 'active' : '' ?>"><i class="bi bi-pencil-square"></i> <span>Manual Receipts</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/sales_by_orders.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_orders') !== false ? 'active' : '' ?>"><i class="bi bi-cart-check"></i> <span>Sales by Orders</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/product_wise_orders.php" class="<?= strpos($currentUri, '/modules/reports/product_wise_orders') !== false ? 'active' : '' ?>"><i class="bi bi-box-arrow-in-right"></i> <span>Product Wise Orders</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/sales_by_modifiers.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_modifiers') !== false ? 'active' : '' ?>"><i class="bi bi-sliders"></i> <span>Sales by Modifiers</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/product_sales_by_staff.php" class="<?= strpos($currentUri, '/modules/reports/product_sales_by_staff') !== false ? 'active' : '' ?>"><i class="bi bi-person-badge"></i> <span>Product Sales by Staff</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/sales_by_staff.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_staff') !== false ? 'active' : '' ?>"><i class="bi bi-people"></i> <span>Sales by Staff</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/products_consumed_by_staff.php" class="<?= strpos($currentUri, '/modules/reports/products_consumed_by_staff') !== false ? 'active' : '' ?>"><i class="bi bi-person-dash"></i> <span>Products Consumed by Staff</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/ecommerce_sales.php" class="<?= strpos($currentUri, '/modules/reports/ecommerce_sales') !== false ? 'active' : '' ?>"><i class="bi bi-globe"></i> <span>Ecommerce Sales</span></a></li>
+                        <li class="submenu-header">Suspicious Reports</li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/product_wise_deleted_receipts.php" class="<?= strpos($currentUri, '/modules/reports/product_wise_deleted_receipts') !== false ? 'active' : '' ?>"><i class="bi bi-exclamation-triangle"></i> <span>Product Wise Deleted Receipts</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/refunds_credit_notes.php" class="<?= strpos($currentUri, '/modules/reports/refunds_credit_notes') !== false ? 'active' : '' ?>"><i class="bi bi-file-earmark-minus"></i> <span>Refunds & Credit Notes</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/reports/deleted_products_open_orders.php" class="<?= strpos($currentUri, '/modules/reports/deleted_products_open_orders') !== false ? 'active' : '' ?>"><i class="bi bi-exclamation-circle"></i> <span>Deleted Products in Open Orders</span></a></li>
                     </ul>
                 </li>
                 <li class="has-submenu">
@@ -152,12 +177,6 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                     </ul>
                 </li>
             </ul>
-            <div class="sidebar-footer">
-                <div class="clock-container">
-                    <canvas id="analogClock" width="120" height="120"></canvas>
-                </div>
-                <div class="sidebar-date" id="sidebarDate"></div>
-            </div>
         </nav>
         <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
         <div class="main-content">

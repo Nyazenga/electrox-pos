@@ -13,8 +13,22 @@ $pageTitle = 'Products';
 $db = Database::getInstance();
 $products = $db->getRows("SELECT p.*, pc.name as category_name FROM products p LEFT JOIN product_categories pc ON p.category_id = pc.id ORDER BY p.created_at DESC");
 
+// Get success message from session if exists
+$successMessage = '';
+if (isset($_SESSION['success_message'])) {
+    $successMessage = $_SESSION['success_message'];
+    unset($_SESSION['success_message']);
+}
+
 require_once APP_PATH . '/includes/header.php';
 ?>
+
+<?php if ($successMessage): ?>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="bi bi-check-circle"></i> <?= escapeHtml($successMessage) ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+<?php endif; ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Products</h2>
@@ -50,6 +64,10 @@ require_once APP_PATH . '/includes/header.php';
                             <div class="product-image-container" style="width: 60px; height: 60px; position: relative; cursor: pointer;" onclick="uploadProductImage(<?= $product['id'] ?>)">
                                 <?php if ($firstImage): ?>
                                     <img src="<?= escapeHtml($firstImage) ?>" style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;" class="border">
+                                <?php elseif (!empty($product['color']) && $product['color'] !== '#ffffff' && $product['color'] !== 'white'): ?>
+                                    <div class="d-flex align-items-center justify-content-center border rounded" style="width: 100%; height: 100%; background-color: <?= escapeHtml($product['color']) ?>;">
+                                        <i class="bi bi-box" style="font-size: 24px; color: rgba(0,0,0,0.3);"></i>
+                                    </div>
                                 <?php else: ?>
                                     <div class="d-flex align-items-center justify-content-center bg-light border rounded" style="width: 100%; height: 100%;">
                                         <i class="bi bi-box" style="font-size: 24px; color: #999;"></i>
@@ -61,10 +79,10 @@ require_once APP_PATH . '/includes/header.php';
                             </div>
                         </td>
                         <td><?= escapeHtml($product['product_code']) ?></td>
-                        <td><?= escapeHtml($product['brand'] . ' ' . $product['model']) ?></td>
+                        <td><?= escapeHtml(!empty($product['product_name']) ? $product['product_name'] : ($product['brand'] . ' ' . $product['model'])) ?></td>
                         <td><?= escapeHtml($product['category_name']) ?></td>
-                        <td><?= escapeHtml($product['brand']) ?></td>
-                        <td><?= escapeHtml($product['model']) ?></td>
+                        <td><?= escapeHtml($product['brand'] ?? 'N/A') ?></td>
+                        <td><?= escapeHtml($product['model'] ?? 'N/A') ?></td>
                         <td><?= $product['quantity_in_stock'] ?></td>
                         <td><?= formatCurrency($product['selling_price']) ?></td>
                         <td><span class="badge bg-<?= $product['status'] == 'Active' ? 'success' : 'secondary' ?>"><?= escapeHtml($product['status']) ?></span></td>

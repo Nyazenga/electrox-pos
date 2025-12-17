@@ -1,19 +1,35 @@
 $(document).ready(function() {
-    $('.data-table').DataTable({
-        responsive: true,
-        pageLength: 25,
-        order: [[0, 'desc']],
-        language: {
-            search: "Search:",
-            lengthMenu: "Show _MENU_ entries",
-            info: "Showing _START_ to _END_ of _TOTAL_ entries",
-            paginate: {
-                first: "First",
-                last: "Last",
-                next: "Next",
-                previous: "Previous"
-            }
+    // Initialize DataTables for .data-table elements, but skip those with specific IDs that are initialized manually
+    $('.data-table').each(function() {
+        var $table = $(this);
+        var tableId = $table.attr('id');
+        
+        // Skip tables that are initialized manually (like refundsTable)
+        if (tableId && (tableId === 'refundsTable' || window[tableId + 'Initialized'])) {
+            return;
         }
+        
+        // Skip if already initialized
+        if ($.fn.DataTable.isDataTable($table)) {
+            return;
+        }
+        
+        $table.DataTable({
+            responsive: true,
+            pageLength: 25,
+            order: [[0, 'desc']],
+            language: {
+                search: "Search:",
+                lengthMenu: "Show _MENU_ entries",
+                info: "Showing _START_ to _END_ of _TOTAL_ entries",
+                paginate: {
+                    first: "First",
+                    last: "Last",
+                    next: "Next",
+                    previous: "Previous"
+                }
+            }
+        });
     });
     
     $('.delete-btn').on('click', function(e) {

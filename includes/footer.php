@@ -6,100 +6,11 @@
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="<?= ASSETS_URL ?>js/main.js"></script>
     <script>
-        // Analog Clock
-        function drawClock() {
-            const canvas = document.getElementById('analogClock');
-            if (!canvas) return;
-            
-            const ctx = canvas.getContext('2d');
-            const radius = canvas.height / 2 - 10;
-            ctx.translate(radius + 10, radius + 10);
-            
-            function drawFace(ctx, radius) {
-                ctx.beginPath();
-                ctx.arc(0, 0, radius, 0, 2 * Math.PI);
-                ctx.fillStyle = 'rgba(255,255,255,0.1)';
-                ctx.fill();
-                ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-                
-                ctx.beginPath();
-                ctx.arc(0, 0, radius * 0.1, 0, 2 * Math.PI);
-                ctx.fillStyle = 'rgba(255,255,255,0.9)';
-                ctx.fill();
-            }
-            
-            function drawNumbers(ctx, radius) {
-                let ang;
-                let num;
-                ctx.font = radius * 0.15 + "px Poppins";
-                ctx.textBaseline = "middle";
-                ctx.textAlign = "center";
-                ctx.fillStyle = 'rgba(255,255,255,0.9)';
-                for(num = 1; num < 13; num++){
-                    ang = num * Math.PI / 6;
-                    ctx.rotate(ang);
-                    ctx.translate(0, -radius * 0.85);
-                    ctx.rotate(-ang);
-                    ctx.fillText(num.toString(), 0, 0);
-                    ctx.rotate(ang);
-                    ctx.translate(0, radius * 0.85);
-                    ctx.rotate(-ang);
-                }
-            }
-            
-            function drawTime(ctx, radius) {
-                const now = new Date();
-                let hour = now.getHours();
-                let minute = now.getMinutes();
-                let second = now.getSeconds();
-                
-                hour = hour % 12;
-                hour = (hour * Math.PI / 6) + (minute * Math.PI / (6 * 60)) + (second * Math.PI / (360 * 60));
-                drawHand(ctx, hour, radius * 0.5, radius * 0.07, 'rgba(255,255,255,0.9)');
-                
-                minute = (minute * Math.PI / 30) + (second * Math.PI / (30 * 60));
-                drawHand(ctx, minute, radius * 0.8, radius * 0.07, 'rgba(255,255,255,0.9)');
-                
-                second = (second * Math.PI / 30);
-                drawHand(ctx, second, radius * 0.9, radius * 0.02, 'rgba(255,255,255,0.7)');
-            }
-            
-            function drawHand(ctx, pos, length, width, color) {
-                ctx.beginPath();
-                ctx.lineWidth = width;
-                ctx.lineCap = "round";
-                ctx.strokeStyle = color;
-                ctx.moveTo(0, 0);
-                ctx.rotate(pos);
-                ctx.lineTo(0, -length);
-                ctx.stroke();
-                ctx.rotate(-pos);
-            }
-            
-            function updateClock() {
-                ctx.clearRect(-radius - 10, -radius - 10, canvas.width, canvas.height);
-                drawFace(ctx, radius);
-                drawNumbers(ctx, radius);
-                drawTime(ctx, radius);
-            }
-            
-            setInterval(updateClock, 1000);
-            updateClock();
-        }
-        
-        // Update sidebar date
-        function updateSidebarDate() {
-            const now = new Date();
-            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-            const dateEl = document.getElementById('sidebarDate');
-            if (dateEl) {
-                dateEl.textContent = now.toLocaleDateString('en-US', options);
-            }
-        }
         
         // Branch selector functionality
         document.addEventListener('DOMContentLoaded', function() {
@@ -286,11 +197,6 @@
         // Run immediately and after DOM is fully loaded
         autoExpandActiveSubmenus();
         document.addEventListener('DOMContentLoaded', autoExpandActiveSubmenus);
-        
-        // Initialize
-        drawClock();
-        updateSidebarDate();
-        setInterval(updateSidebarDate, 60000);
     </script>
 </body>
 </html>

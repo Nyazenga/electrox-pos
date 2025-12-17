@@ -1030,8 +1030,12 @@ require_once APP_PATH . '/includes/header.php';
             </div>
         <?php endif; ?>
         <div class="search-bar">
-            <input type="text" id="productSearch" placeholder="Search All" autofocus>
+            <input type="text" id="productSearch" placeholder="Search All or Scan Barcode" autofocus>
             <i class="bi bi-search"></i>
+            <i class="bi bi-upc-scan" style="margin-left: 10px; cursor: pointer;" title="Barcode Scanner" onclick="focusBarcodeInput()"></i>
+        </div>
+        <div class="barcode-input-container" style="margin-bottom: 10px; display: none;" id="barcodeContainer">
+            <input type="text" id="barcodeInput" class="form-control" placeholder="Scan or enter barcode..." autocomplete="off">
         </div>
         
         <div class="category-tabs">
@@ -1046,18 +1050,20 @@ require_once APP_PATH . '/includes/header.php';
         
         <div class="product-grid" id="productGrid">
             <?php 
-            $products = $db->getRows("SELECT p.*, pc.name as category_name, COALESCE(p.is_trade_in, 0) as is_trade_in FROM products p LEFT JOIN product_categories pc ON p.category_id = pc.id WHERE p.status = 'Active' AND p.quantity_in_stock > 0 ORDER BY p.brand, p.model");
+            $products = $db->getRows("SELECT p.*, pc.name as category_name, COALESCE(p.is_trade_in, 0) as is_trade_in FROM products p LEFT JOIN product_categories pc ON p.category_id = pc.id WHERE p.status = 'Active' AND p.quantity_in_stock > 0 ORDER BY COALESCE(p.product_name, p.brand), p.model");
             $favoriteIds = array_column($favorites, 'id');
             foreach ($products as $product): 
                 $isFavorite = in_array($product['id'], $favoriteIds);
                 $productImage = !empty($product['images']) ? json_decode($product['images'], true)[0] ?? null : null;
+                $productDisplayName = !empty($product['product_name']) ? $product['product_name'] : ($product['brand'] . ' ' . $product['model']);
             ?>
                 <div class="product-card" 
                      data-product-id="<?= $product['id'] ?>" 
                      data-category-id="<?= $product['category_id'] ?? 'no-category' ?>" 
-                     data-product-name="<?= escapeHtml($product['brand'] . ' ' . $product['model']) ?>"
+                     data-product-name="<?= escapeHtml($productDisplayName) ?>"
                      data-product-price="<?= $product['selling_price'] ?>"
                      data-product-stock="<?= $product['quantity_in_stock'] ?>"
+                     data-product-barcode="<?= escapeHtml($product['barcode'] ?? '') ?>"
                      data-is-trade-in="<?= ($product['is_trade_in'] ?? 0) ? '1' : '0' ?>"
                      onclick="addToCartFromCard(this)">
                     <div class="product-info" onclick="event.stopPropagation(); showProductInfo(<?= $product['id'] ?>)">
@@ -1073,13 +1079,25 @@ require_once APP_PATH . '/includes/header.php';
                     <?php endif; ?>
                     <div class="product-image">
                         <?php if ($productImage): ?>
-                            <img src="<?= escapeHtml($productImage) ?>" alt="<?= escapeHtml($product['brand'] . ' ' . $product['model']) ?>" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                            <div class="placeholder-icon" style="display: none;"><i class="bi bi-box-seam"></i></div>
+                            <img src="<?= escapeHtml($productImage) ?>" alt="<?= escapeHtml($productDisplayName) ?>" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                            <div class="placeholder-icon" style="display: none;">
+                                <?php if (!empty($product['color']) && $product['color'] !== '#ffffff' && $product['color'] !== 'white'): ?>
+                                    <div style="width: 100%; height: 100%; background-color: <?= escapeHtml($product['color']) ?>; display: flex; align-items: center; justify-content: center;">
+                                        <i class="bi bi-box-seam" style="font-size: 48px; color: rgba(0,0,0,0.3);"></i>
+                                    </div>
+                                <?php else: ?>
+                                    <i class="bi bi-box-seam"></i>
+                                <?php endif; ?>
+                            </div>
+                        <?php elseif (!empty($product['color']) && $product['color'] !== '#ffffff' && $product['color'] !== 'white'): ?>
+                            <div class="placeholder-icon" style="width: 100%; height: 100%; background-color: <?= escapeHtml($product['color']) ?>; display: flex; align-items: center; justify-content: center;">
+                                <i class="bi bi-box-seam" style="font-size: 48px; color: rgba(0,0,0,0.3);"></i>
+                            </div>
                         <?php else: ?>
                             <div class="placeholder-icon"><i class="bi bi-box-seam"></i></div>
                         <?php endif; ?>
                     </div>
-                    <div class="product-name"><?= escapeHtml($product['brand'] . ' ' . $product['model']) ?></div>
+                    <div class="product-name"><?= escapeHtml($productDisplayName) ?></div>
                     <div class="product-price"><?= formatCurrency($product['selling_price']) ?></div>
                 </div>
             <?php endforeach; ?>
@@ -1624,6 +1642,94 @@ function filterProducts() {
             card.style.display = categoryId === 'no-category' ? 'block' : 'none';
         } else {
             card.style.display = categoryId == currentCategory ? 'block' : 'none';
+        }
+    });
+}
+
+// Barcode scanning functionality
+let barcodeTimeout;
+const barcodeInput = document.getElementById('barcodeInput');
+const barcodeContainer = document.getElementById('barcodeContainer');
+
+function focusBarcodeInput() {
+    if (barcodeContainer) {
+        barcodeContainer.style.display = barcodeContainer.style.display === 'none' ? 'block' : 'none';
+        if (barcodeContainer.style.display === 'block' && barcodeInput) {
+            barcodeInput.focus();
+        }
+    }
+}
+
+if (barcodeInput) {
+    barcodeInput.addEventListener('input', function(e) {
+        const barcode = this.value.trim();
+        
+        // Clear previous timeout
+        clearTimeout(barcodeTimeout);
+        
+        // Wait for user to finish typing (barcode scanners typically send data quickly)
+        barcodeTimeout = setTimeout(() => {
+            if (barcode.length >= 3) { // Minimum barcode length
+                // Find product by barcode
+                const productCard = document.querySelector(`.product-card[data-product-barcode="${barcode}"]`);
+                if (productCard) {
+                    // Add to cart
+                    addToCartFromCard(productCard);
+                    // Clear barcode input
+                    this.value = '';
+                    // Show success feedback
+                    const productName = productCard.dataset.productName;
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Product Found',
+                        text: productName + ' added to cart',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Product Not Found',
+                        text: 'No product found with barcode: ' + barcode,
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                    this.value = '';
+                }
+            }
+        }, 500); // Wait 500ms after last keystroke
+    });
+    
+    // Handle Enter key
+    barcodeInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const barcode = this.value.trim();
+            if (barcode.length >= 3) {
+                clearTimeout(barcodeTimeout);
+                const productCard = document.querySelector(`.product-card[data-product-barcode="${barcode}"]`);
+                if (productCard) {
+                    addToCartFromCard(productCard);
+                    this.value = '';
+                    const productName = productCard.dataset.productName;
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Product Found',
+                        text: productName + ' added to cart',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Product Not Found',
+                        text: 'No product found with barcode: ' + barcode,
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                    this.value = '';
+                }
+            }
         }
     });
 }

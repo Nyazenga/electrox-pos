@@ -20,7 +20,8 @@ if (!$product) {
     redirectTo('modules/products/index.php');
 }
 
-$pageTitle = 'View Product - ' . escapeHtml($product['brand'] . ' ' . $product['model']);
+$productDisplayName = !empty($product['product_name']) ? $product['product_name'] : ($product['brand'] . ' ' . $product['model']);
+$pageTitle = 'View Product - ' . escapeHtml($productDisplayName);
 
 require_once APP_PATH . '/includes/header.php';
 ?>
@@ -51,16 +52,30 @@ require_once APP_PATH . '/includes/header.php';
                     </div>
                 <?php else: ?>
                     <div class="product-image-container mb-3" style="position: relative; display: inline-block; cursor: pointer;" onclick="uploadProductImage(<?= $product['id'] ?>)">
-                        <div class="bg-light p-5" style="border-radius: 8px;">
-                            <i class="bi bi-box-seam" style="font-size: 64px; color: #9ca3af;"></i>
-                        </div>
+                        <?php if (!empty($product['color']) && $product['color'] !== '#ffffff' && $product['color'] !== 'white'): ?>
+                            <div class="p-5" style="border-radius: 8px; background-color: <?= escapeHtml($product['color']) ?>; min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                                <i class="bi bi-box-seam" style="font-size: 64px; color: rgba(0,0,0,0.3);"></i>
+                            </div>
+                        <?php else: ?>
+                            <div class="bg-light p-5" style="border-radius: 8px;">
+                                <i class="bi bi-box-seam" style="font-size: 64px; color: #9ca3af;"></i>
+                            </div>
+                        <?php endif; ?>
                         <div class="image-upload-overlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; border-radius: 8px;">
                             <i class="bi bi-camera text-white" style="font-size: 32px;"></i>
                         </div>
                     </div>
                 <?php endif; ?>
-                <h4><?= escapeHtml($product['brand'] . ' ' . $product['model']) ?></h4>
+                <h4><?= escapeHtml(!empty($product['product_name']) ? $product['product_name'] : ($product['brand'] . ' ' . $product['model'])) ?></h4>
                 <p class="text-muted"><?= escapeHtml($product['product_code']) ?></p>
+                <?php if (!empty($product['color']) && $product['color'] !== '#ffffff' && $product['color'] !== 'white'): ?>
+                    <div class="mt-2">
+                        <span class="d-inline-flex align-items-center gap-2">
+                            <span class="badge" style="background-color: <?= escapeHtml($product['color']) ?>; width: 40px; height: 40px; border: 2px solid #ddd; border-radius: 4px; display: inline-block;"></span>
+                            <span>Color</span>
+                        </span>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -71,14 +86,22 @@ require_once APP_PATH . '/includes/header.php';
                 <h5 class="mb-0">Product Information</h5>
             </div>
             <div class="card-body">
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <strong>Brand:</strong> <?= escapeHtml($product['brand']) ?>
+                <?php if (!empty($product['product_name'])): ?>
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <strong>Product Name:</strong> <?= escapeHtml($product['product_name']) ?>
+                        </div>
                     </div>
-                    <div class="col-md-6">
-                        <strong>Model:</strong> <?= escapeHtml($product['model']) ?>
+                <?php else: ?>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong>Brand:</strong> <?= escapeHtml($product['brand'] ?? 'N/A') ?>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Model:</strong> <?= escapeHtml($product['model'] ?? 'N/A') ?>
+                        </div>
                     </div>
-                </div>
+                <?php endif; ?>
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <strong>Category:</strong> <?= escapeHtml($product['category_name'] ?? 'N/A') ?>
@@ -90,7 +113,10 @@ require_once APP_PATH . '/includes/header.php';
                 <?php if (!empty($product['color'])): ?>
                 <div class="row mb-3">
                     <div class="col-md-6">
-                        <strong>Color:</strong> <?= escapeHtml($product['color']) ?>
+                        <strong>Color:</strong> 
+                        <span class="d-inline-flex align-items-center gap-2">
+                            <span class="badge" style="background-color: <?= escapeHtml($product['color']) ?>; width: 40px; height: 40px; border: 2px solid #ddd; border-radius: 4px; display: inline-block;"></span>
+                        </span>
                     </div>
                     <?php if (!empty($product['storage'])): ?>
                     <div class="col-md-6">

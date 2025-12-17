@@ -75,16 +75,6 @@ body {
     display: none;
 }
 
-.sidebar.collapsed .sidebar-date {
-    display: none;
-}
-
-/* Ensure date is visible when sidebar is not collapsed on mobile */
-@media (min-width: 481px) {
-    .sidebar:not(.collapsed) .sidebar-date {
-        display: block !important;
-    }
-}
 
 .sidebar.collapsed .submenu-arrow {
     display: none;
@@ -106,7 +96,26 @@ body {
     overflow-x: hidden;
     min-height: 0; /* Important for flex scrolling */
     margin-bottom: 0;
-    padding-bottom: 180px; /* Space for footer so items don't scroll behind it */
+    scrollbar-width: thin; /* Firefox */
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent; /* Firefox */
+}
+
+/* Custom scrollbar for WebKit browsers (Chrome, Safari, Edge) */
+.sidebar-menu::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar-menu::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar-menu::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+}
+
+.sidebar-menu::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
 }
 
 .sidebar-menu li a {
@@ -159,7 +168,29 @@ body {
 }
 
 .sidebar-menu li.has-submenu.active .submenu {
-    max-height: 500px;
+    max-height: 2000px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin; /* Firefox */
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent; /* Firefox */
+}
+
+/* Custom scrollbar for submenu */
+.sidebar-menu li.has-submenu.active .submenu::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sidebar-menu li.has-submenu.active .submenu::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar-menu li.has-submenu.active .submenu::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+}
+
+.sidebar-menu li.has-submenu.active .submenu::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
 }
 
 .submenu li a {
@@ -170,6 +201,24 @@ body {
 .submenu li a.active {
     background: rgba(255,255,255,0.15);
     border-left: 3px solid var(--accent-blue);
+}
+
+.submenu-header {
+    padding: 12px 20px 8px 20px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: rgba(255,255,255,0.6);
+    margin-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    pointer-events: none;
+    list-style: none;
+}
+
+.submenu-header:first-child {
+    margin-top: 0;
+    border-top: none;
 }
 
 .sidebar.collapsed .sidebar-menu li a span {
@@ -414,37 +463,6 @@ body {
     margin-right: 8px;
 }
 
-.sidebar-footer {
-    flex-shrink: 0;
-    padding: 20px;
-    background: rgba(0,0,0,0.2);
-    border-top: 1px solid rgba(255,255,255,0.1);
-    text-align: center;
-    z-index: 10;
-    position: relative;
-    margin-top: auto; /* Push to bottom */
-    height: 180px; /* Fixed height for clock and date */
-    min-height: 180px;
-    max-height: 180px;
-}
-
-.clock-container {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 15px;
-}
-
-#analogClock {
-    background: rgba(255,255,255,0.1);
-    border-radius: 50%;
-    padding: 10px;
-}
-
-.sidebar-date {
-    color: rgba(255,255,255,0.9);
-    font-size: 13px;
-    font-weight: 500;
-}
 
 .content-area {
     padding: 30px;
