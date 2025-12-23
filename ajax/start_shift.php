@@ -125,6 +125,43 @@ try {
         throw new Exception('Shift was not created successfully');
     }
     
+    // Auto-open fiscal day if fiscalization is enabled and this is the first shift of the day
+    if ($branchId) {
+        try {
+            require_once APP_PATH . '/includes/fiscal_service.php';
+            
+            // Check if fiscalization is enabled for this branch
+            if (FiscalService::isFiscalizationEnabled($branchId)) {
+                $primaryDb = Database::getPrimaryInstance();
+                
+                // Check if there's already an open fiscal day for today
+                $today = date('Y-m-d');
+                $openFiscalDay = $primaryDb->getRow(
+                    "SELECT * FROM fiscal_days 
+                     WHERE branch_id = :branch_id 
+                     AND DATE(fiscal_day_opened) = :today 
+                     AND status = 'FiscalDayOpened'",
+                    [':branch_id' => $branchId, ':today' => $today]
+                );
+                
+                // If no fiscal day is open for today, open one
+                if (!$openFiscalDay) {
+                    try {
+                        $fiscalService = new FiscalService($branchId);
+                        $fiscalDayResult = $fiscalService->openFiscalDay();
+                        error_log("Auto-opened fiscal day #{$fiscalDayResult['fiscalDayNo']} when shift #{$shiftNumber} started");
+                    } catch (Exception $fiscalEx) {
+                        // Log but don't fail the shift opening
+                        error_log("Warning: Could not auto-open fiscal day when shift started: " . $fiscalEx->getMessage());
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            // Log but don't fail the shift opening
+            error_log("Warning: Fiscal day auto-open check failed: " . $e->getMessage());
+        }
+    }
+    
     logActivity($userId, 'shift_start', ['shift_id' => $shiftId, 'shift_number' => $shiftNumber]);
     
     echo json_encode([

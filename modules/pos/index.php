@@ -6,7 +6,10 @@ require_once APP_PATH . '/includes/functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('pos.access');
+// Allow access if user has pos.view OR pos.create_sale (matches sidebar "New Sales" menu item)
+if (!$auth->hasPermission('pos.view') && !$auth->hasPermission('pos.create_sale')) {
+    $auth->requirePermission('pos.view'); // This will show access denied
+}
 
 $pageTitle = 'New Sales';
 
@@ -186,16 +189,16 @@ require_once APP_PATH . '/includes/header.php';
     flex-direction: column;
     background: white;
     border-radius: 12px;
-    padding: 20px;
+    padding: 12px;
     overflow: hidden;
     min-width: 0; /* Important for flexbox */
 }
 
 .pos-right {
-    width: 400px;
+    width: 360px;
     background: white;
     border-radius: 12px;
-    padding: 20px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -454,16 +457,16 @@ require_once APP_PATH . '/includes/header.php';
 }
 
 .search-bar {
-    margin-bottom: 20px;
+    margin-bottom: 12px;
     position: relative;
 }
 
 .search-bar input {
     width: 100%;
-    padding: 15px 50px 15px 20px;
+    padding: 8px 40px 8px 12px;
     border: 2px solid #e5e7eb;
-    border-radius: 10px;
-    font-size: 16px;
+    border-radius: 8px;
+    font-size: 12px;
 }
 
 .search-bar i {
@@ -476,19 +479,20 @@ require_once APP_PATH . '/includes/header.php';
 
 .category-tabs {
     display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
+    gap: 8px;
+    margin-bottom: 12px;
     flex-wrap: wrap;
 }
 
 .category-tab {
-    padding: 10px 20px;
+    padding: 6px 12px;
     border: 2px solid #e5e7eb;
-    border-radius: 8px;
+    border-radius: 6px;
     background: white;
     cursor: pointer;
     transition: all 0.3s;
     font-weight: 500;
+    font-size: 11px;
 }
 
 .category-tab.active {
@@ -501,35 +505,47 @@ require_once APP_PATH . '/includes/header.php';
     flex: 1;
     overflow-y: auto;
     display: grid;
-    gap: 15px;
-    padding-right: 10px;
+    gap: 10px;
+    padding-right: 8px;
 }
 
 /* Apply layout based on setting */
 <?php if ($homeLayout == 'grid'): ?>
 .product-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+.product-card {
+    padding: 8px;
+}
+.product-card .product-image {
+    height: 80px;
+}
+.product-card .product-name {
+    font-size: 11px;
+}
+.product-card .product-price {
+    font-size: 12px;
 }
 <?php elseif ($homeLayout == 'simple-grid'): ?>
 .product-grid {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
 }
 .product-card {
-    padding: 12px;
-    height: 200px;
-    max-height: 200px;
+    padding: 10px;
+    height: 160px;
+    max-height: 160px;
 }
 .product-card .product-image {
-    height: 100px;
-    margin-bottom: 8px;
-}
-.product-card .product-name {
-    font-size: 13px;
+    height: 80px;
     margin-bottom: 6px;
 }
+.product-card .product-name {
+    font-size: 11px;
+    margin-bottom: 4px;
+}
 .product-card .product-price {
-    font-size: 14px;
+    font-size: 12px;
     background: var(--primary-blue);
     color: white;
 }
@@ -542,63 +558,65 @@ require_once APP_PATH . '/includes/header.php';
     height: auto;
     max-height: none;
     text-align: left;
-    padding: 15px;
+    padding: 10px;
 }
 .product-card .product-image {
-    width: 120px;
-    height: 120px;
+    width: 80px;
+    height: 80px;
     flex-shrink: 0;
-    margin-right: 15px;
+    margin-right: 10px;
     margin-bottom: 0;
 }
 .product-card .product-name {
     flex: 1;
     margin: 0;
     max-height: none;
+    font-size: 12px;
 }
 .product-card .product-price {
     margin-top: 0;
     margin-left: auto;
     background: var(--primary-blue);
     color: white;
+    font-size: 12px;
 }
 <?php elseif ($homeLayout == 'retail'): ?>
 .product-grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
 }
 .product-card {
-    padding: 20px;
-    height: 280px;
-    max-height: 280px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    padding: 12px;
+    height: 220px;
+    max-height: 220px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     border: 2px solid #e5e7eb;
 }
 .product-card:hover {
-    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
     transform: translateY(-2px);
 }
 .product-card .product-image {
-    height: 140px;
-    margin-bottom: 12px;
-    border-radius: 8px;
+    height: 100px;
+    margin-bottom: 8px;
+    border-radius: 6px;
 }
 .product-card .product-name {
-    font-size: 15px;
+    font-size: 12px;
     font-weight: 600;
-    margin-bottom: 8px;
-    line-height: 1.4;
+    margin-bottom: 6px;
+    line-height: 1.3;
 }
 .product-card .product-price {
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 700;
     background: var(--primary-blue);
     color: white;
-    padding: 10px 15px;
+    padding: 6px 10px;
 }
 .product-card .product-stock {
-    font-size: 12px;
-    margin-top: 6px;
+    font-size: 10px;
+    margin-top: 4px;
 }
 <?php endif; ?>
 
@@ -649,14 +667,14 @@ require_once APP_PATH . '/includes/header.php';
 .product-card {
     background: white;
     border: 2px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 15px;
+    border-radius: 10px;
+    padding: 8px;
     text-align: center;
     cursor: pointer;
     transition: all 0.3s;
     position: relative;
-    height: 220px;
-    max-height: 220px;
+    height: 160px;
+    max-height: 160px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -686,14 +704,14 @@ require_once APP_PATH . '/includes/header.php';
 
 .product-image {
     width: 100%;
-    height: 100px;
+    height: 70px;
     background: #f3f4f6;
-    border-radius: 8px;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 10px;
-    font-size: 40px;
+    margin-bottom: 6px;
+    font-size: 28px;
     overflow: hidden;
     position: relative;
 }
@@ -711,11 +729,11 @@ require_once APP_PATH . '/includes/header.php';
 .product-price {
     background: var(--primary-blue);
     color: white;
-    padding: 8px 12px;
-    border-radius: 8px;
+    padding: 5px 8px;
+    border-radius: 6px;
     font-weight: 600;
     margin-top: auto;
-    font-size: 14px;
+    font-size: 11px;
     transition: all 0.3s;
 }
 
@@ -725,13 +743,13 @@ require_once APP_PATH . '/includes/header.php';
 }
 
 .product-name {
-    font-size: 13px;
-    margin: 5px 0;
+    font-size: 11px;
+    margin: 3px 0;
     color: var(--text-dark);
     word-wrap: break-word;
     overflow-wrap: break-word;
     hyphens: auto;
-    line-height: 1.3;
+    line-height: 1.2;
     flex: 1;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -828,9 +846,14 @@ require_once APP_PATH . '/includes/header.php';
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 15px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
     border-bottom: 2px solid #e5e7eb;
+}
+
+.cart-header h5 {
+    font-size: 14px;
+    margin: 0;
 }
 
 .cart-items {
@@ -843,10 +866,10 @@ require_once APP_PATH . '/includes/header.php';
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 15px;
+    padding: 10px;
     background: #f9fafb;
-    border-radius: 8px;
-    margin-bottom: 10px;
+    border-radius: 6px;
+    margin-bottom: 8px;
 }
 
 .cart-item-info {
@@ -855,12 +878,13 @@ require_once APP_PATH . '/includes/header.php';
 
 .cart-item-name {
     font-weight: 600;
-    margin-bottom: 5px;
+    margin-bottom: 3px;
+    font-size: 12px;
 }
 
 .cart-item-price {
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: 11px;
 }
 
 .cart-item-actions {
@@ -879,14 +903,14 @@ require_once APP_PATH . '/includes/header.php';
 }
 
 .qty-input {
-    width: 60px;
-    height: 30px;
+    width: 50px;
+    height: 26px;
     border: 1px solid #e5e7eb;
     border-radius: 6px;
     text-align: center;
-    font-size: 14px;
+    font-size: 11px;
     font-weight: 600;
-    padding: 0 5px;
+    padding: 0 4px;
 }
 
 .qty-input:focus {
@@ -896,14 +920,14 @@ require_once APP_PATH . '/includes/header.php';
 }
 
 .qty-btn {
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     border: none;
     background: var(--primary-blue);
     color: white;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 18px;
+    font-size: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -912,37 +936,37 @@ require_once APP_PATH . '/includes/header.php';
 
 .cart-summary {
     border-top: 2px solid #e5e7eb;
-    padding-top: 20px;
+    padding-top: 12px;
 }
 
 .summary-row {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 10px;
-    font-size: 16px;
+    margin-bottom: 6px;
+    font-size: 12px;
 }
 
 .summary-row.total {
-    font-size: 24px;
+    font-size: 18px;
     font-weight: 700;
     color: var(--primary-blue);
-    padding-top: 10px;
+    padding-top: 8px;
     border-top: 2px solid #e5e7eb;
 }
 
 .action-buttons {
     display: flex;
-    gap: 10px;
-    margin-top: 20px;
+    gap: 8px;
+    margin-top: 12px;
 }
 
 .btn-action {
     flex: 1;
-    padding: 15px;
+    padding: 10px;
     border: none;
-    border-radius: 10px;
+    border-radius: 8px;
     font-weight: 600;
-    font-size: 16px;
+    font-size: 12px;
     cursor: pointer;
     transition: all 0.3s;
 }
@@ -959,7 +983,7 @@ require_once APP_PATH . '/includes/header.php';
 .btn-charge {
     background: var(--primary-blue);
     color: white;
-    font-size: 18px;
+    font-size: 13px;
 }
 
 .btn-charge:hover {
@@ -1126,9 +1150,11 @@ require_once APP_PATH . '/includes/header.php';
                 <button class="btn btn-sm touch-friendly" onclick="resetSale()" title="Reset Sale" style="background: #6b7280; color: white;">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
+                <?php if ($auth->hasPermission('tradeins.create')): ?>
                 <button class="btn btn-sm btn-warning touch-friendly" onclick="showTradeInModal()" title="Trade-In">
                     <i class="bi bi-arrow-repeat"></i>
                 </button>
+                <?php endif; ?>
                 <?php if ($currentShift): ?>
                 <button class="btn btn-sm btn-danger touch-friendly" onclick="showEndShiftModal()" title="End Shift">
                     <i class="bi bi-stop-circle"></i>
@@ -2473,6 +2499,15 @@ function showProductInfo(productId) {
                 const p = data.product;
                 const imageHtml = p.images ? `<img src="${JSON.parse(p.images)[0]}" style="max-width: 100px; max-height: 100px; margin-bottom: 15px;">` : '';
                 
+                let stockInOtherBranchesHtml = '';
+                if (data.stock_in_other_branches && data.stock_in_other_branches.length > 0) {
+                    stockInOtherBranchesHtml = '<hr><p><strong>Stock in Other Branches:</strong></p><ul style="margin-bottom: 0;">';
+                    data.stock_in_other_branches.forEach(branch => {
+                        stockInOtherBranchesHtml += `<li>${branch.branch_name}: <strong>${branch.stock || 0}</strong></li>`;
+                    });
+                    stockInOtherBranchesHtml += '</ul>';
+                }
+                
                 Swal.fire({
                     title: p.brand + ' ' + p.model,
                     html: `
@@ -2485,6 +2520,7 @@ function showProductInfo(productId) {
                             <p><strong>Category:</strong> ${p.category_name || 'No category'}</p>
                             <p><strong>Barcode:</strong> ${p.barcode || '-'}</p>
                             <p><strong>Tax / Charges:</strong> ${p.tax || '-'}</p>
+                            ${stockInOtherBranchesHtml}
                         </div>
                     `,
                     icon: 'info',

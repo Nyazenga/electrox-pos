@@ -1,0 +1,56 @@
+Subject: QR Code URL Verification - Test Environment 404 Error
+
+Good Day,
+
+Thank you so much for your assistance with the hash chain implementation. Your clarification has resolved our validation errors completely!
+
+We have successfully implemented the solution by using our previously generated hash for the previousReceiptHash parameter in subsequent receipts, rather than using ZIMRA's response hash. The ambiguity in the documentation regarding which hash to use has been resolved, and we are no longer receiving validation errors.
+
+However, we have encountered one remaining issue with QR code verification that we'd like your assistance with.
+
+QR Code URL Source Confirmation:
+We are generating QR codes using the qrUrl field from your getConfig() API response. For our test environment (device ID 30199), your API returns:
+- qrUrl: "https://fdmstest.zimra.co.zw"
+
+We are using this URL exactly as provided by your API, and following the QR code format specified in Section 11 of the documentation:
+- Format: qrUrl/deviceID(10digits)receiptDate(8digits:ddMMyyyy)receiptGlobalNo(10digits)receiptQrData(16chars)
+- receiptDate: Using the receiptDate field value from our receipt data (not serverDate), formatted as ddMMyyyy
+- receiptQrData: First 16 characters of MD5 hash from ReceiptDeviceSignature hexadecimal format value
+
+Example QR Code URL Generated:
+https://fdmstest.zimra.co.zw/00000301992312250000000093D92A2E6DE05E7E7A
+
+Components breakdown:
+- qrUrl: https://fdmstest.zimra.co.zw (from your getConfig() response)
+- deviceID: 0000030199 (10 digits)
+- receiptDate: 231225 (December 23, 2025, format: ddMMyyyy)
+- receiptGlobalNo: 0000000093 (10 digits)
+- receiptQrData: D92A2E6DE05E7E7A (16 characters from MD5 hash)
+
+Issue:
+When we attempt to scan the QR codes or directly access these URLs in a browser, we receive:
+- HTTP ERROR 404 - "This fdmstest.zimra.co.zw page can't be found."
+
+Questions:
+1. Is this expected behavior for the test environment? Are QR code URLs not yet active/accessible in the test environment?
+2. Should we be using a different qrUrl for the test environment, or is the qrUrl from getConfig() response the correct one to use?
+3. Is there an alternative method we can use to verify that our receipt data (e.g., for Fiscal Day No: 22) has been successfully received and stored by ZIMRA before we proceed to production testing?
+4. Are there any additional parameters or formatting requirements for the QR code URL that are not mentioned in Section 11 of the documentation?
+
+For your reference, I have attached three documents showing our test results:
+- Receipt #1-251223-0005 - ELECTROX-POS.pdf
+- Receipt_1-251223-0005.pdf
+- zimra_detailed_test_2025-12-23_13-50-21.txt (detailed log of our 3 consecutive test receipts showing exact payloads sent and responses received)
+
+We want to ensure our QR code implementation is correct before proceeding to production. Any guidance you can provide would be greatly appreciated.
+
+Thank you once again for your excellent support.
+
+Best regards,
+
+[Your Name]
+[Your Position]
+ELECTROX
++263 789 728 642
+info@electrox.co.zw
+

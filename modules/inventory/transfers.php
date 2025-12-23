@@ -66,7 +66,7 @@ require_once APP_PATH . '/includes/header.php';
                     <td>
                         <div class="btn-group btn-group-sm">
                             <a href="transfer_view.php?id=<?= $transfer['id'] ?>" class="btn btn-info" title="View"><i class="bi bi-eye"></i></a>
-                            <?php if ($auth->hasPermission('inventory.edit') && ($transfer['status'] ?? 'Pending') == 'Pending'): ?>
+                            <?php if ($auth->hasPermission('transfers.change_status') && ($transfer['status'] ?? 'Pending') == 'Pending'): ?>
                                 <button type="button" class="btn btn-success" onclick='approveTransfer(<?= $transfer['id'] ?>, <?= json_encode($transfer['transfer_number'] ?? '') ?>)' title="Approve">
                                     <i class="bi bi-check-circle"></i>
                                 </button>

@@ -15,7 +15,7 @@ if (!$auth->isLoggedIn()) {
     exit;
 }
 
-$auth->requirePermission('pos.access');
+$auth->requirePermission('drawer.report');
 
 $shiftId = intval($_GET['shift_id'] ?? 0);
 

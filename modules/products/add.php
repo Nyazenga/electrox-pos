@@ -11,11 +11,42 @@ $auth->requirePermission('products.create');
 $pageTitle = 'Add Product';
 
 $db = Database::getInstance();
+$primaryDb = Database::getPrimaryInstance();
 $categories = $db->getRows("SELECT * FROM product_categories ORDER BY name");
 $branches = $db->getRows("SELECT * FROM branches WHERE status = 'Active' ORDER BY branch_name");
 
 $error = '';
 $success = '';
+
+// Function to get applicable taxes for a branch
+function getApplicableTaxesForBranch($primaryDb, $branchId) {
+    if (!$branchId) {
+        return [];
+    }
+    
+    // Get device for branch
+    $device = $primaryDb->getRow(
+        "SELECT device_id FROM fiscal_devices WHERE branch_id = :branch_id AND is_active = 1 LIMIT 1",
+        [':branch_id' => $branchId]
+    );
+    
+    if (!$device) {
+        return [];
+    }
+    
+    // Get fiscal config
+    $config = $primaryDb->getRow(
+        "SELECT applicable_taxes FROM fiscal_config WHERE branch_id = :branch_id AND device_id = :device_id",
+        [':branch_id' => $branchId, ':device_id' => $device['device_id']]
+    );
+    
+    if (!$config || empty($config['applicable_taxes'])) {
+        return [];
+    }
+    
+    $taxes = json_decode($config['applicable_taxes'], true);
+    return is_array($taxes) ? $taxes : [];
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Handle image upload
@@ -70,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'selling_price' => $_POST['selling_price'] ?? 0,
         'reorder_level' => $_POST['reorder_level'] ?? 0,
         'branch_id' => $_POST['branch_id'] ?? $_SESSION['branch_id'],
+        'tax_id' => !empty($_POST['tax_id']) ? intval($_POST['tax_id']) : null,
         'quantity_in_stock' => $_POST['quantity_in_stock'] ?? 0,
         'status' => 'Active',
         'created_by' => $_SESSION['user_id'],
@@ -188,7 +220,7 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
                 <div class="col-md-6 mb-3">
                     <label class="form-label">Branch *</label>
-                    <select class="form-control" name="branch_id" required>
+                    <select class="form-control" name="branch_id" id="branchId" required>
                         <?php foreach ($branches as $branch): ?>
                             <option value="<?= $branch['id'] ?>" <?= $branch['id'] == $_SESSION['branch_id'] ? 'selected' : '' ?>><?= escapeHtml($branch['branch_name']) ?></option>
                         <?php endforeach; ?>
@@ -323,6 +355,33 @@ require_once APP_PATH . '/includes/header.php';
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Initial Stock</label>
                     <input type="number" class="form-control" name="quantity_in_stock" value="0">
+                </div>
+            </div>
+            
+            <!-- Tax Selection -->
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Applicable Tax</label>
+                    <select class="form-control" name="tax_id" id="taxId">
+                        <option value="">Select Tax (Optional)</option>
+                        <?php 
+                        // Get taxes for default branch (session branch or first branch)
+                        $defaultBranchId = $_SESSION['branch_id'] ?? ($branches[0]['id'] ?? null);
+                        $applicableTaxes = getApplicableTaxesForBranch($primaryDb, $defaultBranchId);
+                        foreach ($applicableTaxes as $tax): 
+                            $taxDisplay = sprintf(
+                                "%s (%.2f%%) - Code: %s",
+                                $tax['taxName'] ?? 'Tax',
+                                $tax['taxPercent'] ?? 0,
+                                $tax['taxCode'] ?? ''
+                            );
+                        ?>
+                            <option value="<?= $tax['taxID'] ?? '' ?>" data-branch="<?= $defaultBranchId ?>">
+                                <?= escapeHtml($taxDisplay) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small class="text-muted">Select the tax that applies to this product. This will be used when creating fiscal receipts.</small>
                 </div>
             </div>
             
@@ -573,6 +632,52 @@ function updateDynamicFields(categoryName) {
         if (manufacturerField) manufacturerField.style.display = 'block';
         if (batchNumberField) batchNumberField.style.display = 'block';
     }
+}
+
+// Load applicable taxes when branch changes
+const branchSelect = document.getElementById('branchId');
+const taxSelect = document.getElementById('taxId');
+
+if (branchSelect && taxSelect) {
+    branchSelect.addEventListener('change', function() {
+        const branchId = this.value;
+        if (!branchId) {
+            taxSelect.innerHTML = '<option value="">Select Tax (Optional)</option>';
+            return;
+        }
+        
+        // Show loading
+        taxSelect.innerHTML = '<option value="">Loading taxes...</option>';
+        taxSelect.disabled = true;
+        
+        // Fetch taxes for selected branch
+        fetch('<?= BASE_URL ?>ajax/get_applicable_taxes.php?branch_id=' + branchId)
+            .then(response => response.json())
+            .then(data => {
+                taxSelect.innerHTML = '<option value="">Select Tax (Optional)</option>';
+                
+                if (data.success && data.taxes && data.taxes.length > 0) {
+                    data.taxes.forEach(tax => {
+                        const option = document.createElement('option');
+                        option.value = tax.taxID;
+                        option.textContent = `${tax.taxName || 'Tax'} (${tax.taxPercent || 0}%) - Code: ${tax.taxCode || ''}`;
+                        taxSelect.appendChild(option);
+                    });
+                } else {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'No taxes available for this branch';
+                    taxSelect.appendChild(option);
+                }
+                
+                taxSelect.disabled = false;
+            })
+            .catch(error => {
+                console.error('Error loading taxes:', error);
+                taxSelect.innerHTML = '<option value="">Error loading taxes</option>';
+                taxSelect.disabled = false;
+            });
+    });
 }
 
 // Initialize on page load if category is already selected

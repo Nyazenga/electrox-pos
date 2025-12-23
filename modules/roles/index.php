@@ -68,8 +68,13 @@ require_once APP_PATH . '/includes/header.php';
                                     <?php if ($auth->hasPermission('roles.edit')): ?>
                                         <a href="edit.php?id=<?= $role['id'] ?>" class="btn btn-warning" title="Edit"><i class="bi bi-pencil"></i></a>
                                     <?php endif; ?>
-                                    <?php if ($auth->hasPermission('roles.delete') && !($role['is_system_role'] ?? 0)): ?>
-                                        <button onclick="deleteRole(<?= $role['id'] ?>)" class="btn btn-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                    <?php if ($auth->hasPermission('roles.delete')): ?>
+                                        <?php if (!($role['is_system_role'] ?? 0)): ?>
+                                            <button onclick="deleteRole(<?= $role['id'] ?>)" class="btn btn-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                                        <?php else: ?>
+                                            <button onclick="deleteRole(<?= $role['id'] ?>)" class="btn btn-danger" title="Delete" disabled><i class="bi bi-trash"></i></button>
+                                            <small class="text-muted d-block">System role</small>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                 </div>
                             </td>

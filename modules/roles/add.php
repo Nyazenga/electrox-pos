@@ -12,9 +12,24 @@ $pageTitle = 'Add Role';
 
 $db = Database::getInstance();
 
-// Get all permissions grouped by module
-$permissions = $db->getRows("SELECT * FROM permissions ORDER BY module, permission_name");
-if ($permissions === false) $permissions = [];
+// Get all permissions grouped by module - NO FILTERS, NO LIMITS
+// Force fresh query by using a direct query
+$permissions = $db->getRows("SELECT id, permission_key, permission_name, module, description FROM permissions ORDER BY module, permission_name");
+if ($permissions === false) {
+    $permissions = [];
+}
+
+// Verify we got all permissions - if less than 100, something is wrong
+if (count($permissions) < 100) {
+    // Try direct PDO query as fallback
+    try {
+        $pdo = $db->getConnection();
+        $stmt = $pdo->query("SELECT id, permission_key, permission_name, module, description FROM permissions ORDER BY module, permission_name");
+        $permissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        error_log("Error fetching permissions: " . $e->getMessage());
+    }
+}
 
 // Group permissions by module
 $permissionsByModule = [];
@@ -25,6 +40,9 @@ foreach ($permissions as $permission) {
     }
     $permissionsByModule[$module][] = $permission;
 }
+
+// Debug: Log module count
+error_log("DEBUG: Grouped into " . count($permissionsByModule) . " modules");
 
 require_once APP_PATH . '/includes/header.php';
 ?>
@@ -49,14 +67,17 @@ require_once APP_PATH . '/includes/header.php';
             </div>
 
             <div class="mb-4">
-                <label class="form-label fw-bold">Permissions *</label>
-                <div class="border rounded p-3" style="max-height: 500px; overflow-y: auto;">
+                <label class="form-label fw-bold">Permissions * <small class="text-muted">(Total: <?= count($permissions) ?> permissions across <?= count($permissionsByModule) ?> modules)</small></label>
+                <div class="border rounded p-3" style="max-height: 600px; overflow-y: auto;">
                     <?php if (empty($permissionsByModule)): ?>
                         <div class="alert alert-info">No permissions found. Please seed permissions first.</div>
                     <?php else: ?>
                         <?php foreach ($permissionsByModule as $module => $modulePermissions): ?>
                             <div class="mb-4">
-                                <h6 class="text-primary border-bottom pb-2 mb-3"><?= escapeHtml($module) ?></h6>
+                                <h6 class="text-primary border-bottom pb-2 mb-3">
+                                    <?= escapeHtml($module) ?> 
+                                    <span class="badge bg-secondary"><?= count($modulePermissions) ?> permission<?= count($modulePermissions) != 1 ? 's' : '' ?></span>
+                                </h6>
                                 <div class="row">
                                     <?php foreach ($modulePermissions as $permission): ?>
                                         <div class="col-md-6 mb-2">

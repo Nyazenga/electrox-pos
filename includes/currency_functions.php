@@ -1,16 +1,59 @@
 <?php
 /**
  * Currency Helper Functions
+ * Currencies are stored in the currencies table in each tenant database
  */
+
+/**
+ * Get all currencies from currencies table
+ */
+function getAllCurrencies($db = null) {
+    if (!$db) {
+        $db = Database::getInstance();
+    }
+    
+    try {
+        $currencies = $db->getRows("SELECT * FROM currencies ORDER BY is_base DESC, code ASC");
+        if ($currencies === false || !is_array($currencies)) {
+            return [];
+        }
+        return $currencies;
+    } catch (Exception $e) {
+        error_log("Error getting currencies: " . $e->getMessage());
+        return [];
+    }
+}
 
 /**
  * Get base currency
  */
 function getBaseCurrency($db = null) {
     if (!$db) {
-        $db = Database::getMainInstance(); // Use base database for currencies
+        $db = Database::getInstance();
     }
-    return $db->getRow("SELECT * FROM currencies WHERE is_base = 1 AND is_active = 1");
+    
+    try {
+        $currency = $db->getRow("SELECT * FROM currencies WHERE is_base = 1 AND is_active = 1 LIMIT 1");
+        if ($currency) {
+            return $currency;
+        }
+    } catch (Exception $e) {
+        error_log("Error getting base currency: " . $e->getMessage());
+    }
+    
+    // Fallback to default_currency setting
+    $defaultCode = getSetting('default_currency', 'USD');
+    return [
+        'id' => 1,
+        'code' => $defaultCode,
+        'name' => $defaultCode === 'USD' ? 'US Dollar' : ($defaultCode === 'ZWL' ? 'Zimbabwean Dollar' : $defaultCode),
+        'symbol' => $defaultCode === 'USD' ? '$' : ($defaultCode === 'ZWL' ? 'ZWL' : $defaultCode),
+        'symbol_position' => 'before',
+        'decimal_places' => 2,
+        'is_base' => 1,
+        'is_active' => 1,
+        'exchange_rate' => 1.000000
+    ];
 }
 
 /**
@@ -18,10 +61,19 @@ function getBaseCurrency($db = null) {
  */
 function getActiveCurrencies($db = null) {
     if (!$db) {
-        $db = Database::getMainInstance(); // Use base database for currencies
+        $db = Database::getInstance();
     }
-    $currencies = $db->getRows("SELECT * FROM currencies WHERE is_active = 1 ORDER BY is_base DESC, code ASC");
-    return $currencies !== false ? $currencies : [];
+    
+    try {
+        $currencies = $db->getRows("SELECT * FROM currencies WHERE is_active = 1 ORDER BY is_base DESC, code ASC");
+        if ($currencies === false || !is_array($currencies)) {
+            return [];
+        }
+        return $currencies;
+    } catch (Exception $e) {
+        error_log("Error getting active currencies: " . $e->getMessage());
+        return [];
+    }
 }
 
 /**
@@ -29,9 +81,19 @@ function getActiveCurrencies($db = null) {
  */
 function getCurrency($currencyId, $db = null) {
     if (!$db) {
-        $db = Database::getMainInstance(); // Use base database for currencies
+        $db = Database::getInstance();
     }
-    return $db->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $currencyId]);
+    
+    try {
+        $currency = $db->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $currencyId]);
+        if ($currency) {
+            return $currency;
+        }
+    } catch (Exception $e) {
+        error_log("Error getting currency by ID: " . $e->getMessage());
+    }
+    
+    return false;
 }
 
 /**
@@ -39,19 +101,26 @@ function getCurrency($currencyId, $db = null) {
  */
 function getCurrencyByCode($code, $db = null) {
     if (!$db) {
-        $db = Database::getMainInstance(); // Use base database for currencies
+        $db = Database::getInstance();
     }
-    return $db->getRow("SELECT * FROM currencies WHERE code = :code", [':code' => strtoupper($code)]);
+    
+    try {
+        $codeUpper = strtoupper($code);
+        $currency = $db->getRow("SELECT * FROM currencies WHERE UPPER(code) = :code", [':code' => $codeUpper]);
+        if ($currency) {
+            return $currency;
+        }
+    } catch (Exception $e) {
+        error_log("Error getting currency by code: " . $e->getMessage());
+    }
+    
+    return false;
 }
 
 /**
  * Get exchange rate from one currency to another
  */
 function getExchangeRate($fromCurrencyId, $toCurrencyId, $db = null) {
-    if (!$db) {
-        $db = Database::getMainInstance(); // Use base database for currencies
-    }
-    
     if ($fromCurrencyId == $toCurrencyId) {
         return 1.0;
     }
@@ -64,15 +133,15 @@ function getExchangeRate($fromCurrencyId, $toCurrencyId, $db = null) {
     }
     
     // If either is base currency
-    if ($fromCurrency['is_base']) {
-        return floatval($toCurrency['exchange_rate']);
+    if (isset($fromCurrency['is_base']) && $fromCurrency['is_base'] == 1) {
+        return floatval($toCurrency['exchange_rate'] ?? 1.0);
     }
-    if ($toCurrency['is_base']) {
-        return 1.0 / floatval($fromCurrency['exchange_rate']);
+    if (isset($toCurrency['is_base']) && $toCurrency['is_base'] == 1) {
+        return 1.0 / floatval($fromCurrency['exchange_rate'] ?? 1.0);
     }
     
     // Convert through base currency
-    $baseRate = floatval($toCurrency['exchange_rate']) / floatval($fromCurrency['exchange_rate']);
+    $baseRate = floatval($toCurrency['exchange_rate'] ?? 1.0) / floatval($fromCurrency['exchange_rate'] ?? 1.0);
     return $baseRate;
 }
 
@@ -98,12 +167,16 @@ function formatCurrencyAmount($amount, $currencyId = null, $db = null) {
         return number_format($amount, 2);
     }
     
-    $formatted = number_format($amount, $currency['decimal_places']);
+    $decimalPlaces = $currency['decimal_places'] ?? 2;
+    $formatted = number_format($amount, $decimalPlaces);
     
-    if ($currency['symbol_position'] === 'before') {
-        return $currency['symbol'] . $formatted;
+    $symbolPosition = $currency['symbol_position'] ?? 'before';
+    $symbol = $currency['symbol'] ?? '';
+    
+    if ($symbolPosition === 'before') {
+        return $symbol . $formatted;
     } else {
-        return $formatted . ' ' . $currency['symbol'];
+        return $formatted . ' ' . $symbol;
     }
 }
 
@@ -112,7 +185,7 @@ function formatCurrencyAmount($amount, $currencyId = null, $db = null) {
  */
 function getCurrentExchangeRate($currencyId, $db = null) {
     if (!$db) {
-        $db = Database::getMainInstance(); // Use base database for currencies
+        $db = Database::getInstance();
     }
     
     $currency = getCurrency($currencyId, $db);
@@ -120,10 +193,9 @@ function getCurrentExchangeRate($currencyId, $db = null) {
         return 1.0;
     }
     
-    if ($currency['is_base']) {
+    if (isset($currency['is_base']) && $currency['is_base'] == 1) {
         return 1.0;
     }
     
-    return floatval($currency['exchange_rate']);
+    return floatval($currency['exchange_rate'] ?? 1.0);
 }
-

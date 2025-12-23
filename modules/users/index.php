@@ -13,6 +13,16 @@ $pageTitle = 'Users';
 $db = Database::getInstance();
 $users = $db->getRows("SELECT u.*, r.name as role_name, b.branch_name FROM users u LEFT JOIN roles r ON u.role_id = r.id LEFT JOIN branches b ON u.branch_id = b.id WHERE u.deleted_at IS NULL ORDER BY u.created_at DESC");
 
+// Get permission counts for each user
+foreach ($users as &$user) {
+    $permCount = $db->getCount(
+        "SELECT COUNT(*) FROM role_permissions rp WHERE rp.role_id = :role_id",
+        [':role_id' => $user['role_id'] ?? 0]
+    );
+    $user['permission_count'] = $permCount !== false ? $permCount : 0;
+}
+unset($user);
+
 require_once APP_PATH . '/includes/header.php';
 ?>
 
@@ -31,6 +41,7 @@ require_once APP_PATH . '/includes/header.php';
                     <th>Name</th>
                     <th>Email</th>
                     <th>Role</th>
+                    <th>Permissions</th>
                     <th>Branch</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -41,7 +52,12 @@ require_once APP_PATH . '/includes/header.php';
                     <tr>
                         <td><?= escapeHtml($user['first_name'] . ' ' . $user['last_name']) ?></td>
                         <td><?= escapeHtml($user['email']) ?></td>
-                        <td><?= escapeHtml($user['role_name']) ?></td>
+                        <td>
+                            <span class="badge bg-info"><?= escapeHtml($user['role_name'] ?? 'N/A') ?></span>
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary"><?= $user['permission_count'] ?? 0 ?> permissions</span>
+                        </td>
                         <td><?= escapeHtml($user['branch_name'] ?? 'N/A') ?></td>
                         <td><span class="badge bg-<?= $user['status'] == 'active' ? 'success' : 'secondary' ?>"><?= escapeHtml(ucfirst($user['status'])) ?></span></td>
                         <td>

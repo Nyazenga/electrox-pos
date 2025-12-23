@@ -154,25 +154,16 @@
                 e.preventDefault();
                 const parent = this.parentElement;
                 const isActive = parent.classList.contains('active');
-                const submenu = parent.querySelector('.submenu');
-                const hasActiveChild = submenu && submenu.querySelector('a.active');
                 
-                // Close all other submenus (except if they have active children)
+                // Close all other submenus
                 document.querySelectorAll('.sidebar-menu li.has-submenu').forEach(function(li) {
                     if (li !== parent) {
-                        const otherSubmenu = li.querySelector('.submenu');
-                        const otherHasActiveChild = otherSubmenu && otherSubmenu.querySelector('a.active');
-                        // Only close if it doesn't have an active child
-                        if (!otherHasActiveChild) {
-                            li.classList.remove('active');
-                        }
+                        li.classList.remove('active');
                     }
                 });
                 
-                // Toggle current submenu (but keep it open if it has an active child)
-                if (hasActiveChild) {
-                    parent.classList.add('active');
-                } else if (isActive) {
+                // Toggle current submenu - always toggle regardless of active child
+                if (isActive) {
                     parent.classList.remove('active');
                 } else {
                     parent.classList.add('active');

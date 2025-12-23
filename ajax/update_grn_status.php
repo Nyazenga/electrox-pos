@@ -7,7 +7,7 @@ require_once APP_PATH . '/includes/functions.php';
 initSession();
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('inventory.edit');
+$auth->requirePermission('grn.change_status');
 
 header('Content-Type: application/json');
 error_reporting(0);

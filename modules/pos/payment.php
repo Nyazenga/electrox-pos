@@ -6,7 +6,10 @@ require_once APP_PATH . '/includes/functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('pos.access');
+// Allow if user can access POS (pos.view or pos.create_sale)
+if (!$auth->hasPermission('pos.view') && !$auth->hasPermission('pos.create_sale')) {
+    $auth->requirePermission('pos.view'); // This will show access denied
+}
 
 initSession();
 
@@ -26,9 +29,9 @@ $branchId = $_SESSION['branch_id'] ?? null;
 // Load currency functions
 require_once APP_PATH . '/includes/currency_functions.php';
 
-// Get currencies (always from base database, not tenant database)
-$currencies = getActiveCurrencies(null); // Pass null to use getMainInstance() in function
-$baseCurrency = getBaseCurrency(null); // Pass null to use getMainInstance() in function
+// Get currencies from tenant database (each tenant has their own currencies)
+$currencies = getActiveCurrencies(null); // Uses tenant database
+$baseCurrency = getBaseCurrency(null); // Uses tenant database
 
 // Calculate totals
 $subtotal = 0;
@@ -68,7 +71,7 @@ require_once APP_PATH . '/includes/header.php';
     flex: 1;
     background: white;
     border-radius: 12px;
-    padding: 30px;
+    padding: 20px;
     display: flex;
     flex-direction: column;
 }
@@ -77,42 +80,42 @@ require_once APP_PATH . '/includes/header.php';
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 30px;
+    margin-bottom: 20px;
 }
 
 .total-display {
     text-align: center;
-    margin: 40px 0;
+    margin: 24px 0;
 }
 
 .total-amount {
-    font-size: 72px;
+    font-size: 48px;
     font-weight: 700;
     color: var(--primary-blue);
     line-height: 1;
 }
 
 .total-label {
-    font-size: 18px;
+    font-size: 14px;
     color: var(--text-muted);
-    margin-top: 10px;
+    margin-top: 8px;
 }
 
 .payment-methods {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 15px;
-    margin-bottom: 30px;
+    gap: 10px;
+    margin-bottom: 20px;
 }
 
 .payment-method-btn {
-    padding: 20px;
-    border: 3px solid #e5e7eb;
-    border-radius: 12px;
+    padding: 14px;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
     background: white;
     cursor: pointer;
     transition: all 0.3s;
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 600;
     text-align: center;
 }
@@ -129,38 +132,38 @@ require_once APP_PATH . '/includes/header.php';
 }
 
 .amount-due {
-    margin-bottom: 30px;
+    margin-bottom: 20px;
 }
 
 .amount-due-label {
-    font-size: 14px;
+    font-size: 12px;
     color: var(--text-muted);
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 .amount-due-value {
-    font-size: 32px;
+    font-size: 24px;
     font-weight: 600;
     color: var(--text-dark);
 }
 
 .keypad {
-    margin-bottom: 30px;
+    margin-bottom: 20px;
 }
 
 .keypad-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
-    margin-bottom: 10px;
+    gap: 8px;
+    margin-bottom: 8px;
 }
 
 .keypad-btn {
-    padding: 20px;
+    padding: 16px;
     border: 2px solid #e5e7eb;
-    border-radius: 10px;
+    border-radius: 8px;
     background: white;
-    font-size: 24px;
+    font-size: 18px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.3s;
@@ -178,13 +181,13 @@ require_once APP_PATH . '/includes/header.php';
 
 .charge-btn {
     width: 100%;
-    padding: 25px;
+    padding: 16px;
     background: var(--primary-blue);
     color: white;
     border: none;
-    border-radius: 12px;
-    font-size: 24px;
-    font-weight: 700;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
     cursor: pointer;
     transition: all 0.3s;
 }
@@ -204,9 +207,10 @@ require_once APP_PATH . '/includes/header.php';
 .change-display {
     background: #f0fdf4;
     border: 2px solid #22c55e;
-    border-radius: 10px;
-    padding: 15px;
+    border-radius: 8px;
+    padding: 12px;
     text-align: center;
+    margin-bottom: 20px;
 }
 
 .split-payment-section {
@@ -223,20 +227,20 @@ require_once APP_PATH . '/includes/header.php';
 }
 
 .split-count {
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 600;
-    min-width: 100px;
+    min-width: 80px;
     text-align: center;
 }
 
 .split-btn {
-    width: 50px;
-    height: 50px;
+    width: 40px;
+    height: 40px;
     border: 2px solid var(--primary-blue);
     background: white;
     color: var(--primary-blue);
     border-radius: 8px;
-    font-size: 24px;
+    font-size: 18px;
     cursor: pointer;
 }
 
@@ -258,9 +262,10 @@ require_once APP_PATH . '/includes/header.php';
 .split-payment-item select,
 .split-payment-item input {
     flex: 1;
-    padding: 12px;
+    padding: 10px;
     border: 2px solid #e5e7eb;
     border-radius: 8px;
+    font-size: 13px;
 }
 
 .split-payment-item .btn {
@@ -269,13 +274,39 @@ require_once APP_PATH . '/includes/header.php';
 
 /* ========== MOBILE RESPONSIVE STYLES ========== */
 
+/* Small Laptop Screens (1024px - 1366px) */
+@media (max-width: 1366px) and (min-width: 1025px) {
+    .total-amount {
+        font-size: 42px;
+    }
+    
+    .amount-due-value {
+        font-size: 22px;
+    }
+    
+    .payment-method-btn {
+        padding: 12px;
+        font-size: 13px;
+    }
+    
+    .keypad-btn {
+        padding: 14px;
+        font-size: 16px;
+    }
+    
+    .charge-btn {
+        padding: 14px;
+        font-size: 15px;
+    }
+}
+
 /* Tablet and below (max-width: 1024px) */
 @media (max-width: 1024px) {
     .payment-container {
         flex-direction: column;
         height: auto;
         min-height: calc(100vh - 80px);
-        gap: 15px;
+        gap: 12px;
     }
     
     .payment-left {
@@ -283,20 +314,45 @@ require_once APP_PATH . '/includes/header.php';
         order: 2;
         max-height: 50vh;
         overflow-y: auto;
+        padding: 16px;
     }
     
     .payment-right {
         order: 1;
-        padding: 20px;
+        padding: 16px;
     }
     
     .total-amount {
-        font-size: 56px;
+        font-size: 36px;
+    }
+    
+    .total-label {
+        font-size: 12px;
     }
     
     .payment-methods {
         grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+    
+    .payment-method-btn {
+        padding: 12px;
+        font-size: 13px;
+    }
+    
+    .amount-due-value {
+        font-size: 20px;
+    }
+    
+    .keypad-btn {
+        padding: 12px;
+        font-size: 16px;
+    }
+    
+    .charge-btn {
+        padding: 14px;
+        font-size: 15px;
     }
 }
 
@@ -314,7 +370,7 @@ require_once APP_PATH . '/includes/header.php';
         width: 100%;
         order: 2;
         border-radius: 0;
-        padding: 15px;
+        padding: 12px;
         max-height: none;
         position: relative;
     }
@@ -323,126 +379,297 @@ require_once APP_PATH . '/includes/header.php';
         order: 1;
         width: 100%;
         border-radius: 0;
-        padding: 20px 15px;
+        padding: 16px 12px;
         min-height: auto;
     }
     
     .payment-header {
         flex-direction: column;
-        gap: 15px;
+        gap: 12px;
         align-items: flex-start;
-        margin-bottom: 20px;
+        margin-bottom: 16px;
     }
     
     .payment-header .btn {
         width: 100%;
         justify-content: center;
+        font-size: 13px;
+        padding: 8px 12px;
     }
     
     .total-display {
-        margin: 20px 0;
+        margin: 16px 0;
     }
     
     .total-amount {
-        font-size: 48px;
+        font-size: 32px;
     }
     
     .total-label {
-        font-size: 16px;
+        font-size: 11px;
     }
     
     .payment-methods {
         grid-template-columns: repeat(2, 1fr);
-        gap: 10px;
-        margin-bottom: 20px;
+        gap: 8px;
+        margin-bottom: 16px;
     }
     
     .payment-method-btn {
-        padding: 15px;
-        font-size: 16px;
+        padding: 12px 10px;
+        font-size: 12px;
+    }
+    
+    .amount-due {
+        margin-bottom: 16px;
+    }
+    
+    .amount-due-label {
+        font-size: 11px;
     }
     
     .amount-due-value {
-        font-size: 28px;
+        font-size: 20px;
+    }
+    
+    .keypad {
+        margin-bottom: 16px;
     }
     
     .keypad-row {
         grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
-        margin-bottom: 8px;
+        gap: 6px;
+        margin-bottom: 6px;
     }
     
     .keypad-btn {
-        padding: 18px 12px;
-        font-size: 20px;
+        padding: 14px 10px;
+        font-size: 16px;
     }
     
     .charge-btn {
-        padding: 20px;
-        font-size: 20px;
+        padding: 14px;
+        font-size: 14px;
+    }
+    
+    .change-display {
+        padding: 10px;
+        margin-bottom: 16px;
+    }
+    
+    .change-display .amount-due-value {
+        font-size: 18px;
     }
     
     .split-controls {
         flex-wrap: wrap;
-        gap: 10px;
+        gap: 8px;
+    }
+    
+    .split-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 16px;
+    }
+    
+    .split-count {
+        font-size: 12px;
+        min-width: 70px;
     }
     
     .split-payment-item {
         flex-direction: column;
         align-items: stretch;
-        gap: 10px;
+        gap: 8px;
+        padding: 12px;
     }
     
     .split-payment-item select,
     .split-payment-item input {
         width: 100%;
+        font-size: 13px;
+        padding: 10px;
     }
 }
 
 /* Small Mobile (max-width: 480px) */
 @media (max-width: 480px) {
+    .payment-left {
+        padding: 10px;
+    }
+    
     .payment-right {
-        padding: 15px 10px;
+        padding: 12px 10px;
+    }
+    
+    .payment-header {
+        margin-bottom: 12px;
+        gap: 10px;
+    }
+    
+    .total-display {
+        margin: 12px 0;
     }
     
     .total-amount {
-        font-size: 40px;
+        font-size: 28px;
+    }
+    
+    .total-label {
+        font-size: 10px;
+        margin-top: 6px;
     }
     
     .payment-methods {
-        grid-template-columns: 1fr;
-        gap: 8px;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+        margin-bottom: 14px;
     }
     
     .payment-method-btn {
-        padding: 12px;
-        font-size: 14px;
+        padding: 10px 8px;
+        font-size: 11px;
+    }
+    
+    .amount-due {
+        margin-bottom: 14px;
+    }
+    
+    .amount-due-label {
+        font-size: 10px;
+        margin-bottom: 6px;
     }
     
     .amount-due-value {
-        font-size: 24px;
+        font-size: 18px;
+    }
+    
+    .keypad {
+        margin-bottom: 14px;
+    }
+    
+    .keypad-row {
+        gap: 5px;
+        margin-bottom: 5px;
     }
     
     .keypad-btn {
-        padding: 15px 8px;
-        font-size: 18px;
+        padding: 12px 8px;
+        font-size: 15px;
     }
     
     .charge-btn {
-        padding: 18px;
-        font-size: 18px;
+        padding: 12px;
+        font-size: 13px;
+    }
+    
+    .change-display {
+        padding: 8px;
+        margin-bottom: 14px;
+    }
+    
+    .change-display .amount-due-label {
+        font-size: 10px;
+    }
+    
+    .change-display .amount-due-value {
+        font-size: 16px;
     }
     
     .cart-item {
-        font-size: 14px;
+        font-size: 12px;
+        margin-bottom: 10px;
     }
     
     .cart-item-name {
-        font-size: 14px;
+        font-size: 12px;
     }
     
     .cart-item-price {
+        font-size: 11px;
+    }
+    
+    .split-payment-item {
+        padding: 10px;
+    }
+    
+    .split-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+    }
+    
+    .split-count {
+        font-size: 11px;
+        min-width: 60px;
+    }
+}
+
+/* Extra Small Mobile (max-width: 360px) */
+@media (max-width: 360px) {
+    .payment-left {
+        padding: 8px;
+    }
+    
+    .payment-right {
+        padding: 10px 8px;
+    }
+    
+    .total-amount {
+        font-size: 24px;
+    }
+    
+    .payment-method-btn {
+        padding: 8px 6px;
+        font-size: 10px;
+    }
+    
+    .amount-due-value {
+        font-size: 16px;
+    }
+    
+    .keypad-btn {
+        padding: 10px 6px;
+        font-size: 14px;
+    }
+    
+    .charge-btn {
+        padding: 10px;
         font-size: 12px;
+    }
+    
+    .split-payment-item select,
+    .split-payment-item input {
+        font-size: 12px;
+        padding: 8px;
+    }
+}
+
+/* Form element scaling */
+@media (max-width: 768px) {
+    .form-select-lg {
+        font-size: 14px !important;
+        padding: 10px 12px !important;
+    }
+    
+    .form-label.fw-bold {
+        font-size: 13px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .form-select-lg {
+        font-size: 13px !important;
+        padding: 8px 10px !important;
+    }
+    
+    .form-label.fw-bold {
+        font-size: 12px !important;
+    }
+    
+    .form-control-lg {
+        font-size: 13px !important;
+        padding: 8px 10px !important;
     }
 }
 
@@ -475,15 +702,19 @@ require_once APP_PATH . '/includes/header.php';
             </button>
         </div>
         
-        <div class="cart-items" style="flex: 1; overflow-y: auto; margin-bottom: 20px;">
-            <?php foreach ($cart as $item): ?>
-                <div class="cart-item mb-3">
+        <div class="cart-items" style="flex: 1; overflow-y: auto; margin-bottom: 20px;" id="cartItemsContainer">
+            <?php foreach ($cart as $index => $item): ?>
+                <div class="cart-item mb-3" data-item-index="<?= $index ?>">
                     <div class="cart-item-info">
                         <div class="cart-item-name"><?= escapeHtml($item['name']) ?></div>
-                        <div class="cart-item-price"><?= formatCurrency($item['price']) ?> × <?= $item['quantity'] ?></div>
+                        <div class="cart-item-price" data-base-price="<?= $item['price'] ?>" data-quantity="<?= $item['quantity'] ?>">
+                            <?= formatCurrency($item['price']) ?> × <?= $item['quantity'] ?>
+                        </div>
                     </div>
                     <div class="text-end">
-                        <strong><?= formatCurrency($item['price'] * $item['quantity']) ?></strong>
+                        <strong class="cart-item-total" data-base-total="<?= $item['price'] * $item['quantity'] ?>">
+                            <?= formatCurrency($item['price'] * $item['quantity']) ?>
+                        </strong>
                     </div>
                 </div>
             <?php endforeach; ?>
@@ -492,17 +723,17 @@ require_once APP_PATH . '/includes/header.php';
         <div class="border-top pt-3">
             <div class="d-flex justify-content-between mb-2">
                 <span>Subtotal:</span>
-                <strong><?= formatCurrency($subtotal) ?></strong>
+                <strong id="orderSubtotal" data-base-amount="<?= $subtotal ?>"><?= formatCurrency($subtotal) ?></strong>
             </div>
             <?php if ($discountAmount > 0): ?>
                 <div class="d-flex justify-content-between mb-2 text-danger">
                     <span>Discount:</span>
-                    <strong>-<?= formatCurrency($discountAmount) ?></strong>
+                    <strong id="orderDiscount" data-base-amount="<?= $discountAmount ?>">-<?= formatCurrency($discountAmount) ?></strong>
                 </div>
             <?php endif; ?>
             <div class="d-flex justify-content-between pt-2 border-top">
                 <span class="fs-5 fw-bold">Total Charge:</span>
-                <span class="fs-5 fw-bold text-primary"><?= formatCurrency($total) ?></span>
+                <span class="fs-5 fw-bold text-primary" id="orderTotal" data-base-amount="<?= $total ?>"><?= formatCurrency($total) ?></span>
             </div>
         </div>
     </div>
@@ -641,6 +872,10 @@ let baseCurrencyId = <?= $baseCurrency ? $baseCurrency['id'] : 'null' ?>;
 let currencies = <?= json_encode($currencies) ?>;
 let splitPayments = [];
 let splitCount = 2;
+let cartData = <?= json_encode($cart) ?>;
+let orderSubtotal = <?= $subtotal ?>;
+let orderDiscount = <?= $discountAmount ?>;
+let orderTotal = <?= $total ?>;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -694,8 +929,67 @@ function updateCurrencyDisplay() {
         rateInfo.textContent = 'Base currency';
     }
     
+    // Update order summary with selected currency
+    updateOrderSummary();
+    
     // Update amount display
     updateAmountDue();
+}
+
+function updateOrderSummary() {
+    const currency = getCurrencyById(selectedCurrencyId || baseCurrencyId);
+    if (!currency) return;
+    
+    // Update cart items
+    document.querySelectorAll('.cart-item').forEach(itemEl => {
+        const priceEl = itemEl.querySelector('.cart-item-price');
+        const totalEl = itemEl.querySelector('.cart-item-total');
+        
+        if (priceEl && totalEl) {
+            const basePrice = parseFloat(priceEl.getAttribute('data-base-price')) || 0;
+            const quantity = parseFloat(priceEl.getAttribute('data-quantity')) || 1;
+            const baseTotal = parseFloat(totalEl.getAttribute('data-base-total')) || 0;
+            
+            // Convert to selected currency
+            const convertedPrice = convertFromBase(basePrice, selectedCurrencyId || baseCurrencyId);
+            const convertedTotal = convertFromBase(baseTotal, selectedCurrencyId || baseCurrencyId);
+            
+            // Update display
+            priceEl.textContent = formatCurrencyAmount(convertedPrice, selectedCurrencyId || baseCurrencyId) + ' × ' + quantity;
+            totalEl.textContent = formatCurrencyAmount(convertedTotal, selectedCurrencyId || baseCurrencyId);
+        }
+    });
+    
+    // Update subtotal
+    const subtotalEl = document.getElementById('orderSubtotal');
+    if (subtotalEl) {
+        const baseSubtotal = parseFloat(subtotalEl.getAttribute('data-base-amount')) || 0;
+        const convertedSubtotal = convertFromBase(baseSubtotal, selectedCurrencyId || baseCurrencyId);
+        subtotalEl.textContent = formatCurrencyAmount(convertedSubtotal, selectedCurrencyId || baseCurrencyId);
+    }
+    
+    // Update discount
+    const discountEl = document.getElementById('orderDiscount');
+    if (discountEl) {
+        const baseDiscount = parseFloat(discountEl.getAttribute('data-base-amount')) || 0;
+        const convertedDiscount = convertFromBase(baseDiscount, selectedCurrencyId || baseCurrencyId);
+        discountEl.textContent = '-' + formatCurrencyAmount(convertedDiscount, selectedCurrencyId || baseCurrencyId);
+    }
+    
+    // Update total
+    const totalEl = document.getElementById('orderTotal');
+    if (totalEl) {
+        const baseTotal = parseFloat(totalEl.getAttribute('data-base-amount')) || 0;
+        const convertedTotal = convertFromBase(baseTotal, selectedCurrencyId || baseCurrencyId);
+        totalEl.textContent = formatCurrencyAmount(convertedTotal, selectedCurrencyId || baseCurrencyId);
+    }
+    
+    // Update total amount display (the big number in payment section)
+    const totalAmountDisplay = document.getElementById('totalAmountDisplay');
+    if (totalAmountDisplay) {
+        const convertedTotal = convertFromBase(totalAmount, selectedCurrencyId || baseCurrencyId);
+        totalAmountDisplay.textContent = parseFloat(convertedTotal).toFixed(currency.decimal_places || 2);
+    }
 }
 
 function selectPaymentMethod(method) {
@@ -1204,6 +1498,57 @@ function processCharge() {
     }]);
 }
 
+// Helper function to format ZIMRA error messages for display
+function formatZimraError(errorMessage) {
+    if (!errorMessage) return 'Unknown error';
+    
+    // If it's a ZIMRA API Error, format it nicely
+    if (errorMessage.includes('ZIMRA API Error')) {
+        // Extract error code and message
+        const match = errorMessage.match(/ZIMRA API Error \(([^)]+)\): ([^|]+)/);
+        if (match) {
+            const errorCode = escapeHtml(match[1]);
+            const errorMsg = escapeHtml(match[2].trim());
+            let formatted = '<strong>Error Code:</strong> ' + errorCode + '<br><strong>Message:</strong> ' + errorMsg;
+            
+            // Extract validation errors if present
+            const validationMatch = errorMessage.match(/Validation errors: (.+?)(?:\s*\|\s*Full response:|$)/);
+            if (validationMatch) {
+                try {
+                    const validationErrors = JSON.parse(validationMatch[1]);
+                    formatted += '<br><br><strong>Validation Errors:</strong><br>';
+                    formatted += '<pre style="margin: 5px 0; white-space: pre-wrap;">' + escapeHtml(JSON.stringify(validationErrors, null, 2)) + '</pre>';
+                } catch (e) {
+                    formatted += '<br><br><strong>Validation Errors:</strong> ' + escapeHtml(validationMatch[1]);
+                }
+            }
+            
+            // Extract full response if present (truncated)
+            const fullResponseMatch = errorMessage.match(/Full response: (.+)$/);
+            if (fullResponseMatch) {
+                let fullResponse = fullResponseMatch[1];
+                if (fullResponse.length > 500) {
+                    fullResponse = fullResponse.substring(0, 500) + '... (truncated)';
+                }
+                formatted += '<br><br><strong>Full Response:</strong><br>';
+                formatted += '<pre style="margin: 5px 0; white-space: pre-wrap; word-break: break-all;">' + escapeHtml(fullResponse) + '</pre>';
+            }
+            
+            return formatted;
+        }
+    }
+    
+    // Return escaped if not a ZIMRA error
+    return escapeHtml(errorMessage);
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 function processPayment(payments) {
     Swal.fire({
         title: 'Processing Payment...',
@@ -1232,20 +1577,95 @@ function processPayment(payments) {
     })
     .then(data => {
         if (data.success) {
-            // Clear session
-            fetch('<?= BASE_URL ?>ajax/clear_pos_cart.php');
-            
-            // Print receipt automatically
-            if (data.receipt_id) {
-                // Open receipt in new window for printing with print parameter
-                const receiptWindow = window.open('<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1', '_blank');
-                
-                // Redirect to index.php (no success message - will show when user clicks back from receipt)
-                window.location.href = 'index.php';
-            } else {
-                Swal.fire('Success', 'Payment processed successfully', 'success').then(() => {
-                    window.location.href = 'index.php';
+            // Check for fiscalization error first
+            if (data.fiscalization_error) {
+                // Sale succeeded but fiscalization failed - show warning
+                const errorMsg = formatZimraError(data.fiscalization_error);
+                Swal.fire({
+                    title: 'Sale Completed - Fiscalization Warning',
+                    html: '<div style="text-align: left;">' +
+                          '<p><strong>The sale was processed successfully, but fiscalization with ZIMRA failed:</strong></p>' +
+                          '<div style="background: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 10px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto;">' +
+                          errorMsg +
+                          '</div>' +
+                          '<p style="margin-top: 15px; color: #856404;"><strong>⚠️ Important:</strong> The receipt was created but may not be valid for tax purposes. Please contact support or try to fiscalize manually.</p>' +
+                          '</div>',
+                    icon: 'warning',
+                    confirmButtonText: 'OK',
+                    width: '600px',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false
+                }).then(() => {
+                    // Clear session
+                    fetch('<?= BASE_URL ?>ajax/clear_pos_cart.php');
+                    
+                    // Print receipt automatically
+                    if (data.receipt_id) {
+                        // Open receipt in new window for printing with print parameter
+                        const receiptWindow = window.open('<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1', '_blank');
+                        
+                        // Redirect to index.php
+                        window.location.href = 'index.php';
+                    } else {
+                        window.location.href = 'index.php';
+                    }
                 });
+            } else {
+                // No fiscalization error - proceed normally
+                // Clear session
+                fetch('<?= BASE_URL ?>ajax/clear_pos_cart.php');
+                
+                // Print receipt automatically
+                if (data.receipt_id) {
+                    // Show success message first (especially if fiscalization was successful)
+                    const fiscalizedMsg = data.fiscal_details && data.fiscal_details.fiscalized 
+                        ? '<p style="color: #28a745;"><strong>✓ Receipt fiscalized successfully with ZIMRA</strong></p>' 
+                        : '';
+                    
+                    // Open receipt window immediately (before SweetAlert to avoid popup blocker)
+                    const receiptWindow = window.open('<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1', '_blank');
+                    
+                    // Check if window was blocked
+                    if (!receiptWindow || receiptWindow.closed || typeof receiptWindow.closed == 'undefined') {
+                        // Popup was blocked - show message and redirect to receipt page
+                        Swal.fire({
+                            title: 'Success!',
+                            html: (data.fiscal_details && data.fiscal_details.fiscalized 
+                                ? '<p style="color: #28a745;"><strong>✓ Receipt fiscalized successfully with ZIMRA</strong></p>' 
+                                : '') + '<p>Payment processed successfully. Please allow popups to view receipt automatically, or click OK to view receipt.</p>',
+                            icon: 'success',
+                            confirmButtonText: 'View Receipt',
+                            showCancelButton: true,
+                            cancelButtonText: 'Continue'
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                window.location.href = '<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1';
+                            } else {
+                                window.location.href = 'index.php';
+                            }
+                        });
+                    } else {
+                        // Window opened successfully
+                        Swal.fire({
+                            title: 'Success!',
+                            html: (data.fiscal_details && data.fiscal_details.fiscalized 
+                                ? '<p style="color: #28a745;"><strong>✓ Receipt fiscalized successfully with ZIMRA</strong></p>' 
+                                : '') + '<p>Payment processed successfully. Receipt is opening...</p>',
+                            icon: 'success',
+                            timer: 2000,
+                            timerProgressBar: true,
+                            showConfirmButton: false,
+                            allowOutsideClick: true
+                        }).then(() => {
+                            // Redirect to index.php
+                            window.location.href = 'index.php';
+                        });
+                    }
+                } else {
+                    Swal.fire('Success', 'Payment processed successfully', 'success').then(() => {
+                        window.location.href = 'index.php';
+                    });
+                }
             }
         } else {
             Swal.fire({

@@ -61,7 +61,14 @@ require_once APP_PATH . '/includes/header.php';
                     </tr>
                     <tr>
                         <th>Role:</th>
-                        <td><span class="badge bg-info"><?= escapeHtml($user['role_name'] ?? 'N/A') ?></span></td>
+                        <td>
+                            <span class="badge bg-info"><?= escapeHtml($user['role_name'] ?? 'N/A') ?></span>
+                            <?php if ($auth->hasPermission('users.edit')): ?>
+                                <a href="edit.php?id=<?= $user['id'] ?>" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="bi bi-pencil"></i> Change Role
+                                </a>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                     <tr>
                         <th>Branch:</th>
@@ -84,6 +91,67 @@ require_once APP_PATH . '/includes/header.php';
         </div>
     </div>
 </div>
+
+<?php
+// Get user's role permissions
+$userPermissions = [];
+if ($user['role_id']) {
+    $userPerms = $db->getRows(
+        "SELECT p.* FROM permissions p 
+         INNER JOIN role_permissions rp ON p.id = rp.permission_id 
+         WHERE rp.role_id = :role_id 
+         ORDER BY p.module, p.permission_name",
+        [':role_id' => $user['role_id']]
+    );
+    if ($userPerms !== false) {
+        $userPermissions = $userPerms;
+    }
+}
+
+// Group permissions by module
+$permissionsByModule = [];
+foreach ($userPermissions as $permission) {
+    $module = $permission['module'] ?? 'Other';
+    if (!isset($permissionsByModule[$module])) {
+        $permissionsByModule[$module] = [];
+    }
+    $permissionsByModule[$module][] = $permission;
+}
+?>
+
+<?php if (!empty($permissionsByModule)): ?>
+    <div class="card mt-4">
+        <div class="card-header bg-info text-white">
+            <h5 class="mb-0">User Permissions (via Role: <?= escapeHtml($user['role_name'] ?? 'N/A') ?>)</h5>
+        </div>
+        <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+            <?php foreach ($permissionsByModule as $module => $modulePermissions): ?>
+                <div class="mb-4">
+                    <h6 class="text-primary border-bottom pb-2 mb-3">
+                        <i class="bi bi-folder"></i> <?= escapeHtml($module) ?>
+                        <span class="badge bg-secondary"><?= count($modulePermissions) ?></span>
+                    </h6>
+                    <div class="row">
+                        <?php foreach ($modulePermissions as $permission): ?>
+                            <div class="col-md-6 mb-2">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-check-circle-fill text-success me-2 mt-1"></i>
+                                    <div>
+                                        <strong><?= escapeHtml($permission['permission_name']) ?></strong>
+                                        <?php if ($permission['description']): ?>
+                                            <br><small class="text-muted"><?= escapeHtml($permission['description']) ?></small>
+                                        <?php endif; ?>
+                                        <br><small class="text-muted"><code><?= escapeHtml($permission['permission_key']) ?></code></small>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+<?php endif; ?>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>
 

@@ -47,22 +47,22 @@ require_once APP_PATH . '/includes/header.php';
                     <div class="product-image-container mb-3" style="position: relative; display: inline-block; cursor: pointer;" onclick="uploadProductImage(<?= $product['id'] ?>)">
                         <img src="<?= escapeHtml($images[0]) ?>" alt="<?= escapeHtml($product['brand'] . ' ' . $product['model']) ?>" class="img-fluid" style="max-height: 300px; border-radius: 8px;">
                         <div class="image-upload-overlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; border-radius: 8px;">
-                            <i class="bi bi-camera text-white" style="font-size: 32px;"></i>
+                            <i class="bi bi-camera text-white" style="font-size: 24px;"></i>
                         </div>
                     </div>
                 <?php else: ?>
                     <div class="product-image-container mb-3" style="position: relative; display: inline-block; cursor: pointer;" onclick="uploadProductImage(<?= $product['id'] ?>)">
                         <?php if (!empty($product['color']) && $product['color'] !== '#ffffff' && $product['color'] !== 'white'): ?>
                             <div class="p-5" style="border-radius: 8px; background-color: <?= escapeHtml($product['color']) ?>; min-height: 200px; display: flex; align-items: center; justify-content: center;">
-                                <i class="bi bi-box-seam" style="font-size: 64px; color: rgba(0,0,0,0.3);"></i>
+                                <i class="bi bi-box-seam" style="font-size: 48px; color: rgba(0,0,0,0.3);"></i>
                             </div>
                         <?php else: ?>
                             <div class="bg-light p-5" style="border-radius: 8px;">
-                                <i class="bi bi-box-seam" style="font-size: 64px; color: #9ca3af;"></i>
+                                <i class="bi bi-box-seam" style="font-size: 48px; color: #9ca3af;"></i>
                             </div>
                         <?php endif; ?>
                         <div class="image-upload-overlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; border-radius: 8px;">
-                            <i class="bi bi-camera text-white" style="font-size: 32px;"></i>
+                            <i class="bi bi-camera text-white" style="font-size: 24px;"></i>
                         </div>
                     </div>
                 <?php endif; ?>

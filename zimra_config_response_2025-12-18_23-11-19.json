@@ -1,0 +1,48 @@
+{
+    "taxPayerName": "Electro X Zimbabwe Pvt Ltd",
+    "taxPayerTIN": "2001286483",
+    "vatNumber": "220108354",
+    "deviceSerialNo": "electrox-2",
+    "deviceBranchName": "Electro X Zimbabwe Pvt Ltd",
+    "deviceBranchAddress": {
+        "province": "HARARE",
+        "city": "HARARE",
+        "street": "ED Mnangagwa Rd",
+        "houseNo": "147"
+    },
+    "deviceBranchContacts": {
+        "phoneNo": "0776190449",
+        "email": "accounts@electrox.co.zw"
+    },
+    "deviceOperatingMode": "Online",
+    "taxPayerDayMaxHrs": 24,
+    "applicableTaxes": [
+        {
+            "taxName": "Exempt",
+            "validFrom": "2023-01-01T00:00:00",
+            "taxID": 1
+        },
+        {
+            "taxPercent": 0,
+            "taxName": "Zero rated 0%",
+            "validFrom": "2023-01-01T00:00:00",
+            "taxID": 2
+        },
+        {
+            "taxPercent": 5,
+            "taxName": "Non-VAT Withholding Tax",
+            "validFrom": "2024-01-01T00:00:00",
+            "taxID": 514
+        },
+        {
+            "taxPercent": 15.5,
+            "taxName": "Standard rated 15.5%",
+            "validFrom": "2025-12-15T00:00:00",
+            "taxID": 517
+        }
+    ],
+    "certificateValidTill": "2026-12-18T12:34:49",
+    "qrUrl": "https://fdmstest.zimra.co.zw",
+    "taxpayerDayEndNotificationHrs": 2,
+    "operationID": "0HNHM698NBDA4:00000001"
+}

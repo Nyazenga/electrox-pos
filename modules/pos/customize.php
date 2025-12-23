@@ -6,7 +6,8 @@ require_once APP_PATH . '/includes/functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('settings.edit');
+// This page matches sidebar "POS Customization" menu item
+$auth->requirePermission('pos.customize');
 
 $pageTitle = 'POS Customization';
 

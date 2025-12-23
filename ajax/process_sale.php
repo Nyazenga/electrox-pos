@@ -48,8 +48,13 @@ if (!$input || !isset($input['cart']) || empty($input['cart'])) {
     exit;
 }
 
+error_log("========================================");
+error_log("PROCESS SALE: Script started");
+error_log("PROCESS SALE: Request received at " . date('Y-m-d H:i:s'));
+
 try {
     $db = Database::getInstance();
+    error_log("PROCESS SALE: Database instance obtained");
     
     // Store db instance globally for updateStock to use if needed
     $GLOBALS['current_transaction_db'] = $db;
@@ -61,9 +66,26 @@ try {
             throw new Exception('Failed to start database transaction');
         }
     }
+    error_log("PROCESS SALE: Transaction started");
     
     $branchId = $_SESSION['branch_id'] ?? null;
-    $userId = $_SESSION['user_id'];
+    $userId = $_SESSION['user_id'] ?? null;
+    error_log("PROCESS SALE: Initial branchId = " . ($branchId ?? 'NULL'));
+    error_log("PROCESS SALE: Initial userId = " . ($userId ?? 'NULL'));
+    
+    // If branchId is not set, try to get from primary database (HEAD OFFICE = 1)
+    if (!$branchId) {
+        $primaryDb = Database::getPrimaryInstance();
+        $defaultBranch = $primaryDb->getRow("SELECT id FROM branches WHERE branch_name LIKE '%HEAD%' OR branch_name LIKE '%OFFICE%' OR id = 1 LIMIT 1");
+        if ($defaultBranch) {
+            $branchId = $defaultBranch['id'];
+            $_SESSION['branch_id'] = $branchId;
+            error_log("PROCESS SALE: branchId was NULL, using default branch ID: $branchId");
+        }
+    }
+    
+    error_log("PROCESS SALE: branchId from session = " . ($branchId ?? 'NULL'));
+    error_log("PROCESS SALE: userId = " . $userId);
     
     // Ensure tables exist - create if they don't (suppress any output)
     @ensurePOSTables($db);
@@ -183,6 +205,66 @@ try {
         $seq = ($seq ?? 9999);
         $seqPadded = str_pad($seq, 4, '0', STR_PAD_LEFT);
         $receiptNumber = $branchPrefix . '-' . $datePart . '-' . $seqPadded . '-' . $randomSuffix;
+    }
+    
+    // Check if fiscalization is enabled - if so, verify fiscal day is open BEFORE creating sale
+    if ($branchId) {
+        $primaryDb = Database::getPrimaryInstance();
+        $branch = $primaryDb->getRow(
+            "SELECT id, fiscalization_enabled FROM branches WHERE id = :id",
+            [':id' => $branchId]
+        );
+        
+        if ($branch && $branch['fiscalization_enabled']) {
+            // Fiscalization is enabled - MUST have open fiscal day
+            try {
+                require_once APP_PATH . '/includes/fiscal_service.php';
+                $fiscalService = new FiscalService($branchId);
+                $status = $fiscalService->getFiscalDayStatus();
+                
+                if (!$status || !isset($status['fiscalDayStatus'])) {
+                    throw new Exception('Could not verify fiscal day status. Sale cannot be processed.');
+                }
+                
+                $fiscalDayStatus = $status['fiscalDayStatus'];
+                $isDayOpen = ($fiscalDayStatus === 'FiscalDayOpened' || $fiscalDayStatus === 'FiscalDayCloseFailed');
+                
+                if (!$isDayOpen) {
+                    // Fiscal day is closed - attempt to auto-open
+                    error_log("PROCESS SALE: Fiscal day is closed (Status: $fiscalDayStatus). Attempting to auto-open...");
+                    try {
+                        $openResult = $fiscalService->openFiscalDay();
+                        error_log("PROCESS SALE: Auto-open initiated. Result: " . json_encode($openResult));
+                        
+                        // Verify fiscal day was successfully opened by checking status again
+                        sleep(1); // Give ZIMRA a moment to process
+                        $status = $fiscalService->getFiscalDayStatus();
+                        
+                        if (!$status || !isset($status['fiscalDayStatus'])) {
+                            throw new Exception('Could not verify fiscal day status after auto-open. Sale cannot be processed.');
+                        }
+                        
+                        $fiscalDayStatus = $status['fiscalDayStatus'];
+                        $isDayOpen = ($fiscalDayStatus === 'FiscalDayOpened' || $fiscalDayStatus === 'FiscalDayCloseFailed');
+                        
+                        if (!$isDayOpen) {
+                            throw new Exception('Fiscal day auto-open failed. Status after open attempt: ' . $fiscalDayStatus);
+                        }
+                        
+                        error_log("PROCESS SALE: Fiscal day successfully auto-opened. Status: $fiscalDayStatus");
+                    } catch (Exception $openError) {
+                        error_log("PROCESS SALE: Auto-open failed: " . $openError->getMessage());
+                        throw new Exception('Fiscal day auto-open failed: ' . $openError->getMessage());
+                    }
+                } else {
+                    error_log("PROCESS SALE: Fiscal day status verified - Day is open (Status: $fiscalDayStatus)");
+                }
+            } catch (Exception $e) {
+                // Block the sale if fiscal day check/auto-open fails
+                error_log("PROCESS SALE: Fiscal day check/auto-open failed: " . $e->getMessage());
+                throw new Exception('Sale cannot be processed: ' . $e->getMessage());
+            }
+        }
     }
     
     // Calculate totals
@@ -445,14 +527,120 @@ try {
         error_log("Failed to log activity: " . $logError->getMessage());
     }
     
-    // Clear any output and send JSON
+    // Fiscalize sale BEFORE sending response (so QR code is available for receipt)
+    error_log("========================================");
+    error_log("PROCESS SALE: FISCALIZATION CHECK START");
+    error_log("PROCESS SALE: Sale ID = $saleId");
+    error_log("PROCESS SALE: Branch ID = " . ($branchId ?? 'NULL'));
+    error_log("PROCESS SALE: User ID = " . ($userId ?? 'NULL'));
+    error_log("PROCESS SALE: Session branch_id = " . ($_SESSION['branch_id'] ?? 'NOT SET'));
+    
+    $fiscalDetails = null;
+    $fiscalizationSuccess = false;
+    $fiscalizationError = null;
+    
+    if ($branchId) {
+        error_log("PROCESS SALE: Branch ID is set, proceeding with fiscalization check");
+        error_log("FISCALIZATION: Attempting to fiscalize sale $saleId for branch $branchId");
+        try {
+            // Suppress any output from fiscalization
+            ob_start();
+            require_once APP_PATH . '/includes/fiscal_helper.php';
+            error_log("FISCALIZATION: fiscal_helper.php loaded, calling fiscalizeSale()");
+            $result = fiscalizeSale($saleId, $branchId, $db);
+            ob_end_clean(); // Discard any output
+            
+            if ($result && is_array($result)) {
+                error_log("FISCALIZATION: ✓ Successfully fiscalized sale $saleId");
+                $fiscalizationSuccess = true;
+                
+                // Get fiscal details from the result or from database
+                $primaryDb = Database::getPrimaryInstance();
+                $fiscalReceipt = $primaryDb->getRow(
+                    "SELECT receipt_qr_code, receipt_qr_data, receipt_verification_code, receipt_global_no, receipt_id 
+                     FROM fiscal_receipts 
+                     WHERE sale_id = :sale_id 
+                     ORDER BY id DESC LIMIT 1",
+                    [':sale_id' => $saleId]
+                );
+                
+                if ($fiscalReceipt) {
+                    $fiscalDetails = [
+                        'fiscalized' => true,
+                        'receipt_id' => $fiscalReceipt['receipt_id'],
+                        'receipt_global_no' => $fiscalReceipt['receipt_global_no'],
+                        'verification_code' => $fiscalReceipt['receipt_verification_code'],
+                        'qr_code' => $fiscalReceipt['receipt_qr_code'], // Base64 encoded QR image
+                        'qr_data' => $fiscalReceipt['receipt_qr_data']
+                    ];
+                    error_log("FISCALIZATION: Fiscal details retrieved for response");
+                } else {
+                    // Fallback: get from sale record
+                    $sale = $db->getRow("SELECT fiscal_details FROM sales WHERE id = :id", [':id' => $saleId]);
+                    if ($sale && $sale['fiscal_details']) {
+                        $fiscalDetails = json_decode($sale['fiscal_details'], true);
+                        $fiscalDetails['fiscalized'] = true;
+                    }
+                }
+            } else {
+                error_log("FISCALIZATION: ✗ fiscalizeSale returned false for sale $saleId");
+                // If fiscalizeSale returns false (not an exception), it means fiscalization is disabled or not applicable
+                // Don't set an error in this case - it's expected behavior
+            }
+        } catch (Exception $e) {
+            // Capture ZIMRA error for display to user
+            ob_end_clean(); // Clean any output from error
+            $errorMessage = $e->getMessage();
+            error_log("FISCALIZATION ERROR for sale $saleId: " . $errorMessage);
+            error_log("FISCALIZATION STACK TRACE: " . $e->getTraceAsString());
+            
+            // Extract ZIMRA error details
+            if (strpos($errorMessage, 'ZIMRA API Error') !== false) {
+                // Format: "ZIMRA API Error ($errorCode): $errorMessage | Validation errors: ... | Full response: ..."
+                $fiscalizationError = $errorMessage;
+            } else {
+                // Other errors (connection, etc.)
+                $fiscalizationError = 'Fiscalization Error: ' . $errorMessage;
+            }
+            // Sale will still be returned, but without fiscal details
+        } catch (Error $e) {
+            // Catch fatal errors too
+            ob_end_clean();
+            $errorMessage = $e->getMessage();
+            error_log("FISCALIZATION FATAL ERROR for sale $saleId: " . $errorMessage);
+            error_log("FISCALIZATION FATAL STACK TRACE: " . $e->getTraceAsString());
+            $fiscalizationError = 'Fatal Fiscalization Error: ' . $errorMessage;
+        }
+    } else {
+        error_log("FISCALIZATION: ✗ branchId is null or empty (" . var_export($branchId, true) . "), skipping fiscalization");
+        error_log("FISCALIZATION: Session branch_id = " . ($_SESSION['branch_id'] ?? 'NOT SET'));
+        error_log("FISCALIZATION: This is why fiscalization was not called!");
+    }
+    error_log("PROCESS SALE: FISCALIZATION CHECK END");
+    error_log("========================================");
+    
+    // Clear any output and send JSON (including fiscal details if available)
     ob_clean();
-    $response = json_encode([
+    $responseData = [
         'success' => true, 
         'message' => 'Sale processed successfully', 
         'receipt_id' => $saleId,
         'receipt_number' => $receiptNumber
-    ]);
+    ];
+    
+    // Include fiscal details in response if fiscalization was successful
+    if ($fiscalDetails) {
+        $responseData['fiscal_details'] = $fiscalDetails;
+        error_log("PROCESS SALE: Including fiscal details in response");
+    }
+    
+    // Include fiscalization error if it occurred (sale still succeeded, but fiscalization failed)
+    if ($fiscalizationError) {
+        $responseData['fiscalization_error'] = $fiscalizationError;
+        error_log("PROCESS SALE: Including fiscalization error in response: " . $fiscalizationError);
+    }
+    
+    $response = json_encode($responseData);
     
     // End output buffering and send response
     ob_end_clean();

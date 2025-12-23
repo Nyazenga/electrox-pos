@@ -1,0 +1,74 @@
+========================================
+ZIMRA COMPREHENSIVE TEST
+Started: 2025-12-21 15:07:17
+========================================
+
+✓ Database connection established
+
+========================================
+Device: 30199 (Serial: electrox-1)
+========================================
+
+Step 1: Verifying device in database...
+  ✓ Device found (ID: 4)
+  ✓ Device details updated
+
+Step 2: Checking registration status...
+  ✓ Device already registered
+    Certificate valid till: 2026-12-21 14:58:04
+
+Step 3: Syncing configuration...
+  ⚠ Configuration sync failed: ZIMRA API Error (UNKNOWN): Unauthorized | Full response: {"type":"https:\/\/httpstatuses.io\/401","title":"Unauthorized","status":401,"operationID":"0HNHV0BLL7KD3:00000001"}
+    Continuing with test...
+
+Step 4: Checking fiscal day status...
+  Status: N/A
+  Fiscal Day No: N/A
+
+Step 5: Opening fiscal day...
+  ⚠ Fiscal day check failed: ZIMRA API Error (UNKNOWN): Unauthorized | Full response: {"type":"https:\/\/httpstatuses.io\/401","title":"Unauthorized","status":401,"operationID":"0HNHV0BLL7KD9:00000001"}
+
+Step 6: Testing receipt submission...
+  ✗ Receipt submission failed: ZIMRA API Error (UNKNOWN): Unauthorized | Full response: {"type":"https:\/\/httpstatuses.io\/401","title":"Unauthorized","status":401,"operationID":"0HNHV0BLL7KDE:00000001"}
+
+✓ Device 30199 test completed
+
+========================================
+Device: 30200 (Serial: electrox-2)
+========================================
+
+Step 1: Verifying device in database...
+  ✓ Device found (ID: 1)
+  ✓ Device details updated
+
+Step 2: Checking registration status...
+  ✓ Device already registered
+    Certificate valid till: 2026-12-18 14:34:49
+
+Step 3: Syncing configuration...
+  ⚠ Configuration sync failed: ZIMRA API Error (UNKNOWN): Unauthorized | Full response: {"type":"https:\/\/httpstatuses.io\/401","title":"Unauthorized","status":401,"operationID":"0HNHV0BLL7KDH:00000001"}
+    Continuing with test...
+
+Step 4: Checking fiscal day status...
+  Status: N/A
+  Fiscal Day No: N/A
+
+Step 5: Opening fiscal day...
+  ⚠ Fiscal day check failed: ZIMRA API Error (UNKNOWN): Unauthorized | Full response: {"type":"https:\/\/httpstatuses.io\/401","title":"Unauthorized","status":401,"operationID":"0HNHV0BLL7KDS:00000001"}
+
+Step 6: Testing receipt submission...
+  ✗ Receipt submission failed: ZIMRA API Error (UNKNOWN): Unauthorized | Full response: {"type":"https:\/\/httpstatuses.io\/401","title":"Unauthorized","status":401,"operationID":"0HNHV0BLL7KE1:00000001"}
+
+✓ Device 30200 test completed
+
+========================================
+TEST COMPLETE
+Completed: 2025-12-21 15:07:27
+========================================
+
+All operations logged to:
+  - TXT: logs/zimra/zimra_operations_2025-12-21.txt
+  - LOG: logs/error.log
+  - DATABASE: zimra_operation_logs, zimra_receipt_logs, zimra_certificates
+  - TEST RESULTS: C:\xampp\htdocs\electrox-pos/zimra_test_results_2025-12-21_14-07-17.txt
+

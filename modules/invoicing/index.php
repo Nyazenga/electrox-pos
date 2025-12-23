@@ -6,7 +6,8 @@ require_once APP_PATH . '/includes/functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('invoices.view');
+// This page matches sidebar "All Invoices" menu item
+$auth->requirePermission('invoicing.view');
 
 $pageTitle = 'Invoices';
 
@@ -95,8 +96,8 @@ function createInvoice() {
 
 <!-- Filters -->
 <div class="card mb-3">
-    <div class="card-body">
-        <form method="GET" class="row g-3">
+    <div class="card-body" style="padding: 12px;">
+        <form method="GET" class="row g-2">
             <div class="col-md-2">
                 <label class="form-label">Start Date</label>
                 <input type="date" name="start_date" class="form-control" value="<?= escapeHtml($startDate) ?>">
@@ -191,9 +192,11 @@ function createInvoice() {
                         <td>
                             <div class="btn-group btn-group-sm">
                                 <a href="print.php?id=<?= $invoice['id'] ?>" class="btn btn-primary" title="View/Print"><i class="bi bi-printer"></i> View/Print</a>
+                                <?php if ($auth->hasPermission('invoicing.change_status')): ?>
                                 <button type="button" class="btn btn-warning" onclick='window.showStatusModal(<?= $invoice['id'] ?>, <?= json_encode($invoice['status'] ?? '') ?>, <?= json_encode($invoice['invoice_number'] ?? '') ?>)' title="Change Status">
                                     <i class="bi bi-pencil"></i> Status
                                 </button>
+                                <?php endif; ?>
                             </div>
                         </td>
                     </tr>
@@ -285,14 +288,36 @@ window.updateInvoiceStatus = function() {
     })
     .then(data => {
         if (data.success) {
-            Swal.fire({
-                icon: 'success',
-                title: 'Success!',
-                text: 'Invoice status updated successfully',
-                confirmButtonColor: '#1e3a8a'
-            }).then(() => {
-                location.reload();
-            });
+            let message = data.message || 'Invoice status updated successfully';
+            let showReceiptLink = false;
+            let receiptNumber = data.receipt_number || null;
+            let saleId = data.sale_id || null;
+            
+            // If status was changed to Paid and a receipt was created
+            if (newStatus === 'Paid' && receiptNumber && saleId) {
+                showReceiptLink = true;
+            }
+            
+            if (showReceiptLink) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Invoice Paid!',
+                    html: message + '<br><br><a href="<?= BASE_URL ?>modules/pos/manage.php?id=' + saleId + '" target="_blank" style="color: #1e3a8a; text-decoration: underline;">View Receipt #' + receiptNumber + ' in Manage Sales</a>',
+                    confirmButtonColor: '#1e3a8a',
+                    confirmButtonText: 'OK'
+                }).then(() => {
+                    location.reload();
+                });
+            } else {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success!',
+                    text: message,
+                    confirmButtonColor: '#1e3a8a'
+                }).then(() => {
+                    location.reload();
+                });
+            }
         } else {
             Swal.fire({
                 icon: 'error',

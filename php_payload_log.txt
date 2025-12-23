@@ -1,0 +1,46 @@
+﻿================================================================================
+PHP - EXACT PAYLOAD LOGGING
+================================================================================
+
+1. INPUT RECEIPT DATA:
+{
+    "deviceID": 30199,
+    "receiptType": "FISCALINVOICE",
+    "receiptCurrency": "USD",
+    "receiptCounter": 1,
+    "receiptGlobalNo": 1,
+    "invoiceNo": "PHP-LOG-20251221151452",
+    "receiptDate": "2025-12-21T15:14:52",
+    "receiptLinesTaxInclusive": true,
+    "receiptLines": [
+        {
+            "receiptLineType": "Sale",
+            "receiptLineNo": 1,
+            "receiptLineHSCode": "04021099",
+            "receiptLineName": "Test Item",
+            "receiptLinePrice": 10,
+            "receiptLineQuantity": 1,
+            "receiptLineTotal": 10,
+            "taxCode": "C",
+            "taxPercent": 0,
+            "taxID": 2
+        }
+    ],
+    "receiptTaxes": [
+        {
+            "taxID": 2,
+            "taxCode": "C",
+            "taxPercent": 0,
+            "taxAmount": 0,
+            "salesAmountWithTax": 10
+        }
+    ],
+    "receiptTotal": 10,
+    "receiptPayments": [
+        {
+            "moneyTypeCode": "Cash",
+            "paymentAmount": 10
+        }
+    ]
+}
+

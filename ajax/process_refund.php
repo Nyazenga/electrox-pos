@@ -15,7 +15,7 @@ if (!$auth->isLoggedIn()) {
     exit;
 }
 
-$auth->requirePermission('pos.access');
+$auth->requirePermission('receipts.refund');
 
 $input = json_decode(file_get_contents('php://input'), true);
 

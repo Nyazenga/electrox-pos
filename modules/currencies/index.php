@@ -10,8 +10,8 @@ $auth->requirePermission('settings.view');
 
 $pageTitle = 'Currency Management';
 
-// Always use base database for currencies (shared across all tenants)
-$db = Database::getMainInstance();
+// Use tenant database for currencies (each tenant has their own currencies)
+$db = Database::getInstance();
 $currencies = $db->getRows("SELECT * FROM currencies ORDER BY is_base DESC, code ASC");
 if ($currencies === false || !is_array($currencies)) {
     $currencies = [];

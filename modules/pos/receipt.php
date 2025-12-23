@@ -24,6 +24,23 @@ $sale = $db->getRow("SELECT s.*, c.first_name, c.last_name, c.email, c.phone, b.
                       LEFT JOIN users u ON s.user_id = u.id 
                       WHERE s.id = :id", [':id' => $id]);
 
+// Initialize fiscal_details if not set
+if (!isset($sale['fiscal_details'])) {
+    $sale['fiscal_details'] = null;
+}
+if (!isset($sale['fiscalized'])) {
+    $sale['fiscalized'] = 0;
+}
+
+// Check if sale has fiscal_details, if not check invoice
+if (!$sale['fiscal_details'] && !empty($sale['invoice_id'])) {
+    $invoice = $db->getRow("SELECT fiscalized, fiscal_details FROM invoices WHERE id = :id", [':id' => $sale['invoice_id']]);
+    if ($invoice && $invoice['fiscalized']) {
+        $sale['fiscalized'] = $invoice['fiscalized'];
+        $sale['fiscal_details'] = $invoice['fiscal_details'];
+    }
+}
+
 if (!$sale) {
     die('Receipt not found');
 }
@@ -39,12 +56,11 @@ if ($payments === false) {
     $payments = [];
 }
 
-// Enrich payments with currency information from main database
+// Enrich payments with currency information from tenant database
 if (!empty($payments)) {
-    $mainDb = Database::getMainInstance();
     foreach ($payments as &$payment) {
         if (!empty($payment['currency_id'])) {
-            $currency = $mainDb->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $payment['currency_id']]);
+            $currency = $db->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $payment['currency_id']]);
             if ($currency) {
                 $payment['currency_code'] = $currency['code'];
                 $payment['currency_symbol'] = $currency['symbol'];
@@ -57,6 +73,24 @@ if (!empty($payments)) {
 
 // Get base currency for display
 $baseCurrency = getBaseCurrency($db);
+
+// Determine payment currency from payments (for display conversion)
+$paymentCurrency = null;
+$paymentCurrencyId = null;
+$exchangeRate = 1.0;
+if (!empty($payments)) {
+    // Get currency from first payment
+    $firstPayment = $payments[0];
+    if (!empty($firstPayment['currency_id'])) {
+        $paymentCurrencyId = $firstPayment['currency_id'];
+        $paymentCurrency = $db->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $paymentCurrencyId]);
+        if ($paymentCurrency && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+            // Get exchange rate from BASE currency to PAYMENT currency (for converting base amounts to payment currency)
+            // If base is USD (rate=1.0) and payment is ZWL (rate=2.0), then 1 USD = 2 ZWL, so rate = 2.0
+            $exchangeRate = getExchangeRate($baseCurrency['id'], $paymentCurrencyId, $db);
+        }
+    }
+}
 
 $companyName = getSetting('company_name', SYSTEM_NAME);
 $companyAddress = getSetting('company_address', '');
@@ -198,6 +232,12 @@ if ($usePDF) {
         $unitPrice = floatval($item['unit_price']);
         $totalPrice = floatval($item['total_price']);
         
+        // Convert to payment currency if needed (for PDF display)
+        if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+            $unitPrice = $unitPrice * $exchangeRate;
+            $totalPrice = $totalPrice * $exchangeRate;
+        }
+        
         $startX = $pdf->GetX();
         $startY = $pdf->GetY();
         
@@ -236,25 +276,124 @@ if ($usePDF) {
     
     $pdf->Ln(10);
     
-    // Summary Section
+    // Get fiscal receipt and taxes BEFORE summary section (for tax breakdown display)
+    $primaryDb = Database::getPrimaryInstance();
+    $fiscalReceipt = null;
+    $fiscalReceiptTaxes = [];
+    
+    $fiscalReceipt = $primaryDb->getRow(
+        "SELECT fr.*, fd.device_serial_no, fd.device_id, fc.qr_url 
+         FROM fiscal_receipts fr
+         LEFT JOIN fiscal_devices fd ON fr.device_id = fd.device_id
+         LEFT JOIN fiscal_config fc ON fr.branch_id = fc.branch_id AND fr.device_id = fc.device_id
+         WHERE fr.sale_id = :sale_id
+         LIMIT 1",
+        [':sale_id' => $id]
+    );
+    
+    if ($fiscalReceipt) {
+        $fiscalReceiptTaxes = $primaryDb->getRows(
+            "SELECT tax_code, tax_percent, tax_id, tax_amount, sales_amount_with_tax 
+             FROM fiscal_receipt_taxes 
+             WHERE fiscal_receipt_id = :fiscal_receipt_id 
+             ORDER BY tax_percent ASC, tax_code ASC",
+            [':fiscal_receipt_id' => $fiscalReceipt['id']]
+        );
+    }
+    
+    // Summary Section - Convert amounts to payment currency if needed
+    $pdfSubtotal = floatval($sale['subtotal']);
+    $pdfDiscountAmount = floatval($sale['discount_amount'] ?? 0);
+    $pdfTotalAmount = floatval($sale['total_amount']);
+    
+    if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+        $pdfSubtotal = $pdfSubtotal * $exchangeRate;
+        $pdfDiscountAmount = $pdfDiscountAmount * $exchangeRate;
+        $pdfTotalAmount = $pdfTotalAmount * $exchangeRate;
+    }
+    
     $pdf->SetFont('helvetica', '', 9);
     $pdf->Cell(100, 0, '', 0, 0);
     $pdf->Cell(55, 8, 'Subtotal:', 1, 0, 'L');
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(35, 8, number_format($sale['subtotal'], 2), 1, 1, 'R');
+    $pdf->Cell(35, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
     
-    if ($sale['discount_amount'] > 0) {
+    if ($pdfDiscountAmount > 0) {
         $pdf->SetFont('helvetica', '', 9);
         $pdf->Cell(100, 0, '', 0, 0);
         $pdf->Cell(55, 8, 'Discount:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(35, 8, '-' . number_format($sale['discount_amount'], 2), 1, 1, 'R');
+        $pdf->Cell(35, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
+    }
+    
+    // Tax Breakdown (if fiscalized)
+    if ($fiscalReceipt && !empty($fiscalReceiptTaxes)) {
+        // Group taxes by taxPercent and taxCode for display
+        $taxGroups = [];
+        foreach ($fiscalReceiptTaxes as $tax) {
+            $taxPercent = isset($tax['tax_percent']) && $tax['tax_percent'] !== null ? floatval($tax['tax_percent']) : null;
+            $taxCode = $tax['tax_code'] ?? '';
+            $taxAmount = floatval($tax['tax_amount'] ?? 0);
+            
+            // Create key for grouping: exempt by code, others by percent
+            if ($taxCode === 'E') {
+                $key = 'exempt';
+            } elseif ($taxPercent === 0.0 || $taxPercent === 0) {
+                $key = '0';
+            } else {
+                $key = strval($taxPercent);
+            }
+            
+            if (!isset($taxGroups[$key])) {
+                $taxGroups[$key] = [
+                    'taxPercent' => $taxPercent,
+                    'taxCode' => $taxCode,
+                    'totalAmount' => 0
+                ];
+            }
+            $taxGroups[$key]['totalAmount'] += $taxAmount;
+        }
+        
+        // Sort: exempt first, then 0%, then by percent ascending
+        uksort($taxGroups, function($a, $b) {
+            if ($a === 'exempt') return -1;
+            if ($b === 'exempt') return 1;
+            if ($a === '0') return -1;
+            if ($b === '0') return 1;
+            return floatval($a) <=> floatval($b);
+        });
+        
+        // Display tax breakdowns
+        foreach ($taxGroups as $group) {
+            $pdf->SetFont('helvetica', '', 9);
+            $pdf->Cell(100, 0, '', 0, 0);
+            
+            // Format label based on tax type
+            if ($group['taxCode'] === 'E') {
+                $label = 'Total: Exempt from VAT';
+            } elseif ($group['taxPercent'] === 0.0 || $group['taxPercent'] === 0 || $group['taxPercent'] === null) {
+                $label = 'Total 0% VAT';
+            } else {
+                $label = 'Total ' . number_format($group['taxPercent'], 1) . '% VAT';
+            }
+            
+            $pdf->Cell(55, 8, $label . ':', 1, 0, 'L');
+            $pdf->SetFont('helvetica', 'B', 9);
+            
+            // Convert tax amount to payment currency if needed
+            $pdfTaxAmount = floatval($group['totalAmount']);
+            if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                $pdfTaxAmount = $pdfTaxAmount * $exchangeRate;
+            }
+            
+            $pdf->Cell(35, 8, number_format($pdfTaxAmount, 2), 1, 1, 'R');
+        }
     }
     
     $pdf->SetFont('helvetica', 'B', 10);
     $pdf->Cell(100, 0, '', 0, 0);
     $pdf->Cell(55, 10, 'TOTAL:', 1, 0, 'L');
-    $pdf->Cell(35, 10, number_format($sale['total_amount'], 2), 1, 1, 'R');
+    $pdf->Cell(35, 10, number_format($pdfTotalAmount, 2), 1, 1, 'R');
     
     $pdf->Ln(12);
     
@@ -266,12 +405,19 @@ if ($usePDF) {
         
         $totalPaid = 0;
         foreach ($payments as $payment) {
-            $amount = floatval($payment['base_amount']);
+            // Use original_amount (payment currency) if available, otherwise convert base_amount
+            $amount = isset($payment['original_amount']) ? floatval($payment['original_amount']) : floatval($payment['amount']);
+            if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                // If amount is in base currency, convert to payment currency
+                if (!isset($payment['original_amount'])) {
+                    $amount = $amount * $exchangeRate;
+                }
+            }
             $totalPaid += $amount;
             
-            $currencySymbol = $payment['currency_symbol'] ?? '$';
-            $currencyCode = $payment['currency_code'] ?? 'USD';
-            $symbolPosition = $payment['currency_symbol_position'] ?? 'before';
+            $currencySymbol = $payment['currency_symbol'] ?? ($paymentCurrency ? $paymentCurrency['symbol'] : '$');
+            $currencyCode = $payment['currency_code'] ?? ($paymentCurrency ? $paymentCurrency['code'] : 'USD');
+            $symbolPosition = $payment['currency_symbol_position'] ?? ($paymentCurrency ? $paymentCurrency['symbol_position'] : 'before');
             
             $paymentMethod = ucfirst($payment['payment_method']);
             if ($symbolPosition === 'before') {
@@ -283,8 +429,8 @@ if ($usePDF) {
             $pdf->Cell(0, 5, $paymentMethod . ': ' . $amountStr, 0, 1, 'L');
         }
         
-        // Calculate change
-        $change = $totalPaid - $sale['total_amount'];
+        // Calculate change (use converted total amount)
+        $change = $totalPaid - $pdfTotalAmount;
         if ($change > 0) {
             $pdf->Ln(3);
             $pdf->SetFont('helvetica', 'B', 9);
@@ -293,6 +439,133 @@ if ($usePDF) {
     }
     
     $pdf->Ln(12);
+    
+    // Fiscal Information Section (if fiscalized)
+    // Note: $fiscalReceipt was already fetched above for tax breakdown, reuse it here
+    $fiscalDetails = null;
+    
+    if ($fiscalReceipt) {
+        // Build fiscal details from fiscal receipt
+        $fiscalDetails = [
+            'receipt_global_no' => $fiscalReceipt['receipt_global_no'],
+            'device_id' => $fiscalReceipt['device_id'],
+            'verification_code' => $fiscalReceipt['receipt_verification_code'],
+            'qr_code' => $fiscalReceipt['receipt_qr_data']
+        ];
+        $sale['fiscalized'] = 1;
+    } elseif (!empty($sale['fiscal_details'])) {
+        // Fallback: use fiscal_details from sale record
+        $fiscalDetails = json_decode($sale['fiscal_details'], true);
+        
+        if ($fiscalDetails && isset($fiscalDetails['receipt_global_no'])) {
+            $fiscalReceipt = $primaryDb->getRow(
+                "SELECT fr.*, fd.device_serial_no, fd.device_id, fc.qr_url 
+                 FROM fiscal_receipts fr
+                 LEFT JOIN fiscal_devices fd ON fr.device_id = fd.device_id
+                 LEFT JOIN fiscal_config fc ON fr.branch_id = fc.branch_id AND fr.device_id = fc.device_id
+                 WHERE fr.receipt_global_no = :receipt_global_no AND fr.device_id = :device_id
+                 LIMIT 1",
+                [
+                    ':receipt_global_no' => $fiscalDetails['receipt_global_no'],
+                    ':device_id' => $fiscalDetails['device_id'] ?? null
+                ]
+            );
+        }
+    }
+    
+    if ($fiscalDetails && $fiscalReceipt) {
+        $pdf->Ln(10);
+        
+        // QR Code (CENTERED, BIGGER - according to documentation for A4)
+        $qrCodeDisplayed = false;
+        
+        // First, try to use stored QR code image if available
+        if (isset($fiscalReceipt['receipt_qr_code']) && !empty($fiscalReceipt['receipt_qr_code']) && strlen($fiscalReceipt['receipt_qr_code']) > 0) {
+            try {
+                // receipt_qr_code is stored as base64 encoded PNG image
+                $qrImageData = base64_decode($fiscalReceipt['receipt_qr_code']);
+                
+                if ($qrImageData !== false && strlen($qrImageData) > 0) {
+                    // It's a base64 encoded PNG, write to temp file and use it
+                    $tempQrFile = tempnam(sys_get_temp_dir(), 'qr_') . '.png';
+                    file_put_contents($tempQrFile, $qrImageData);
+                    
+                    // Center and make bigger (30mm instead of 20mm)
+                    // Page width: 210mm, left margin: 15mm, right margin: 15mm
+                    // Content width: 210 - 15 - 15 = 180mm
+                    // Center of content: 15 + (180 / 2) = 105mm
+                    // QR left position: 105 - (30 / 2) = 90mm
+                    $qrSize = 30; // mm
+                    $qrX = 15 + ((210 - 15 - 15) / 2) - ($qrSize / 2); // Properly centered: 90mm
+                    $qrY = $pdf->GetY();
+                    $pdf->Image($tempQrFile, $qrX, $qrY, $qrSize, $qrSize, 'PNG', '', '', false, 300, '', false, false, 0);
+                    $pdf->SetY($qrY + $qrSize + 5);
+                    @unlink($tempQrFile);
+                    $qrCodeDisplayed = true;
+                }
+            } catch (Exception $e) {
+                error_log("QR code image error: " . $e->getMessage());
+            }
+        }
+        
+        // Fallback: Generate QR code on-the-fly from receipt_qr_data
+        if (!$qrCodeDisplayed && isset($fiscalReceipt['receipt_qr_data']) && !empty($fiscalReceipt['receipt_qr_data'])) {
+            try {
+                // Build full QR URL from qr_data
+                $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdmstest.zimra.co.zw';
+                $deviceId = $fiscalReceipt['device_id'] ?? '';
+                $receiptDate = $fiscalReceipt['receipt_date'] ?? '';
+                $receiptGlobalNo = $fiscalReceipt['receipt_global_no'] ?? '';
+                
+                if ($deviceId && $receiptDate && $receiptGlobalNo) {
+                    $deviceIdFormatted = str_pad($deviceId, 10, '0', STR_PAD_LEFT);
+                    $date = new DateTime($receiptDate);
+                    $receiptDateFormatted = $date->format('dmy');
+                    $receiptGlobalNoFormatted = str_pad($receiptGlobalNo, 10, '0', STR_PAD_LEFT);
+                    $qrDataFormatted = substr($fiscalReceipt['receipt_qr_data'], 0, 16);
+                    $qrCodeString = rtrim($qrUrl, '/') . '/' . $deviceIdFormatted . $receiptDateFormatted . $receiptGlobalNoFormatted . $qrDataFormatted;
+                    
+                    // Use TCPDF's built-in QR code support - CENTERED and BIGGER
+                    $style = array(
+                        'border' => false,
+                        'padding' => 0,
+                        'fgcolor' => array(0,0,0),
+                        'bgcolor' => false,
+                        'module_width' => 1,
+                        'module_height' => 1
+                    );
+                    $qrSize = 30; // mm - bigger
+                    // Page width: 210mm, left margin: 15mm, right margin: 15mm
+                    // Content width: 210 - 15 - 15 = 180mm
+                    // Center of content: 15 + (180 / 2) = 105mm
+                    // QR left position: 105 - (30 / 2) = 90mm
+                    $qrX = 15 + ((210 - 15 - 15) / 2) - ($qrSize / 2); // Properly centered: 90mm
+                    $qrY = $pdf->GetY();
+                    $pdf->write2DBarcode($qrCodeString, 'QRCODE,L', $qrX, $qrY, $qrSize, $qrSize, $style, 'N');
+                    $pdf->SetY($qrY + $qrSize + 5);
+                    $qrCodeDisplayed = true;
+                }
+            } catch (Exception $e) {
+                error_log("QR code generation error: " . $e->getMessage());
+            }
+        }
+        
+        // Verification Code (BELOW QR CODE - according to documentation)
+        if (isset($fiscalDetails['verification_code'])) {
+            $pdf->SetFont('helvetica', 'B', 9);
+            $pdf->Cell(0, 5, 'Verification code: ' . $fiscalDetails['verification_code'], 0, 1, 'C');
+        }
+        
+        // Verification URL
+        $pdf->SetFont('helvetica', '', 8);
+        $pdf->Cell(0, 4, 'You can verify this receipt manually at', 0, 1, 'C');
+        $pdf->SetFont('helvetica', 'U', 8);
+        $pdf->SetTextColor(30, 58, 138);
+        $pdf->Cell(0, 4, 'https://receipt.zimra.org/', 0, 1, 'C', false, 'https://receipt.zimra.org/');
+        $pdf->SetTextColor(0, 0, 0);
+        
+        $pdf->Ln(5);
+    }
     
     // Footer
     $receiptFooterText = getSetting('pos_receipt_footer_text', 'Thank you for your business!');
@@ -323,13 +596,45 @@ require_once APP_PATH . '/includes/header.php';
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
+/* Override main CSS to prevent double scrollbar */
+body, html {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    height: auto !important;
+}
+
 .content-area {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    padding: 30px !important;
+    padding-top: 10px !important;
+    justify-content: flex-start !important;
+    min-height: calc(100vh - 100px) !important;
+    position: relative !important;
+    overflow: visible !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    flex: none !important;
+}
+
+.receipt-container {
+    max-width: 400px;
+    margin: 0 auto;
+    background: white;
     padding: 30px;
-    justify-content: center;
-    min-height: calc(100vh - 100px);
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    overflow: visible !important;
+    position: relative;
+    width: 100%;
+}
+
+/* Action buttons - normal flow, no sticky */
+.no-print {
+    text-align: center;
+    padding: 20px 0;
+    margin-bottom: 20px;
 }
 
 .receipt-header {
@@ -533,7 +838,7 @@ require_once APP_PATH . '/includes/header.php';
 
 <div class="content-area">
     <!-- Action Buttons - Top -->
-    <div class="no-print mb-4" style="text-align: center; padding: 20px 0;">
+    <div class="no-print mb-4" style="text-align: center; padding: 20px 0; margin-bottom: 20px;">
         <div class="d-flex justify-content-center gap-2 flex-wrap">
             <a href="<?= BASE_URL ?>modules/pos/index.php?payment_success=1&receipt_id=<?= $id ?>" class="btn btn-secondary">
                 <i class="bi bi-arrow-left"></i> Back to POS
@@ -550,6 +855,16 @@ require_once APP_PATH . '/includes/header.php';
             <a href="receipt.php?id=<?= $id ?>&pdf=1" class="btn btn-secondary">
                 <i class="bi bi-file-earmark-pdf"></i> Export A4 PDF
             </a>
+            <?php if ($sale['payment_status'] !== 'refunded'): ?>
+                <button class="btn btn-warning" onclick="refundSale(<?= $id ?>)">
+                    <i class="bi bi-arrow-counterclockwise"></i> Refund
+                </button>
+                <button class="btn btn-danger" onclick="deleteReceipt(<?= $id ?>)">
+                    <i class="bi bi-trash"></i> Delete
+                </button>
+            <?php else: ?>
+                <span class="badge bg-danger">Refunded</span>
+            <?php endif; ?>
         </div>
     </div>
     
@@ -585,6 +900,33 @@ require_once APP_PATH . '/includes/header.php';
         <?php endif; ?>
     </div>
     
+    <?php
+    // Get fiscal receipt data BEFORE the table so taxes can be displayed in the tfoot
+    $primaryDb = Database::getPrimaryInstance();
+    $fiscalReceipt = null;
+    $fiscalReceiptTaxes = [];
+    
+    $fiscalReceipt = $primaryDb->getRow(
+        "SELECT fr.*, fd.device_serial_no, fd.device_id, fc.qr_url 
+         FROM fiscal_receipts fr
+         LEFT JOIN fiscal_devices fd ON fr.device_id = fd.device_id
+         LEFT JOIN fiscal_config fc ON fr.branch_id = fc.branch_id AND fr.device_id = fc.device_id
+         WHERE fr.sale_id = :sale_id
+         LIMIT 1",
+        [':sale_id' => $id]
+    );
+    
+    if ($fiscalReceipt) {
+        $fiscalReceiptTaxes = $primaryDb->getRows(
+            "SELECT tax_code, tax_percent, tax_id, tax_amount, sales_amount_with_tax 
+             FROM fiscal_receipt_taxes 
+             WHERE fiscal_receipt_id = :fiscal_receipt_id 
+             ORDER BY tax_percent ASC, tax_code ASC",
+            [':fiscal_receipt_id' => $fiscalReceipt['id']]
+        );
+    }
+    ?>
+    
     <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
         <colgroup>
             <col style="width: auto;">
@@ -601,29 +943,125 @@ require_once APP_PATH . '/includes/header.php';
             </tr>
         </thead>
         <tbody>
-            <?php foreach ($items as $item): ?>
+            <?php 
+            // Convert items to payment currency if different from base
+            foreach ($items as $item): 
+                $unitPrice = floatval($item['unit_price']);
+                $totalPrice = floatval($item['total_price']);
+                
+                // Convert to payment currency if needed (base currency -> payment currency)
+                if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                    // Convert from base to payment currency (multiply by exchange rate)
+                    $unitPrice = $unitPrice * $exchangeRate;
+                    $totalPrice = $totalPrice * $exchangeRate;
+                }
+                
+                // Format with payment currency
+                $unitPriceFormatted = $paymentCurrency ? formatCurrencyAmount($unitPrice, $paymentCurrencyId, $db) : formatCurrency($unitPrice);
+                $totalPriceFormatted = $paymentCurrency ? formatCurrencyAmount($totalPrice, $paymentCurrencyId, $db) : formatCurrency($totalPrice);
+            ?>
                 <tr>
                     <td style="text-align: left; padding: 6px 4px; word-wrap: break-word; border-bottom: 1px solid #ddd;"><?= escapeHtml($item['product_name']) ?></td>
                     <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $item['quantity'] ?></td>
-                    <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= formatCurrency($item['unit_price']) ?></td>
-                    <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= formatCurrency($item['total_price']) ?></td>
+                    <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $unitPriceFormatted ?></td>
+                    <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $totalPriceFormatted ?></td>
                 </tr>
             <?php endforeach; ?>
         </tbody>
         <tfoot>
+            <?php
+            // Convert amounts to payment currency if needed
+            $subtotal = floatval($sale['subtotal']);
+            $discountAmount = floatval($sale['discount_amount'] ?? 0);
+            $totalAmount = floatval($sale['total_amount']);
+            
+            if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                $subtotal = $subtotal * $exchangeRate;
+                $discountAmount = $discountAmount * $exchangeRate;
+                $totalAmount = $totalAmount * $exchangeRate;
+            }
+            
+            $subtotalFormatted = $paymentCurrency ? formatCurrencyAmount($subtotal, $paymentCurrencyId, $db) : formatCurrency($subtotal);
+            $discountFormatted = $paymentCurrency ? formatCurrencyAmount($discountAmount, $paymentCurrencyId, $db) : formatCurrency($discountAmount);
+            $totalFormatted = $paymentCurrency ? formatCurrencyAmount($totalAmount, $paymentCurrencyId, $db) : formatCurrency($totalAmount);
+            ?>
             <tr>
                 <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Subtotal:</strong></td>
-                <td style="text-align: right; padding: 6px 4px;"><strong><?= formatCurrency($sale['subtotal']) ?></strong></td>
+                <td style="text-align: right; padding: 6px 4px;"><strong><?= $subtotalFormatted ?></strong></td>
             </tr>
-            <?php if ($sale['discount_amount'] > 0): ?>
+            <?php if ($discountAmount > 0): ?>
                 <tr>
                     <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
-                    <td style="text-align: right; padding: 6px 4px;"><strong>-<?= formatCurrency($sale['discount_amount']) ?></strong></td>
+                    <td style="text-align: right; padding: 6px 4px;"><strong>-<?= $discountFormatted ?></strong></td>
                 </tr>
             <?php endif; ?>
+            <?php
+            // Tax Breakdown (if fiscalized) - get from fiscal receipt taxes
+            if (!empty($fiscalReceiptTaxes)) {
+                // Group taxes by taxPercent and taxCode for display
+                $taxGroups = [];
+                foreach ($fiscalReceiptTaxes as $tax) {
+                    $taxPercent = isset($tax['tax_percent']) && $tax['tax_percent'] !== null ? floatval($tax['tax_percent']) : null;
+                    $taxCode = $tax['tax_code'] ?? '';
+                    $taxAmount = floatval($tax['tax_amount'] ?? 0);
+                    
+                    // Create key for grouping: exempt by code, others by percent
+                    if ($taxCode === 'E') {
+                        $key = 'exempt';
+                    } elseif ($taxPercent === 0.0 || $taxPercent === 0) {
+                        $key = '0';
+                    } else {
+                        $key = strval($taxPercent);
+                    }
+                    
+                    if (!isset($taxGroups[$key])) {
+                        $taxGroups[$key] = [
+                            'taxPercent' => $taxPercent,
+                            'taxCode' => $taxCode,
+                            'totalAmount' => 0
+                        ];
+                    }
+                    $taxGroups[$key]['totalAmount'] += $taxAmount;
+                }
+                
+                // Sort: exempt first, then 0%, then by percent ascending
+                uksort($taxGroups, function($a, $b) {
+                    if ($a === 'exempt') return -1;
+                    if ($b === 'exempt') return 1;
+                    if ($a === '0') return -1;
+                    if ($b === '0') return 1;
+                    return floatval($a) <=> floatval($b);
+                });
+                
+                // Display tax breakdowns
+                foreach ($taxGroups as $group):
+                    // Format label based on tax type
+                    if ($group['taxCode'] === 'E') {
+                        $label = 'Total: Exempt from VAT';
+                    } elseif ($group['taxPercent'] === 0.0 || $group['taxPercent'] === 0 || $group['taxPercent'] === null) {
+                        $label = 'Total 0% VAT';
+                    } else {
+                        $label = 'Total ' . number_format($group['taxPercent'], 1) . '% VAT';
+                    }
+                    
+                    // Convert tax amount to payment currency if needed
+                    $taxAmount = floatval($group['totalAmount']);
+                    if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                        $taxAmount = $taxAmount * $exchangeRate;
+                    }
+                    $taxAmountFormatted = $paymentCurrency ? formatCurrencyAmount($taxAmount, $paymentCurrencyId, $db) : formatCurrency($taxAmount);
+            ?>
+                <tr>
+                    <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
+                    <td style="text-align: right; padding: 6px 4px;"><strong><?= $taxAmountFormatted ?></strong></td>
+                </tr>
+            <?php
+                endforeach;
+            }
+            ?>
             <tr class="total-row">
                 <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>TOTAL:</strong></td>
-                <td style="text-align: right; padding: 6px 4px;"><strong><?= formatCurrency($sale['total_amount']) ?></strong></td>
+                <td style="text-align: right; padding: 6px 4px;"><strong><?= $totalFormatted ?></strong></td>
             </tr>
             <tr>
                 <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
@@ -664,17 +1102,130 @@ require_once APP_PATH . '/includes/header.php';
                 </td>
             </tr>
             <?php 
-            // Calculate change if amount paid exceeds total (use base_amount for calculation)
-            $change = $totalPaid - $sale['total_amount'];
+            // Calculate change if amount paid exceeds total (convert to payment currency if needed)
+            $change = $totalPaid - $totalAmount; // Use converted totalAmount
             if ($change > 0): 
+                $changeFormatted = $paymentCurrency ? formatCurrencyAmount($change, $paymentCurrencyId, $db) : formatCurrency($change);
             ?>
                 <tr>
                     <td colspan="3" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
-                    <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong><?= formatCurrency($change) ?></strong></td>
+                    <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong><?= $changeFormatted ?></strong></td>
                 </tr>
             <?php endif; ?>
         </tfoot>
     </table>
+    
+    <?php
+    // Fiscal Information Section (for HTML view)
+    if (!$usePDF) {
+        // Get fiscal receipt data (same logic as PDF view)
+        $primaryDb = Database::getPrimaryInstance();
+        $fiscalDetails = null;
+        $fiscalReceipt = null;
+        
+        // First, try to get fiscal receipt by sale_id
+        $fiscalReceipt = $primaryDb->getRow(
+            "SELECT fr.*, fd.device_serial_no, fd.device_id, fc.qr_url 
+             FROM fiscal_receipts fr
+             LEFT JOIN fiscal_devices fd ON fr.device_id = fd.device_id
+             LEFT JOIN fiscal_config fc ON fr.branch_id = fc.branch_id AND fr.device_id = fc.device_id
+             WHERE fr.sale_id = :sale_id
+             LIMIT 1",
+            [':sale_id' => $id]
+        );
+        
+        if ($fiscalReceipt) {
+            // Build fiscal details from fiscal receipt
+            $fiscalDetails = [
+                'receipt_global_no' => $fiscalReceipt['receipt_global_no'],
+                'device_id' => $fiscalReceipt['device_id'],
+                'verification_code' => $fiscalReceipt['receipt_verification_code'],
+                'qr_code' => $fiscalReceipt['receipt_qr_data']
+            ];
+        } elseif (!empty($sale['fiscal_details'])) {
+            // Fallback: use fiscal_details from sale record
+            $fiscalDetails = json_decode($sale['fiscal_details'], true);
+            
+            if ($fiscalDetails && isset($fiscalDetails['receipt_global_no'])) {
+                $fiscalReceipt = $primaryDb->getRow(
+                    "SELECT fr.*, fd.device_serial_no, fd.device_id, fc.qr_url 
+                     FROM fiscal_receipts fr
+                     LEFT JOIN fiscal_devices fd ON fr.device_id = fd.device_id
+                     LEFT JOIN fiscal_config fc ON fr.branch_id = fc.branch_id AND fr.device_id = fc.device_id
+                     WHERE fr.receipt_global_no = :receipt_global_no AND fr.device_id = :device_id
+                     LIMIT 1",
+                    [
+                        ':receipt_global_no' => $fiscalDetails['receipt_global_no'],
+                        ':device_id' => $fiscalDetails['device_id'] ?? null
+                    ]
+                );
+            }
+        }
+        
+        // Display fiscal information if available
+        if ($fiscalDetails && $fiscalReceipt):
+    ?>
+    <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #ddd;">
+        <?php
+        // QR Code Display (FIRST - according to documentation)
+        $qrCodeDisplayed = false;
+        
+        // First, try to use stored QR code image if available
+        if (isset($fiscalReceipt['receipt_qr_code']) && !empty($fiscalReceipt['receipt_qr_code']) && strlen($fiscalReceipt['receipt_qr_code']) > 0) {
+            try {
+                $qrImageData = base64_decode($fiscalReceipt['receipt_qr_code']);
+                if ($qrImageData !== false && strlen($qrImageData) > 0) {
+                    $qrImageBase64 = base64_encode($qrImageData);
+                    echo '<div style="text-align: center; margin: 10px 0;">';
+                    echo '<img src="data:image/png;base64,' . htmlspecialchars($qrImageBase64) . '" alt="QR Code" style="max-width: 120px; height: auto; border: 1px solid #ddd;">';
+                    echo '</div>';
+                    $qrCodeDisplayed = true;
+                }
+            } catch (Exception $e) {
+                error_log("QR code image error: " . $e->getMessage());
+            }
+        }
+        
+        // Fallback: Generate QR code URL for display
+        if (!$qrCodeDisplayed && isset($fiscalReceipt['receipt_qr_data']) && !empty($fiscalReceipt['receipt_qr_data'])) {
+            $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdmstest.zimra.co.zw';
+            $deviceId = $fiscalReceipt['device_id'] ?? '';
+            $receiptDate = $fiscalReceipt['receipt_date'] ?? '';
+            $receiptGlobalNo = $fiscalReceipt['receipt_global_no'] ?? '';
+            
+            if ($deviceId && $receiptDate && $receiptGlobalNo) {
+                $deviceIdFormatted = str_pad($deviceId, 10, '0', STR_PAD_LEFT);
+                $date = new DateTime($receiptDate);
+                $receiptDateFormatted = $date->format('dmy');
+                $receiptGlobalNoFormatted = str_pad($receiptGlobalNo, 10, '0', STR_PAD_LEFT);
+                $qrDataFormatted = substr($fiscalReceipt['receipt_qr_data'], 0, 16);
+                $qrCodeString = rtrim($qrUrl, '/') . '/' . $deviceIdFormatted . $receiptDateFormatted . $receiptGlobalNoFormatted . $qrDataFormatted;
+                
+                // Use a QR code API service to generate the image
+                $qrCodeApiUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' . urlencode($qrCodeString);
+                echo '<div style="text-align: center; margin: 10px 0;">';
+                echo '<img src="' . htmlspecialchars($qrCodeApiUrl) . '" alt="QR Code" style="max-width: 120px; height: auto; border: 1px solid #ddd;">';
+                echo '</div>';
+            }
+        }
+        
+        // Verification Code (BELOW QR CODE - according to documentation)
+        if (isset($fiscalDetails['verification_code'])): ?>
+            <div style="text-align: center; margin: 8px 0; font-weight: bold; font-size: 10px;">
+                Verification code: <?= escapeHtml($fiscalDetails['verification_code']) ?>
+            </div>
+        <?php endif; ?>
+        
+        <!-- Verification URL -->
+        <div style="text-align: center; margin: 5px 0; font-size: 9px; color: #666;">
+            You can verify this receipt manually at<br>
+            <a href="https://receipt.zimra.org/" target="_blank" style="color: #1e3a8a; text-decoration: underline;">https://receipt.zimra.org/</a>
+        </div>
+    </div>
+    <?php
+        endif;
+    }
+    ?>
     
     <div class="receipt-footer">
         <div style="margin-bottom: 5px;">Thank you for your business!</div>
@@ -873,6 +1424,104 @@ function sendReceiptWhatsApp() {
     .catch(error => {
         console.error('Error:', error);
         Swal.fire('Error', 'An unexpected error occurred', 'error');
+    });
+}
+
+// Refund and Delete functions
+function refundSale(saleId) {
+    // Load sale data and show refund modal
+    fetch('<?= BASE_URL ?>ajax/get_sale_for_refund.php?id=' + saleId, {
+        method: 'GET',
+        credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire({
+                title: 'Refund Sale',
+                html: `
+                    <p>Are you sure you want to refund this sale?</p>
+                    <p><strong>Receipt:</strong> ${data.sale.receipt_number}</p>
+                    <p><strong>Amount:</strong> $${parseFloat(data.sale.total_amount).toFixed(2)}</p>
+                `,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, Refund',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#f59e0b'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Redirect to refund page or process refund
+                    window.location.href = '<?= BASE_URL ?>modules/pos/manage.php?id=' + saleId + '&action=refund';
+                }
+            });
+        } else {
+            Swal.fire('Error', data.message || 'Failed to load sale data', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error loading sale:', error);
+        Swal.fire('Error', 'Failed to load sale data', 'error');
+    });
+}
+
+function deleteReceipt(saleId) {
+    Swal.fire({
+        title: 'Delete Receipt?',
+        html: `
+            <p>Are you sure you want to delete this receipt?</p>
+            <p class="text-danger"><strong>This action will:</strong></p>
+            <ul class="text-start text-danger">
+                <li>Restore stock for all items</li>
+                <li>Reverse shift cash adjustments</li>
+                <li>Mark the receipt as deleted</li>
+            </ul>
+            <p class="text-muted">This action cannot be undone.</p>
+        `,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Delete',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#dc3545'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'Deleting Receipt...',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            
+            const formData = new FormData();
+            formData.append('sale_id', saleId);
+            
+            fetch('<?= BASE_URL ?>ajax/delete_receipt.php', {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire({
+                        title: 'Success!',
+                        text: data.message || 'Receipt deleted successfully',
+                        icon: 'success',
+                        confirmButtonText: 'OK'
+                    }).then(() => {
+                        // Redirect to manage sales
+                        window.location.href = '<?= BASE_URL ?>modules/pos/manage.php';
+                    });
+                } else {
+                    Swal.fire('Error', data.message || 'Failed to delete receipt', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Delete receipt error:', error);
+                Swal.fire('Error', 'Failed to delete receipt: ' + error.message, 'error');
+            });
+        }
     });
 }
 

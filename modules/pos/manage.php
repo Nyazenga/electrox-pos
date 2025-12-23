@@ -6,7 +6,8 @@ require_once APP_PATH . '/includes/functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('pos.access');
+// This page matches sidebar "Manage Sales" menu item
+$auth->requirePermission('pos.manage_sales');
 
 $pageTitle = 'Manage Sales';
 
@@ -68,6 +69,38 @@ if ($sales === false) {
     $sales = [];
 }
 
+// Enrich sales with fiscal data
+if (!empty($sales)) {
+    $primaryDb = Database::getPrimaryInstance();
+    $saleIds = array_column($sales, 'id');
+    $placeholders = implode(',', array_fill(0, count($saleIds), '?'));
+    
+    $fiscalReceipts = $primaryDb->getRows(
+        "SELECT sale_id, receipt_global_no, receipt_verification_code, fiscal_day_no, device_id, receipt_date 
+         FROM fiscal_receipts 
+         WHERE sale_id IN ($placeholders)",
+        $saleIds
+    );
+    
+    // Create a map of sale_id => fiscal receipt
+    $fiscalMap = [];
+    foreach ($fiscalReceipts as $fr) {
+        $fiscalMap[$fr['sale_id']] = $fr;
+    }
+    
+    // Add fiscal data to each sale
+    foreach ($sales as &$sale) {
+        if (isset($fiscalMap[$sale['id']])) {
+            $sale['fiscal_receipt'] = $fiscalMap[$sale['id']];
+            $sale['fiscalized'] = 1;
+        } else {
+            $sale['fiscal_receipt'] = null;
+            $sale['fiscalized'] = $sale['fiscalized'] ?? 0;
+        }
+    }
+    unset($sale);
+}
+
 $selectedSale = null;
 if (isset($_GET['id'])) {
     $selectedSale = $db->getRow("SELECT s.*, c.first_name, c.last_name, c.email, c.phone, u.first_name as cashier_first, u.last_name as cashier_last, b.branch_name 
@@ -84,20 +117,44 @@ if (isset($_GET['id'])) {
         }
         $selectedSale['items'] = $items;
         
+        // Load fiscal receipt data for the selected sale
+        $primaryDb = Database::getPrimaryInstance();
+        $fiscalReceipt = $primaryDb->getRow(
+            "SELECT fr.*, fd.device_serial_no, fd.device_id, fc.qr_url 
+             FROM fiscal_receipts fr
+             LEFT JOIN fiscal_devices fd ON fr.device_id = fd.device_id
+             LEFT JOIN fiscal_config fc ON fr.branch_id = fc.branch_id AND fr.device_id = fc.device_id
+             WHERE fr.sale_id = :sale_id
+             LIMIT 1",
+            [':sale_id' => $selectedSale['id']]
+        );
+        $selectedSale['fiscal_receipt'] = $fiscalReceipt;
+        
+        // Get fiscal receipt taxes for tax breakdown display
+        $selectedSale['fiscal_receipt_taxes'] = [];
+        if ($fiscalReceipt) {
+            $selectedSale['fiscal_receipt_taxes'] = $primaryDb->getRows(
+                "SELECT tax_code, tax_percent, tax_id, tax_amount, sales_amount_with_tax 
+                 FROM fiscal_receipt_taxes 
+                 WHERE fiscal_receipt_id = :fiscal_receipt_id 
+                 ORDER BY tax_percent ASC, tax_code ASC",
+                [':fiscal_receipt_id' => $fiscalReceipt['id']]
+            );
+        }
+        
         // Get payments - ALWAYS fetch directly from sale_payments first to ensure we get them
         $payments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $selectedSale['id']]);
         if ($payments === false) {
             $payments = [];
         }
         
-        // Enrich payments with currency information from main database
+        // Enrich payments with currency information from tenant database (currencies table is in tenant database)
         if (!empty($payments)) {
             require_once APP_PATH . '/includes/currency_functions.php';
-            $mainDb = Database::getMainInstance();
             foreach ($payments as &$payment) {
-                // Get currency info from main database
+                // Get currency info from tenant database (where currencies table exists)
                 if (!empty($payment['currency_id'])) {
-                    $currency = $mainDb->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $payment['currency_id']]);
+                    $currency = $db->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $payment['currency_id']]);
                     if ($currency) {
                         $payment['currency_code'] = $currency['code'];
                         $payment['currency_symbol'] = $currency['symbol'];
@@ -115,6 +172,41 @@ if (isset($_GET['id'])) {
             require_once APP_PATH . '/includes/currency_functions.php';
         }
         $baseCurrency = getBaseCurrency($db);
+        
+        // Determine payment currency from payments (for display conversion)
+        $paymentCurrency = null;
+        $paymentCurrencyId = null;
+        $exchangeRate = 1.0;
+        if (!empty($selectedSale['payments'])) {
+            // Get currency from first payment
+            $firstPayment = $selectedSale['payments'][0];
+            if (!empty($firstPayment['currency_id'])) {
+                $paymentCurrencyId = $firstPayment['currency_id'];
+                // Get currency from tenant database (currencies table is in tenant database)
+                $paymentCurrency = $db->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $paymentCurrencyId]);
+                if ($paymentCurrency && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                    // Get exchange rate from BASE currency to PAYMENT currency (for converting base amounts to payment currency)
+                    // If base is USD (rate=1.0) and payment is ZWL (rate=2.0), then 1 USD = 2 ZWL, so rate = 2.0
+                    if (!function_exists('getExchangeRate')) {
+                        require_once APP_PATH . '/includes/currency_functions.php';
+                    }
+                    $exchangeRate = getExchangeRate($baseCurrency['id'], $paymentCurrencyId, $db);
+                }
+            }
+        }
+        
+        // Helper function to convert and format currency for display
+        if (!function_exists('formatCurrencyAmount')) {
+            require_once APP_PATH . '/includes/currency_functions.php';
+        }
+        function formatAndConvertCurrency($amount, $paymentCurrencyId, $baseCurrencyId, $exchangeRate, $db) {
+            if ($paymentCurrencyId && $paymentCurrencyId != $baseCurrencyId) {
+                // Convert amount from base to payment currency for display
+                $convertedAmount = $amount * $exchangeRate;
+                return formatCurrencyAmount($convertedAmount, $paymentCurrencyId, $db);
+            }
+            return formatCurrencyAmount($amount, $baseCurrencyId, $db);
+        }
     } else {
         // Ensure baseCurrency is defined even if selectedSale is null
         if (!function_exists('getBaseCurrency')) {
@@ -238,7 +330,7 @@ require_once APP_PATH . '/includes/header.php';
 }
 
 .total-amount {
-    font-size: 48px;
+    font-size: 32px;
     font-weight: 700;
     color: var(--primary-blue);
 }
@@ -544,7 +636,7 @@ require_once APP_PATH . '/includes/header.php';
     }
     
     .total-amount {
-        font-size: 36px;
+        font-size: 24px;
     }
     
     .table {
@@ -652,6 +744,12 @@ require_once APP_PATH . '/includes/header.php';
                             <i class="bi bi-arrow-counterclockwise text-danger" style="font-size: 20px;"></i>
                         <?php endif; ?>
                     </div>
+                    <?php if (!empty($sale['fiscal_receipt'])): ?>
+                        <div class="mt-2 pt-2 border-top" style="font-size: 10px; color: #666;">
+                            <div><strong>Fiscal:</strong> Day <?= escapeHtml($sale['fiscal_receipt']['fiscal_day_no']) ?>, Global #<?= escapeHtml($sale['fiscal_receipt']['receipt_global_no']) ?></div>
+                            <div><strong>Verification:</strong> <?= escapeHtml($sale['fiscal_receipt']['receipt_verification_code']) ?></div>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -676,12 +774,16 @@ require_once APP_PATH . '/includes/header.php';
                         <i class="bi bi-whatsapp"></i> Send WhatsApp
                     </button>
                     <?php if ($selectedSale['payment_status'] !== 'refunded'): ?>
+                        <?php if ($auth->hasPermission('receipts.refund')): ?>
                         <button class="btn btn-warning" onclick="refundSale(<?= $selectedSale['id'] ?>)">
                             <i class="bi bi-arrow-counterclockwise"></i> Refund
                         </button>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('receipts.delete')): ?>
                         <button class="btn btn-danger" onclick="deleteReceipt(<?= $selectedSale['id'] ?>)">
                             <i class="bi bi-trash"></i> Delete
                         </button>
+                        <?php endif; ?>
                     <?php else: ?>
                         <span class="badge bg-danger">Refunded</span>
                     <?php endif; ?>
@@ -735,29 +837,125 @@ require_once APP_PATH . '/includes/header.php';
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($selectedSale['items'] as $item): ?>
+                        <?php 
+                        // Convert items to payment currency if different from base
+                        foreach ($selectedSale['items'] as $item): 
+                            $unitPrice = floatval($item['unit_price']);
+                            $totalPrice = floatval($item['total_price']);
+                            
+                            // Convert to payment currency if needed (base currency -> payment currency)
+                            if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                                // Convert from base to payment currency (multiply by exchange rate)
+                                $unitPrice = $unitPrice * $exchangeRate;
+                                $totalPrice = $totalPrice * $exchangeRate;
+                            }
+                            
+                            // Format with payment currency
+                            $unitPriceFormatted = $paymentCurrency ? formatCurrencyAmount($unitPrice, $paymentCurrencyId, $db) : formatCurrency($unitPrice);
+                            $totalPriceFormatted = $paymentCurrency ? formatCurrencyAmount($totalPrice, $paymentCurrencyId, $db) : formatCurrency($totalPrice);
+                        ?>
                             <tr>
                                 <td style="text-align: left; padding: 6px 4px; word-wrap: break-word; border-bottom: 1px solid #ddd;"><?= escapeHtml($item['product_name']) ?></td>
                                 <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $item['quantity'] ?></td>
-                                <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= formatCurrency($item['unit_price']) ?></td>
-                                <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= formatCurrency($item['total_price']) ?></td>
+                                <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $unitPriceFormatted ?></td>
+                                <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $totalPriceFormatted ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
                     <tfoot>
+                        <?php
+                        // Convert amounts to payment currency if needed
+                        $subtotal = floatval($selectedSale['subtotal']);
+                        $discountAmount = floatval($selectedSale['discount_amount'] ?? 0);
+                        $totalAmount = floatval($selectedSale['total_amount']);
+                        
+                        if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                            $subtotal = $subtotal * $exchangeRate;
+                            $discountAmount = $discountAmount * $exchangeRate;
+                            $totalAmount = $totalAmount * $exchangeRate;
+                        }
+                        
+                        $subtotalFormatted = $paymentCurrency ? formatCurrencyAmount($subtotal, $paymentCurrencyId, $db) : formatCurrency($subtotal);
+                        $discountFormatted = $paymentCurrency ? formatCurrencyAmount($discountAmount, $paymentCurrencyId, $db) : formatCurrency($discountAmount);
+                        $totalFormatted = $paymentCurrency ? formatCurrencyAmount($totalAmount, $paymentCurrencyId, $db) : formatCurrency($totalAmount);
+                        ?>
                         <tr>
                             <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Subtotal:</strong></td>
-                            <td style="text-align: right; padding: 6px 4px;"><strong><?= formatCurrency($selectedSale['subtotal']) ?></strong></td>
+                            <td style="text-align: right; padding: 6px 4px;"><strong><?= $subtotalFormatted ?></strong></td>
                         </tr>
-                        <?php if ($selectedSale['discount_amount'] > 0): ?>
+                        <?php if ($discountAmount > 0): ?>
                             <tr>
                                 <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
-                                <td style="text-align: right; padding: 6px 4px;"><strong>-<?= formatCurrency($selectedSale['discount_amount']) ?></strong></td>
+                                <td style="text-align: right; padding: 6px 4px;"><strong>-<?= $discountFormatted ?></strong></td>
                             </tr>
                         <?php endif; ?>
+                        <?php
+                        // Tax Breakdown (if fiscalized)
+                        if (!empty($selectedSale['fiscal_receipt_taxes'])) {
+                            // Group taxes by taxPercent and taxCode for display
+                            $taxGroups = [];
+                            foreach ($selectedSale['fiscal_receipt_taxes'] as $tax) {
+                                $taxPercent = isset($tax['tax_percent']) && $tax['tax_percent'] !== null ? floatval($tax['tax_percent']) : null;
+                                $taxCode = $tax['tax_code'] ?? '';
+                                $taxAmount = floatval($tax['tax_amount'] ?? 0);
+                                
+                                // Create key for grouping: exempt by code, others by percent
+                                if ($taxCode === 'E') {
+                                    $key = 'exempt';
+                                } elseif ($taxPercent === 0.0 || $taxPercent === 0) {
+                                    $key = '0';
+                                } else {
+                                    $key = strval($taxPercent);
+                                }
+                                
+                                if (!isset($taxGroups[$key])) {
+                                    $taxGroups[$key] = [
+                                        'taxPercent' => $taxPercent,
+                                        'taxCode' => $taxCode,
+                                        'totalAmount' => 0
+                                    ];
+                                }
+                                $taxGroups[$key]['totalAmount'] += $taxAmount;
+                            }
+                            
+                            // Sort: exempt first, then 0%, then by percent ascending
+                            uksort($taxGroups, function($a, $b) {
+                                if ($a === 'exempt') return -1;
+                                if ($b === 'exempt') return 1;
+                                if ($a === '0') return -1;
+                                if ($b === '0') return 1;
+                                return floatval($a) <=> floatval($b);
+                            });
+                            
+                            // Display tax breakdowns
+                            foreach ($taxGroups as $group):
+                                // Format label based on tax type
+                                if ($group['taxCode'] === 'E') {
+                                    $label = 'Total: Exempt from VAT';
+                                } elseif ($group['taxPercent'] === 0.0 || $group['taxPercent'] === 0 || $group['taxPercent'] === null) {
+                                    $label = 'Total 0% VAT';
+                                } else {
+                                    $label = 'Total ' . number_format($group['taxPercent'], 1) . '% VAT';
+                                }
+                                
+                                // Convert tax amount to payment currency if needed
+                                $taxAmount = floatval($group['totalAmount']);
+                                if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                                    $taxAmount = $taxAmount * $exchangeRate;
+                                }
+                                $taxAmountFormatted = $paymentCurrency ? formatCurrencyAmount($taxAmount, $paymentCurrencyId, $db) : formatCurrency($taxAmount);
+                        ?>
+                            <tr>
+                                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
+                                <td style="text-align: right; padding: 6px 4px;"><strong><?= $taxAmountFormatted ?></strong></td>
+                            </tr>
+                        <?php
+                            endforeach;
+                        }
+                        ?>
                         <tr class="total-row">
                             <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>TOTAL:</strong></td>
-                            <td style="text-align: right; padding: 6px 4px;"><strong><?= formatCurrency($selectedSale['total_amount']) ?></strong></td>
+                            <td style="text-align: right; padding: 6px 4px;"><strong><?= $totalFormatted ?></strong></td>
                         </tr>
                         <tr>
                             <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
@@ -769,14 +967,14 @@ require_once APP_PATH . '/includes/header.php';
                                     $fallbackPayments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $selectedSale['id']]);
                                     if ($fallbackPayments !== false && !empty($fallbackPayments)) {
                                         $selectedSale['payments'] = $fallbackPayments;
-                                        // Enrich with currency info
+                                        // Enrich with currency info from tenant database
                                         if (!function_exists('getBaseCurrency')) {
                                             require_once APP_PATH . '/includes/currency_functions.php';
                                         }
-                                        $mainDb = Database::getMainInstance();
                                         foreach ($selectedSale['payments'] as &$payment) {
                                             if (!empty($payment['currency_id'])) {
-                                                $currency = $mainDb->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $payment['currency_id']]);
+                                                // Get currency from tenant database (where currencies table exists)
+                                                $currency = $db->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $payment['currency_id']]);
                                                 if ($currency) {
                                                     $payment['currency_code'] = $currency['code'];
                                                     $payment['currency_symbol'] = $currency['symbol'];
@@ -794,15 +992,32 @@ require_once APP_PATH . '/includes/header.php';
                                     <div style="margin-left: 10px; color: #999; font-style: italic;">No payment information available</div>
                                 <?php else: 
                                     foreach ($selectedSale['payments'] as $payment): 
-                                        // Use base_amount if available, otherwise use amount
-                                        $paymentAmount = isset($payment['base_amount']) ? floatval($payment['base_amount']) : floatval($payment['amount']);
+                                        // Use original_amount (in payment currency) if available, otherwise convert base_amount
+                                        $paymentAmount = null;
+                                        if (isset($payment['original_amount']) && $payment['original_amount'] !== null) {
+                                            $paymentAmount = floatval($payment['original_amount']);
+                                        } elseif (isset($payment['base_amount']) && $payment['base_amount'] !== null) {
+                                            $baseAmount = floatval($payment['base_amount']);
+                                            // Convert to payment currency if needed
+                                            if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                                                $paymentAmount = $baseAmount * $exchangeRate;
+                                            } else {
+                                                $paymentAmount = $baseAmount;
+                                            }
+                                        } else {
+                                            $paymentAmount = floatval($payment['amount']);
+                                            // Convert to payment currency if needed
+                                            if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                                                $paymentAmount = $paymentAmount * $exchangeRate;
+                                            }
+                                        }
                                         $totalPaid += $paymentAmount;
                                         
-                                        // Display original amount and currency if different from base
-                                        $displayAmount = isset($payment['original_amount']) ? floatval($payment['original_amount']) : floatval($payment['amount']);
-                                        $currencyCode = $payment['currency_code'] ?? ($baseCurrency ? $baseCurrency['code'] : 'USD');
-                                        $currencySymbol = $payment['currency_symbol'] ?? ($baseCurrency ? $baseCurrency['symbol'] : '$');
-                                        $symbolPosition = $payment['currency_symbol_position'] ?? ($baseCurrency ? $baseCurrency['symbol_position'] : 'before');
+                                        // Display original amount and currency (already in payment currency)
+                                        $displayAmount = isset($payment['original_amount']) ? floatval($payment['original_amount']) : $paymentAmount;
+                                        $currencyCode = $payment['currency_code'] ?? ($paymentCurrency ? $paymentCurrency['code'] : ($baseCurrency ? $baseCurrency['code'] : 'USD'));
+                                        $currencySymbol = $payment['currency_symbol'] ?? ($paymentCurrency ? $paymentCurrency['symbol'] : ($baseCurrency ? $baseCurrency['symbol'] : '$'));
+                                        $symbolPosition = $payment['currency_symbol_position'] ?? ($paymentCurrency ? $paymentCurrency['symbol_position'] : ($baseCurrency ? $baseCurrency['symbol_position'] : 'before'));
                                         
                                         if ($symbolPosition === 'before') {
                                             $formattedAmount = $currencySymbol . number_format($displayAmount, 2);
@@ -823,17 +1038,87 @@ require_once APP_PATH . '/includes/header.php';
                             </td>
                         </tr>
                         <?php 
-                        // Calculate change if amount paid exceeds total (use base_amount for calculation)
-                        $change = $totalPaid - $selectedSale['total_amount'];
+                        // Calculate change if amount paid exceeds total (convert to payment currency if needed)
+                        $change = $totalPaid - $totalAmount; // Use converted totalAmount
                         if ($change > 0): 
+                            $changeFormatted = $paymentCurrency ? formatCurrencyAmount($change, $paymentCurrencyId, $db) : formatCurrency($change);
                         ?>
                             <tr>
                                 <td colspan="3" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
-                                <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong><?= formatCurrency($change) ?></strong></td>
+                                <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong><?= $changeFormatted ?></strong></td>
                             </tr>
                         <?php endif; ?>
                     </tfoot>
                 </table>
+                
+                <?php if (!empty($selectedSale['fiscal_receipt'])): 
+                    $fiscalReceipt = $selectedSale['fiscal_receipt'];
+                    // Build fiscal details for display
+                    $fiscalDetails = [
+                        'receipt_global_no' => $fiscalReceipt['receipt_global_no'] ?? '',
+                        'device_id' => $fiscalReceipt['device_id'] ?? '',
+                        'verification_code' => $fiscalReceipt['receipt_verification_code'] ?? '',
+                        'qr_code' => $fiscalReceipt['receipt_qr_data'] ?? ''
+                    ];
+                ?>
+                    <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #ddd;">
+                        <?php 
+                        // QR Code Display (FIRST - according to documentation)
+                        $qrCodeDisplayed = false;
+                        
+                        // First, try to use stored QR code image if available
+                        if (isset($fiscalReceipt['receipt_qr_code']) && !empty($fiscalReceipt['receipt_qr_code']) && strlen($fiscalReceipt['receipt_qr_code']) > 0) {
+                            try {
+                                $qrImageData = base64_decode($fiscalReceipt['receipt_qr_code']);
+                                if ($qrImageData !== false && strlen($qrImageData) > 0) {
+                                    $qrImageBase64 = base64_encode($qrImageData);
+                                    echo '<div style="text-align: center; margin: 10px 0;">';
+                                    echo '<img src="data:image/png;base64,' . htmlspecialchars($qrImageBase64) . '" alt="QR Code" style="max-width: 120px; height: auto; border: 1px solid #ddd;">';
+                                    echo '</div>';
+                                    $qrCodeDisplayed = true;
+                                }
+                            } catch (Exception $e) {
+                                error_log("QR code image error: " . $e->getMessage());
+                            }
+                        }
+                        
+                        // Fallback: Generate QR code URL for display
+                        if (!$qrCodeDisplayed && isset($fiscalReceipt['receipt_qr_data']) && !empty($fiscalReceipt['receipt_qr_data'])) {
+                            $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdmstest.zimra.co.zw';
+                            $deviceId = $fiscalReceipt['device_id'] ?? '';
+                            $receiptDate = $fiscalReceipt['receipt_date'] ?? '';
+                            $receiptGlobalNo = $fiscalReceipt['receipt_global_no'] ?? '';
+                            
+                            if ($deviceId && $receiptDate && $receiptGlobalNo) {
+                                $deviceIdFormatted = str_pad($deviceId, 10, '0', STR_PAD_LEFT);
+                                $date = new DateTime($receiptDate);
+                                $receiptDateFormatted = $date->format('dmy');
+                                $receiptGlobalNoFormatted = str_pad($receiptGlobalNo, 10, '0', STR_PAD_LEFT);
+                                $qrDataFormatted = substr($fiscalReceipt['receipt_qr_data'], 0, 16);
+                                $qrCodeString = rtrim($qrUrl, '/') . '/' . $deviceIdFormatted . $receiptDateFormatted . $receiptGlobalNoFormatted . $qrDataFormatted;
+                                
+                                // Use a QR code API service to generate the image
+                                $qrCodeApiUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=' . urlencode($qrCodeString);
+                                echo '<div style="text-align: center; margin: 10px 0;">';
+                                echo '<img src="' . htmlspecialchars($qrCodeApiUrl) . '" alt="QR Code" style="max-width: 120px; height: auto; border: 1px solid #ddd;">';
+                                echo '</div>';
+                            }
+                        }
+                        
+                        // Verification Code (BELOW QR CODE - according to documentation)
+                        if (isset($fiscalDetails['verification_code']) && !empty($fiscalDetails['verification_code'])): ?>
+                            <div style="text-align: center; margin: 8px 0; font-weight: bold; font-size: 10px;">
+                                Verification code: <?= escapeHtml($fiscalDetails['verification_code']) ?>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <!-- Verification URL -->
+                        <div style="text-align: center; margin: 5px 0; font-size: 9px; color: #666;">
+                            You can verify this receipt manually at<br>
+                            <a href="https://receipt.zimra.org/" target="_blank" style="color: #1e3a8a; text-decoration: underline;">https://receipt.zimra.org/</a>
+                        </div>
+                    </div>
+                <?php endif; ?>
                 
                 <div class="receipt-footer">
                     <div style="margin-bottom: 5px;">Thank you for your business!</div>

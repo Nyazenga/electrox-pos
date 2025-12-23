@@ -6,7 +6,10 @@ require_once APP_PATH . '/includes/functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('pos.access');
+// Allow if user can access POS (pos.view or pos.create_sale)
+if (!$auth->hasPermission('pos.view') && !$auth->hasPermission('pos.create_sale')) {
+    $auth->requirePermission('pos.view'); // This will show access denied
+}
 
 $pageTitle = 'Start Shift';
 

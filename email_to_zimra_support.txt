@@ -1,0 +1,66 @@
+Subject: Test Device Reset Request & Technical Clarifications - Device IDs 30199, 30200
+
+Dear ZIMRA Technical Support,
+
+I am one of the developers working on our fiscal device integration. This is my first time implementing this integration, and I was not the original contact person for this project (this email is forwarded for reference).
+
+We require assistance with our test device integration:
+
+1. DEVICE RESET REQUEST
+   Please reset device registrations for:
+   - Device ID: 30199 (Serial: electrox-1) - Certificate lost during development
+   - Device ID: 30200 (Serial: electrox-2) - Need clean state for testing
+   
+   Reason: Development issues with receipt persistence and certificate loss require a fresh start.
+
+2. TECHNICAL CLARIFICATIONS
+
+   a) RCPT020 Error (USD Currency):
+      Receiving "Invoice signature is not valid" errors for USD receipts only; ZWL receipts work correctly. 
+      Question: Are there currency-specific signature requirements, or should the format be identical?
+      
+      DOCUMENTATION ERROR IDENTIFIED:
+      In Section 13.2.1, "Example No 2" (USD currency), the "Result used for hash generation" appears to be 
+      missing the required fields at the beginning. It shows:
+      "07000.000100014.50535 hNVJXP/ACOiE8McD3pKsDlqBXpuaUqQOfPnMyfZWI9k="
+      
+      However, based on "Example No 1" (ZWL), it should include:
+      deviceID || receiptType || receiptCurrency || receiptGlobalNo || receiptDate || receiptTotal || receiptTaxes || previousReceiptHash
+      
+      Should Example No 2's hash generation string start with "322FISCALINVOICEUSD852019-09-19T09:23:074035" 
+      (deviceID=322, receiptTotal=4035 cents) before the receiptTaxes result?
+      
+      Also, there is no example provided for the first receipt in a fiscal day (when previousReceiptHash 
+      is not present). Could you provide clarification on how to handle this case?
+      
+      (Section 13.2 - Receipt signature generation and verification is attached for reference, with 
+      the problematic example highlighted)
+
+   b) Fiscal Day Signature Format:
+      Documentation v7.2 Section 13.3.1 example shows: "BALANCEBYMONEYTYPEUSDLCASH3700"
+      Question: Is the "L" between "USD" and "CASH" (USDLCASH) intentional, or a documentation typo?
+      Should it be "BALANCEBYMONEYTYPEUSDCASH3700" instead?
+      (Relevant documentation sections are attached for reference)
+
+   c) Documentation:
+      Currently using v7.2. Is a newer version available with updated examples?
+      If there are any errors or mistakes in the documentation, clarity would be greatly appreciated.
+
+3. REQUESTED ACTIONS
+   - Reset devices 30199 and 30200
+   - Provide correct activation keys (if changed)
+   - Clarify fiscal day signature format (the "L" in example)
+   - Confirm currency-specific signature requirements
+   - Correct/clarify Example No 2 in Section 13.2.1 (missing fields in hash generation string)
+   - Provide example for first receipt in fiscal day (when previousReceiptHash is absent)
+   - Share latest documentation version
+
+I have attached the relevant sections of the documentation (Section 13.2 - Receipt signature generation and verification, and Section 13.3.1 - Fiscal day signature generation) that require clarification for your reference.
+
+Thank you for your assistance.
+
+Best regards,
+[Your Name]
+[Company Name]
+[Email/Phone]
+

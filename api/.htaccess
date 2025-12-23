@@ -1,0 +1,15 @@
+RewriteEngine On
+RewriteBase /electrox-pos/api/
+
+# Handle Swagger UI
+RewriteRule ^swagger-ui\.php$ swagger-ui.php [L]
+
+# Handle Swagger JSON
+RewriteRule ^swagger\.json$ swagger.php [L]
+
+# Route API requests
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+

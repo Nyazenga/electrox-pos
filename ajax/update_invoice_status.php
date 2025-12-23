@@ -18,7 +18,7 @@ try {
         throw new Exception('Not authenticated');
     }
     
-    $auth->requirePermission('invoices.edit');
+    $auth->requirePermission('invoicing.change_status');
     
     $input = json_decode(file_get_contents('php://input'), true);
     
@@ -85,7 +85,8 @@ try {
                 logError("Sale already exists for invoice {$invoice['invoice_number']}, skipping sale creation");
             } else {
                 // Get invoice items with product_id (only create sale for items with products)
-                $invoiceItems = $db->getRows("SELECT ii.*, p.brand, p.model, p.quantity_in_stock
+                // Include product_name for General category products
+                $invoiceItems = $db->getRows("SELECT ii.*, p.brand, p.model, p.product_name, p.quantity_in_stock
                     FROM invoice_items ii 
                     LEFT JOIN products p ON ii.product_id = p.id 
                     WHERE ii.invoice_id = :id AND ii.product_id IS NOT NULL", 
@@ -233,6 +234,7 @@ try {
                     }
                     
                     // Create sale record
+                    // Use current timestamp for sale_date to ensure accurate time (not invoice_date which might be 00:00:00)
                     $saleData = [
                         'receipt_number' => $receiptNumber,
                         'shift_id' => $shift['id'],
@@ -240,7 +242,7 @@ try {
                         'user_id' => $invoiceUserId,
                         'customer_id' => $invoice['customer_id'] ?? null,
                         'invoice_id' => $invoiceId, // Link to invoice
-                        'sale_date' => $invoice['invoice_date'] ?? date('Y-m-d H:i:s'),
+                        'sale_date' => date('Y-m-d H:i:s'), // Always use current timestamp for accurate sale time
                         'subtotal' => $subtotal,
                         'discount_type' => $discountType,
                         'discount_amount' => $discountAmount,
@@ -264,15 +266,24 @@ try {
                         $unitPrice = floatval($item['unit_price'] ?? 0);
                         $lineTotal = floatval($item['line_total'] ?? ($unitPrice * $quantity));
                         
-                        // Get product name
+                        // Get product name - handle both General category (product_name) and others (brand/model)
                         $productName = '';
-                        if (!empty($item['brand']) || !empty($item['model'])) {
+                        // First check if product_name exists (for General category)
+                        if (!empty($item['product_name'])) {
+                            $productName = trim($item['product_name']);
+                        }
+                        // If not, try brand + model
+                        if (empty($productName) && (!empty($item['brand']) || !empty($item['model']))) {
                             $productName = trim(($item['brand'] ?? '') . ' ' . ($item['model'] ?? ''));
                         }
+                        // If still empty, fetch from database
                         if (empty($productName)) {
-                            $product = $db->getRow("SELECT brand, model FROM products WHERE id = :id", [':id' => $productId]);
+                            $product = $db->getRow("SELECT product_name, brand, model FROM products WHERE id = :id", [':id' => $productId]);
                             if ($product) {
-                                $productName = trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? ''));
+                                // Prefer product_name (General category), fallback to brand+model
+                                $productName = !empty($product['product_name']) 
+                                    ? trim($product['product_name'])
+                                    : trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? ''));
                             }
                         }
                         if (empty($productName)) {
@@ -528,6 +539,18 @@ try {
         
         $db->commitTransaction();
         
+        // Fiscalize invoice if status changed to Paid and fiscalization is enabled
+        if ($status === 'Paid' && $oldStatus !== 'Paid') {
+            try {
+                require_once APP_PATH . '/includes/fiscal_helper.php';
+                fiscalizeInvoice($invoiceId, $db);
+            } catch (Exception $fiscalError) {
+                // Log error but don't fail the request
+                error_log("Fiscalization error for invoice {$invoiceId}: " . $fiscalError->getMessage());
+                // You might want to notify the user about this
+            }
+        }
+        
     } catch (Exception $e) {
         if ($db->inTransaction()) {
             $db->rollbackTransaction();
@@ -549,9 +572,29 @@ try {
     }
     
     ob_clean();
+    
+    // Get sale ID if one was created
+    $saleId = null;
+    $receiptNumber = null;
+    if ($status === 'Paid' && $oldStatus !== 'Paid') {
+        $sale = $db->getRow("SELECT id, receipt_number FROM sales WHERE invoice_id = :invoice_id ORDER BY id DESC LIMIT 1", 
+            [':invoice_id' => $invoiceId]);
+        if ($sale) {
+            $saleId = $sale['id'];
+            $receiptNumber = $sale['receipt_number'];
+        }
+    }
+    
+    $message = 'Invoice status updated successfully';
+    if ($saleId && $receiptNumber) {
+        $message .= '. Receipt #' . $receiptNumber . ' has been created and is available in Manage Sales.';
+    }
+    
     echo json_encode([
         'success' => true,
-        'message' => 'Invoice status updated successfully'
+        'message' => $message,
+        'sale_id' => $saleId,
+        'receipt_number' => $receiptNumber
     ]);
     exit;
     

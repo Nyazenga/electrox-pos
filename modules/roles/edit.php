@@ -24,20 +24,15 @@ if (!$role) {
     redirectTo('modules/roles/index.php');
 }
 
-// Check if it's a system role (can't edit permissions for system roles)
-$isSystemRole = ($role['is_system_role'] ?? 0) == 1;
-
 // Get all permissions grouped by module
 $permissions = $db->getRows("SELECT * FROM permissions ORDER BY module, permission_name");
 if ($permissions === false) $permissions = [];
 
-// Get role's current permissions
+// Get role's current permissions (ALLOW editing system roles)
 $rolePermissionIds = [];
-if (!$isSystemRole) {
-    $rolePerms = $db->getRows("SELECT permission_id FROM role_permissions WHERE role_id = :role_id", [':role_id' => $id]);
-    if ($rolePerms !== false) {
-        $rolePermissionIds = array_column($rolePerms, 'permission_id');
-    }
+$rolePerms = $db->getRows("SELECT permission_id FROM role_permissions WHERE role_id = :role_id", [':role_id' => $id]);
+if ($rolePerms !== false) {
+    $rolePermissionIds = array_column($rolePerms, 'permission_id');
 }
 
 // Group permissions by module
@@ -58,9 +53,9 @@ require_once APP_PATH . '/includes/header.php';
     <a href="index.php" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
 </div>
 
-<?php if ($isSystemRole): ?>
-    <div class="alert alert-warning">
-        <i class="bi bi-exclamation-triangle"></i> This is a system role. Permissions cannot be modified for system roles.
+<?php if ($role['is_system_role'] ?? 0): ?>
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> This is a system role. You can still edit its permissions.
     </div>
 <?php endif; ?>
 
@@ -81,7 +76,7 @@ require_once APP_PATH . '/includes/header.php';
             </div>
 
             <div class="mb-4">
-                <label class="form-label fw-bold">Permissions <?= $isSystemRole ? '(Read-only)' : '*' ?></label>
+                <label class="form-label fw-bold">Permissions *</label>
                 <div class="border rounded p-3" style="max-height: 500px; overflow-y: auto;">
                     <?php if (empty($permissionsByModule)): ?>
                         <div class="alert alert-info">No permissions found. Please seed permissions first.</div>
@@ -97,8 +92,7 @@ require_once APP_PATH . '/includes/header.php';
                                                        name="permissions[]" 
                                                        value="<?= $permission['id'] ?>" 
                                                        id="perm_<?= $permission['id'] ?>"
-                                                       <?= in_array($permission['id'], $rolePermissionIds) ? 'checked' : '' ?>
-                                                       <?= $isSystemRole ? 'disabled' : '' ?>>
+                                                       <?= in_array($permission['id'], $rolePermissionIds) ? 'checked' : '' ?>>
                                                 <label class="form-check-label" for="perm_<?= $permission['id'] ?>">
                                                     <strong><?= escapeHtml($permission['permission_name']) ?></strong>
                                                     <?php if ($permission['description']): ?>
@@ -113,12 +107,10 @@ require_once APP_PATH . '/includes/header.php';
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </div>
-                <?php if (!$isSystemRole): ?>
-                    <div class="mt-2">
-                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectAllPermissions()">Select All</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="deselectAllPermissions()">Deselect All</button>
-                    </div>
-                <?php endif; ?>
+                <div class="mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectAllPermissions()">Select All</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="deselectAllPermissions()">Deselect All</button>
+                </div>
             </div>
 
             <div class="d-flex justify-content-end gap-2">
@@ -147,8 +139,7 @@ document.getElementById('roleForm').addEventListener('submit', function(e) {
         return;
     }
     
-    const isSystemRole = <?= $isSystemRole ? 'true' : 'false' ?>;
-    if (!isSystemRole && formData.permissions.length === 0) {
+    if (formData.permissions.length === 0) {
         Swal.fire('Error', 'Please select at least one permission', 'error');
         return;
     }
@@ -188,11 +179,11 @@ document.getElementById('roleForm').addEventListener('submit', function(e) {
 });
 
 function selectAllPermissions() {
-    document.querySelectorAll('.permission-checkbox:not(:disabled)').forEach(cb => cb.checked = true);
+    document.querySelectorAll('.permission-checkbox').forEach(cb => cb.checked = true);
 }
 
 function deselectAllPermissions() {
-    document.querySelectorAll('.permission-checkbox:not(:disabled)').forEach(cb => cb.checked = false);
+    document.querySelectorAll('.permission-checkbox').forEach(cb => cb.checked = false);
 }
 </script>
 

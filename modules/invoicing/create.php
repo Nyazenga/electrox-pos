@@ -6,7 +6,8 @@ require_once APP_PATH . '/includes/functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('invoices.create');
+// This page matches sidebar invoice creation menu items
+$auth->requirePermission('invoicing.create');
 
 $invoiceType = $_GET['type'] ?? 'proforma';
 $validTypes = ['proforma', 'tax', 'quote', 'credit'];

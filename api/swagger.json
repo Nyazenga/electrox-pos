@@ -1,0 +1,665 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "ELECTROX-POS API",
+        "version": "1.0.0",
+        "description": "Comprehensive REST API for ELECTROX-POS System - Stock Management, Invoicing & POS. This API provides full access to all system functionality for mobile app integration.",
+        "contact": {
+            "email": "support@electrox.co.zw",
+            "name": "ELECTROX Support"
+        },
+        "license": {
+            "name": "Proprietary",
+            "url": "https://electrox.co.zw"
+        }
+    },
+    "servers": [
+        {
+            "url": "http://localhost/electrox-pos/api/v1",
+            "description": "Local Development Server"
+        },
+        {
+            "url": "https://app.electrox-pos.com/api/v1",
+            "description": "Production Server"
+        }
+    ],
+    "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "API Token Authentication. Get token from /auth endpoint."
+            }
+        },
+        "schemas": {
+            "Product": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "product_code": {"type": "string"},
+                    "product_name": {"type": "string"},
+                    "brand": {"type": "string"},
+                    "model": {"type": "string"},
+                    "category_id": {"type": "integer"},
+                    "cost_price": {"type": "number", "format": "float"},
+                    "selling_price": {"type": "number", "format": "float"},
+                    "quantity_in_stock": {"type": "integer"},
+                    "reorder_level": {"type": "integer"},
+                    "status": {"type": "string", "enum": ["Active", "Inactive"]},
+                    "color": {"type": "string"},
+                    "barcode": {"type": "string"},
+                    "images": {"type": "array", "items": {"type": "string"}}
+                }
+            },
+            "Sale": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "receipt_number": {"type": "string"},
+                    "sale_date": {"type": "string", "format": "date-time"},
+                    "total_amount": {"type": "number"},
+                    "payment_status": {"type": "string"},
+                    "items": {"type": "array", "items": {"$ref": "#/components/schemas/SaleItem"}},
+                    "payments": {"type": "array", "items": {"$ref": "#/components/schemas/Payment"}}
+                }
+            },
+            "SaleItem": {
+                "type": "object",
+                "properties": {
+                    "product_id": {"type": "integer"},
+                    "product_name": {"type": "string"},
+                    "quantity": {"type": "integer"},
+                    "unit_price": {"type": "number"},
+                    "total_price": {"type": "number"}
+                }
+            },
+            "Payment": {
+                "type": "object",
+                "properties": {
+                    "payment_method": {"type": "string", "enum": ["cash", "card", "mobile", "bank_transfer"]},
+                    "amount": {"type": "number"}
+                }
+            },
+            "Invoice": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "invoice_number": {"type": "string"},
+                    "invoice_type": {"type": "string"},
+                    "status": {"type": "string"},
+                    "total_amount": {"type": "number"},
+                    "items": {"type": "array", "items": {"type": "object"}}
+                }
+            },
+            "Customer": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "first_name": {"type": "string"},
+                    "last_name": {"type": "string"},
+                    "email": {"type": "string"},
+                    "phone": {"type": "string"},
+                    "address": {"type": "string"}
+                }
+            },
+            "Error": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean", "example": false},
+                    "message": {"type": "string"},
+                    "errors": {"type": "array", "items": {"type": "string"}}
+                }
+            },
+            "Success": {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean", "example": true},
+                    "message": {"type": "string"},
+                    "data": {"type": "object"}
+                }
+            }
+        }
+    },
+    "tags": [
+        {"name": "Authentication", "description": "User authentication and authorization"},
+        {"name": "Products", "description": "Product management operations"},
+        {"name": "Sales", "description": "Point of Sale and sales operations"},
+        {"name": "Invoices", "description": "Invoice management operations"},
+        {"name": "Customers", "description": "Customer management operations"},
+        {"name": "Inventory", "description": "Inventory, GRN, and stock management"},
+        {"name": "Reports", "description": "Sales and inventory reports"},
+        {"name": "Shifts", "description": "Shift management operations"}
+    ],
+    "paths": {
+        "/auth": {
+            "post": {
+                "tags": ["Authentication"],
+                "summary": "User login",
+                "description": "Authenticate user and get API token",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["email", "password", "tenant_name"],
+                                "properties": {
+                                    "email": {"type": "string", "format": "email", "example": "admin@electrox.co.zw"},
+                                    "password": {"type": "string", "format": "password", "example": "Admin@123"},
+                                    "tenant_name": {"type": "string", "example": "primary"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Login successful",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {"$ref": "#/components/schemas/Success"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "token": {"type": "string"},
+                                                        "user": {"type": "object"}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {"description": "Invalid credentials", "$ref": "#/components/schemas/Error"}
+                }
+            }
+        },
+        "/products": {
+            "get": {
+                "tags": ["Products"],
+                "summary": "Get all products",
+                "security": [{"bearerAuth": []}],
+                "parameters": [
+                    {"name": "page", "in": "query", "schema": {"type": "integer", "default": 1}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 25, "maximum": 100}},
+                    {"name": "category_id", "in": "query", "schema": {"type": "integer"}},
+                    {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["Active", "Inactive"]}},
+                    {"name": "search", "in": "query", "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of products",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {"$ref": "#/components/schemas/Success"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "data": {"type": "array", "items": {"$ref": "#/components/schemas/Product"}},
+                                                        "pagination": {"type": "object"}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Products"],
+                "summary": "Create new product",
+                "security": [{"bearerAuth": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Product"}
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Product created", "$ref": "#/components/schemas/Success"},
+                    "400": {"description": "Validation error", "$ref": "#/components/schemas/Error"}
+                }
+            }
+        },
+        "/products/{id}": {
+            "get": {
+                "tags": ["Products"],
+                "summary": "Get product by ID",
+                "security": [{"bearerAuth": []}],
+                "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+                "responses": {
+                    "200": {"description": "Product details", "$ref": "#/components/schemas/Success"},
+                    "404": {"description": "Product not found", "$ref": "#/components/schemas/Error"}
+                }
+            },
+            "put": {
+                "tags": ["Products"],
+                "summary": "Update product",
+                "security": [{"bearerAuth": []}],
+                "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Product"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Product updated", "$ref": "#/components/schemas/Success"},
+                    "404": {"description": "Product not found", "$ref": "#/components/schemas/Error"}
+                }
+            },
+            "delete": {
+                "tags": ["Products"],
+                "summary": "Delete product",
+                "security": [{"bearerAuth": []}],
+                "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+                "responses": {
+                    "200": {"description": "Product deleted", "$ref": "#/components/schemas/Success"},
+                    "404": {"description": "Product not found", "$ref": "#/components/schemas/Error"}
+                }
+            }
+        },
+        "/sales": {
+            "get": {
+                "tags": ["Sales"],
+                "summary": "Get all sales/receipts",
+                "security": [{"bearerAuth": []}],
+                "parameters": [
+                    {"name": "page", "in": "query", "schema": {"type": "integer"}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer"}},
+                    {"name": "start_date", "in": "query", "schema": {"type": "string", "format": "date"}},
+                    {"name": "end_date", "in": "query", "schema": {"type": "string", "format": "date"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of sales",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {"$ref": "#/components/schemas/Success"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "data": {"type": "array", "items": {"$ref": "#/components/schemas/Sale"}},
+                                                        "pagination": {"type": "object"}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Sales"],
+                "summary": "Create new sale (POS transaction)",
+                "security": [{"bearerAuth": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["cart", "payments"],
+                                "properties": {
+                                    "cart": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {"type": "integer"},
+                                                "name": {"type": "string"},
+                                                "price": {"type": "number"},
+                                                "quantity": {"type": "integer"}
+                                            }
+                                        }
+                                    },
+                                    "payments": {
+                                        "type": "array",
+                                        "items": {"$ref": "#/components/schemas/Payment"}
+                                    },
+                                    "customer_id": {"type": "integer"},
+                                    "discount": {"type": "object"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Sale created", "$ref": "#/components/schemas/Success"},
+                    "400": {"description": "Validation error", "$ref": "#/components/schemas/Error"}
+                }
+            }
+        },
+        "/sales/{id}": {
+            "get": {
+                "tags": ["Sales"],
+                "summary": "Get sale by ID",
+                "security": [{"bearerAuth": []}],
+                "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+                "responses": {
+                    "200": {"description": "Sale details", "$ref": "#/components/schemas/Success"},
+                    "404": {"description": "Sale not found", "$ref": "#/components/schemas/Error"}
+                }
+            }
+        },
+        "/invoices": {
+            "get": {
+                "tags": ["Invoices"],
+                "summary": "Get all invoices",
+                "security": [{"bearerAuth": []}],
+                "parameters": [
+                    {"name": "page", "in": "query", "schema": {"type": "integer"}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer"}},
+                    {"name": "status", "in": "query", "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of invoices",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {"$ref": "#/components/schemas/Success"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "data": {"type": "array", "items": {"$ref": "#/components/schemas/Invoice"}},
+                                                        "pagination": {"type": "object"}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Invoices"],
+                "summary": "Create new invoice",
+                "security": [{"bearerAuth": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Invoice"}
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Invoice created", "$ref": "#/components/schemas/Success"}
+                }
+            }
+        },
+        "/invoices/{id}": {
+            "get": {
+                "tags": ["Invoices"],
+                "summary": "Get invoice by ID",
+                "security": [{"bearerAuth": []}],
+                "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+                "responses": {
+                    "200": {"description": "Invoice details", "$ref": "#/components/schemas/Success"},
+                    "404": {"description": "Invoice not found", "$ref": "#/components/schemas/Error"}
+                }
+            }
+        },
+        "/invoices/{id}/status": {
+            "put": {
+                "tags": ["Invoices"],
+                "summary": "Update invoice status",
+                "security": [{"bearerAuth": []}],
+                "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["status"],
+                                "properties": {
+                                    "status": {"type": "string", "enum": ["Draft", "Sent", "Viewed", "Paid", "Overdue", "Void"]}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Status updated", "$ref": "#/components/schemas/Success"}
+                }
+            }
+        },
+        "/customers": {
+            "get": {
+                "tags": ["Customers"],
+                "summary": "Get all customers",
+                "security": [{"bearerAuth": []}],
+                "parameters": [
+                    {"name": "page", "in": "query", "schema": {"type": "integer"}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer"}},
+                    {"name": "search", "in": "query", "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of customers",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {"$ref": "#/components/schemas/Success"},
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "data": {"type": "array", "items": {"$ref": "#/components/schemas/Customer"}},
+                                                        "pagination": {"type": "object"}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": ["Customers"],
+                "summary": "Create new customer",
+                "security": [{"bearerAuth": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Customer"}
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Customer created", "$ref": "#/components/schemas/Success"}
+                }
+            }
+        },
+        "/customers/{id}": {
+            "get": {
+                "tags": ["Customers"],
+                "summary": "Get customer by ID",
+                "security": [{"bearerAuth": []}],
+                "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+                "responses": {
+                    "200": {"description": "Customer details", "$ref": "#/components/schemas/Success"},
+                    "404": {"description": "Customer not found", "$ref": "#/components/schemas/Error"}
+                }
+            },
+            "put": {
+                "tags": ["Customers"],
+                "summary": "Update customer",
+                "security": [{"bearerAuth": []}],
+                "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Customer"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Customer updated", "$ref": "#/components/schemas/Success"}
+                }
+            }
+        },
+        "/inventory": {
+            "get": {
+                "tags": ["Inventory"],
+                "summary": "Get inventory/stock levels",
+                "security": [{"bearerAuth": []}],
+                "parameters": [
+                    {"name": "page", "in": "query", "schema": {"type": "integer"}},
+                    {"name": "limit", "in": "query", "schema": {"type": "integer"}},
+                    {"name": "category_id", "in": "query", "schema": {"type": "integer"}}
+                ],
+                "responses": {
+                    "200": {"description": "Inventory data", "$ref": "#/components/schemas/Success"}
+                }
+            }
+        },
+        "/inventory/grn": {
+            "get": {
+                "tags": ["Inventory"],
+                "summary": "Get GRNs (Goods Received Notes)",
+                "security": [{"bearerAuth": []}],
+                "responses": {
+                    "200": {"description": "List of GRNs", "$ref": "#/components/schemas/Success"}
+                }
+            },
+            "post": {
+                "tags": ["Inventory"],
+                "summary": "Create GRN",
+                "security": [{"bearerAuth": []}],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "grn_number": {"type": "string"},
+                                    "supplier_id": {"type": "integer"},
+                                    "items": {"type": "array"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "GRN created", "$ref": "#/components/schemas/Success"}
+                }
+            }
+        },
+        "/shifts": {
+            "get": {
+                "tags": ["Shifts"],
+                "summary": "Get shifts",
+                "security": [{"bearerAuth": []}],
+                "responses": {
+                    "200": {"description": "List of shifts", "$ref": "#/components/schemas/Success"}
+                }
+            }
+        },
+        "/shifts/start": {
+            "post": {
+                "tags": ["Shifts"],
+                "summary": "Start a new shift",
+                "security": [{"bearerAuth": []}],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "starting_cash": {"type": "number"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {"description": "Shift started", "$ref": "#/components/schemas/Success"}
+                }
+            }
+        },
+        "/shifts/{id}/end": {
+            "post": {
+                "tags": ["Shifts"],
+                "summary": "End a shift",
+                "security": [{"bearerAuth": []}],
+                "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "actual_cash": {"type": "number"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"description": "Shift ended", "$ref": "#/components/schemas/Success"}
+                }
+            }
+        },
+        "/reports/sales-summary": {
+            "get": {
+                "tags": ["Reports"],
+                "summary": "Get sales summary report",
+                "security": [{"bearerAuth": []}],
+                "parameters": [
+                    {"name": "start_date", "in": "query", "schema": {"type": "string", "format": "date"}},
+                    {"name": "end_date", "in": "query", "schema": {"type": "string", "format": "date"}}
+                ],
+                "responses": {
+                    "200": {"description": "Sales summary data", "$ref": "#/components/schemas/Success"}
+                }
+            }
+        }
+    }
+}

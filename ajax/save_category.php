@@ -23,6 +23,7 @@ try {
     $data = [
         'name' => $input['name'],
         'description' => $input['description'] ?? null,
+        'tax_id' => isset($input['tax_id']) && $input['tax_id'] !== '' ? intval($input['tax_id']) : null,
         'updated_at' => date('Y-m-d H:i:s')
     ];
     

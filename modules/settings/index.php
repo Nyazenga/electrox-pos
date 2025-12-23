@@ -11,7 +11,7 @@ $auth->requirePermission('settings.view');
 $pageTitle = 'Settings';
 
 $currentPage = $_GET['page'] ?? 'company';
-$validPages = ['company', 'pos', 'inventory', 'financial'];
+$validPages = ['company', 'pos', 'inventory', 'financial', 'fiscalization'];
 if (!in_array($currentPage, $validPages)) {
     $currentPage = 'company';
 }
@@ -40,13 +40,14 @@ require_once APP_PATH . '/includes/header.php';
 .settings-sidebar .nav-link {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    margin-bottom: 8px;
-    border-radius: 8px;
+    gap: 10px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-radius: 6px;
     color: #495057;
     text-decoration: none;
     transition: all 0.2s;
+    font-size: 12px;
 }
 
 .settings-sidebar .nav-link:hover {
@@ -60,15 +61,15 @@ require_once APP_PATH . '/includes/header.php';
 }
 
 .settings-sidebar .nav-link i {
-    font-size: 18px;
-    width: 24px;
+    font-size: 14px;
+    width: 18px;
 }
 
 .settings-content {
     flex: 1;
     background: white;
     border-radius: 12px;
-    padding: 30px;
+    padding: 16px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
@@ -107,6 +108,10 @@ require_once APP_PATH . '/includes/header.php';
             <a class="nav-link <?= $currentPage == 'financial' ? 'active' : '' ?>" href="index.php?page=financial">
                 <i class="bi bi-cash-coin"></i>
                 <span>Financial Settings</span>
+            </a>
+            <a class="nav-link <?= $currentPage == 'fiscalization' ? 'active' : '' ?>" href="index.php?page=fiscalization">
+                <i class="bi bi-receipt"></i>
+                <span>Fiscalization (ZIMRA)</span>
             </a>
         </nav>
     </div>

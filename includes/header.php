@@ -44,6 +44,7 @@ $pageTitle = $pageTitle ?? 'Dashboard';
             </div>
             <ul class="sidebar-menu">
                 <?php
+                $auth = Auth::getInstance();
                 $currentUri = $_SERVER['REQUEST_URI'] ?? '';
                 $isDashboard = (strpos($currentUri, '/modules/dashboard/') !== false || (strpos($currentUri, '/dashboard') !== false && strpos($currentUri, '/modules/') === false));
                 $isProducts = strpos($currentUri, '/modules/products/') !== false || strpos($currentUri, '/modules/inventory/') !== false || strpos($currentUri, '/modules/tradeins/') !== false;
@@ -52,36 +53,63 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                 $isInvoicing = strpos($currentUri, '/modules/invoicing/') !== false;
                 $isCustomers = strpos($currentUri, '/modules/customers/') !== false;
                 $isReports = strpos($currentUri, '/modules/reports/') !== false;
-                $isAdministration = strpos($currentUri, '/modules/branches/') !== false || strpos($currentUri, '/modules/users/') !== false || strpos($currentUri, '/modules/settings/') !== false || strpos($currentUri, '/modules/roles/') !== false || strpos($currentUri, '/modules/currencies/') !== false;
+                $isAdministration = strpos($currentUri, '/modules/branches/') !== false || strpos($currentUri, '/modules/users/') !== false || strpos($currentUri, '/modules/settings/') !== false || strpos($currentUri, '/modules/roles/') !== false || strpos($currentUri, '/modules/currencies/') !== false || strpos($currentUri, '/view_all_fiscalizations') !== false || strpos($currentUri, '/check_fiscalization_status') !== false;
                 $isSuppliers = strpos($currentUri, '/modules/suppliers/') !== false;
                 ?>
+                <?php if ($auth->hasPermission('dashboard.view')): ?>
                 <li><a href="<?= BASE_URL ?>modules/dashboard/index.php" class="<?= $isDashboard ? 'active' : '' ?>"><i class="bi bi-speedometer2"></i> <span>Dashboard</span></a></li>
+                <?php endif; ?>
+                <?php if ($auth->hasAnyModulePermission('products') || $auth->hasAnyModulePermission('inventory') || $auth->hasAnyModulePermission('grn') || $auth->hasAnyModulePermission('transfers') || $auth->hasAnyModulePermission('tradeins')): ?>
                 <li class="has-submenu">
                     <a href="#" class="<?= $isProducts ? 'active' : '' ?>">
                         <i class="bi bi-box-seam"></i> <span>Products</span>
                         <i class="bi bi-chevron-down submenu-arrow"></i>
                     </a>
                     <ul class="submenu">
+                        <?php if ($auth->hasPermission('products.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/products/index.php" class="<?= strpos($currentUri, '/modules/products/index.php') !== false || (strpos($currentUri, '/modules/products/') !== false && strpos($currentUri, '/modules/products/categories') === false && strpos($currentUri, '/modules/inventory/') === false && strpos($currentUri, '/modules/tradeins/') === false) ? 'active' : '' ?>"><i class="bi bi-list-ul"></i> <span>Manage Products</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('products.categories')): ?>
                         <li><a href="<?= BASE_URL ?>modules/products/categories.php" class="<?= strpos($currentUri, '/modules/products/categories') !== false ? 'active' : '' ?>"><i class="bi bi-tags"></i> <span>Manage Categories</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('inventory.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/inventory/index.php" class="<?= strpos($currentUri, '/modules/inventory/index') !== false || (strpos($currentUri, '/modules/inventory/') !== false && strpos($currentUri, '/modules/inventory/grn') === false && strpos($currentUri, '/modules/inventory/transfers') === false) ? 'active' : '' ?>"><i class="bi bi-archive"></i> <span>Stock Levels</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('grn.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/inventory/grn.php" class="<?= strpos($currentUri, '/modules/inventory/grn') !== false ? 'active' : '' ?>"><i class="bi bi-box-arrow-in-down"></i> <span>Goods Received</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('transfers.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/inventory/transfers.php" class="<?= strpos($currentUri, '/modules/inventory/transfers') !== false ? 'active' : '' ?>"><i class="bi bi-arrow-left-right"></i> <span>Transfers</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('tradeins.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/tradeins/index.php" class="<?= strpos($currentUri, '/modules/tradeins/') !== false ? 'active' : '' ?>"><i class="bi bi-arrow-repeat"></i> <span>Trade-Ins</span></a></li>
+                        <?php endif; ?>
                     </ul>
                 </li>
+                <?php endif; ?>
+                <?php if ($auth->hasAnyModulePermission('pos') || $auth->hasAnyModulePermission('drawer') || $auth->hasAnyModulePermission('receipts')): ?>
                 <li class="has-submenu">
                     <a href="#" class="<?= $isPOS ? 'active' : '' ?>">
                         <i class="bi bi-cash-coin"></i> <span>POS</span>
                         <i class="bi bi-chevron-down submenu-arrow"></i>
                     </a>
                     <ul class="submenu">
+                        <?php if ($auth->hasPermission('pos.view') || $auth->hasPermission('pos.create_sale')): ?>
                         <li><a href="<?= BASE_URL ?>modules/pos/index.php" class="<?= strpos($currentUri, '/modules/pos/index.php') !== false || (strpos($currentUri, '/modules/pos/') !== false && strpos($currentUri, '/modules/pos/manage') === false && strpos($currentUri, '/modules/pos/cash') === false && strpos($currentUri, '/modules/pos/customize') === false) ? 'active' : '' ?>"><i class="bi bi-cart-plus"></i> <span>New Sales</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('pos.manage_sales')): ?>
                         <li><a href="<?= BASE_URL ?>modules/pos/manage.php" class="<?= strpos($currentUri, '/modules/pos/manage') !== false ? 'active' : '' ?>"><i class="bi bi-receipt-cutoff"></i> <span>Manage Sales</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('pos.cash_management') || $auth->hasPermission('drawer.transaction') || $auth->hasPermission('drawer.report')): ?>
                         <li><a href="<?= BASE_URL ?>modules/pos/cash.php" class="<?= strpos($currentUri, '/modules/pos/cash') !== false ? 'active' : '' ?>"><i class="bi bi-cash-stack"></i> <span>Cash Management</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('pos.customize')): ?>
                         <li><a href="<?= BASE_URL ?>modules/pos/customize.php" class="<?= strpos($currentUri, '/modules/pos/customize') !== false ? 'active' : '' ?>"><i class="bi bi-sliders"></i> <span>POS Customization</span></a></li>
+                        <?php endif; ?>
                     </ul>
                 </li>
+                <?php endif; ?>
+                <?php if ($auth->hasAnyModulePermission('sales')): ?>
                 <li class="has-submenu">
                     <a href="#" class="<?= $isSales ? 'active' : '' ?>">
                         <i class="bi bi-cart-check"></i> <span>Sales</span>
@@ -92,20 +120,30 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                         <li><a href="<?= BASE_URL ?>modules/sales/index.php" class="<?= strpos($currentUri, '/modules/sales/index') !== false || (strpos($currentUri, '/modules/sales/') !== false && strpos($currentUri, '/modules/sales/dashboard') === false) ? 'active' : '' ?>"><i class="bi bi-list-ul"></i> <span>Sales</span></a></li>
                     </ul>
                 </li>
+                <?php endif; ?>
+                <?php if ($auth->hasAnyModulePermission('invoicing')): ?>
                 <li class="has-submenu">
                     <a href="#" class="<?= $isInvoicing ? 'active' : '' ?>">
                         <i class="bi bi-receipt"></i> <span>Invoicing</span>
                         <i class="bi bi-chevron-down submenu-arrow"></i>
                     </a>
                     <ul class="submenu">
+                        <?php if ($auth->hasPermission('invoicing.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/invoicing/index.php" class="<?= strpos($currentUri, '/modules/invoicing/index') !== false || (strpos($currentUri, '/modules/invoicing/') !== false && strpos($currentUri, '/modules/invoicing/create') === false && strpos($currentUri, '/modules/invoicing/customize') === false) ? 'active' : '' ?>"><i class="bi bi-list-ul"></i> <span>All Invoices</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('invoicing.create')): ?>
                         <li><a href="<?= BASE_URL ?>modules/invoicing/create.php?type=proforma" class="<?= strpos($currentUri, '/modules/invoicing/create') !== false && isset($_GET['type']) && $_GET['type'] === 'proforma' ? 'active' : '' ?>"><i class="bi bi-file-earmark-text"></i> <span>Proforma Invoice</span></a></li>
                         <li><a href="<?= BASE_URL ?>modules/invoicing/create.php?type=tax" class="<?= strpos($currentUri, '/modules/invoicing/create') !== false && isset($_GET['type']) && $_GET['type'] === 'tax' ? 'active' : '' ?>"><i class="bi bi-receipt-cutoff"></i> <span>Tax Invoice</span></a></li>
                         <li><a href="<?= BASE_URL ?>modules/invoicing/create.php?type=quote" class="<?= strpos($currentUri, '/modules/invoicing/create') !== false && isset($_GET['type']) && $_GET['type'] === 'quote' ? 'active' : '' ?>"><i class="bi bi-file-earmark-check"></i> <span>Quote</span></a></li>
                         <li><a href="<?= BASE_URL ?>modules/invoicing/create.php?type=credit" class="<?= strpos($currentUri, '/modules/invoicing/create') !== false && isset($_GET['type']) && $_GET['type'] === 'credit' ? 'active' : '' ?>"><i class="bi bi-arrow-counterclockwise"></i> <span>Credit Note</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('invoicing.customize')): ?>
                         <li><a href="<?= BASE_URL ?>modules/invoicing/customize.php" class="<?= strpos($currentUri, '/modules/invoicing/customize') !== false ? 'active' : '' ?>"><i class="bi bi-sliders"></i> <span>Customize</span></a></li>
+                        <?php endif; ?>
                     </ul>
                 </li>
+                <?php endif; ?>
+                <?php if ($auth->hasAnyModulePermission('customers')): ?>
                 <li class="has-submenu">
                     <a href="#" class="<?= $isCustomers ? 'active' : '' ?>">
                         <i class="bi bi-people"></i> <span>Customers</span>
@@ -113,9 +151,13 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                     </a>
                     <ul class="submenu">
                         <li><a href="<?= BASE_URL ?>modules/customers/index.php" class="<?= strpos($currentUri, '/modules/customers/index') !== false || (strpos($currentUri, '/modules/customers/') !== false && strpos($currentUri, '/modules/customers/add') === false && strpos($currentUri, '/modules/customers/view') === false && strpos($currentUri, '/modules/customers/edit') === false) ? 'active' : '' ?>"><i class="bi bi-list-ul"></i> <span>All Customers</span></a></li>
+                        <?php if ($auth->hasPermission('customers.create')): ?>
                         <li><a href="<?= BASE_URL ?>modules/customers/add.php" class="<?= strpos($currentUri, '/modules/customers/add') !== false ? 'active' : '' ?>"><i class="bi bi-plus-circle"></i> <span>Add Customer</span></a></li>
+                        <?php endif; ?>
                     </ul>
                 </li>
+                <?php endif; ?>
+                <?php if ($auth->hasAnyModulePermission('suppliers')): ?>
                 <li class="has-submenu">
                     <a href="#" class="<?= $isSuppliers ? 'active' : '' ?>">
                         <i class="bi bi-truck"></i> <span>Suppliers</span>
@@ -123,9 +165,13 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                     </a>
                     <ul class="submenu">
                         <li><a href="<?= BASE_URL ?>modules/suppliers/index.php" class="<?= strpos($currentUri, '/modules/suppliers/index') !== false || (strpos($currentUri, '/modules/suppliers/') !== false && strpos($currentUri, '/modules/suppliers/add') === false && strpos($currentUri, '/modules/suppliers/view') === false && strpos($currentUri, '/modules/suppliers/edit') === false) ? 'active' : '' ?>"><i class="bi bi-list-ul"></i> <span>All Suppliers</span></a></li>
+                        <?php if ($auth->hasPermission('suppliers.create')): ?>
                         <li><a href="<?= BASE_URL ?>modules/suppliers/add.php" class="<?= strpos($currentUri, '/modules/suppliers/add') !== false ? 'active' : '' ?>"><i class="bi bi-plus-circle"></i> <span>Add Supplier</span></a></li>
+                        <?php endif; ?>
                     </ul>
                 </li>
+                <?php endif; ?>
+                <?php if ($auth->hasAnyModulePermission('reports')): ?>
                 <li class="has-submenu">
                     <a href="#" class="<?= $isReports ? 'active' : '' ?>">
                         <i class="bi bi-graph-up"></i> <span>Reports</span>
@@ -136,7 +182,9 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                         <li class="submenu-header">General Reports</li>
                         <li><a href="<?= BASE_URL ?>modules/reports/sales_summary.php" class="<?= strpos($currentUri, '/modules/reports/sales_summary') !== false ? 'active' : '' ?>"><i class="bi bi-bar-chart"></i> <span>Sales Summary</span></a></li>
                         <li><a href="<?= BASE_URL ?>modules/reports/receipts.php" class="<?= strpos($currentUri, '/modules/reports/receipts') !== false ? 'active' : '' ?>"><i class="bi bi-receipt-cutoff"></i> <span>Receipts</span></a></li>
+                        <?php if ($auth->hasPermission('receipts.refund')): ?>
                         <li><a href="<?= BASE_URL ?>modules/reports/refunds.php" class="<?= strpos($currentUri, '/modules/reports/refunds') !== false ? 'active' : '' ?>"><i class="bi bi-arrow-counterclockwise"></i> <span>Refunds</span></a></li>
+                        <?php endif; ?>
                         <li><a href="<?= BASE_URL ?>modules/reports/sales_by_products.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_products') !== false ? 'active' : '' ?>"><i class="bi bi-box-seam"></i> <span>Sales by Products</span></a></li>
                         <li><a href="<?= BASE_URL ?>modules/reports/sales_by_category.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_category') !== false ? 'active' : '' ?>"><i class="bi bi-tags"></i> <span>Sales by Category</span></a></li>
                         <li><a href="<?= BASE_URL ?>modules/reports/sales_by_discounts.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_discounts') !== false ? 'active' : '' ?>"><i class="bi bi-percent"></i> <span>Sales by Discounts</span></a></li>
@@ -146,7 +194,9 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                         <li class="submenu-header">Advanced Sales Reports</li>
                         <li><a href="<?= BASE_URL ?>modules/reports/product_wise_receipt.php" class="<?= strpos($currentUri, '/modules/reports/product_wise_receipt') !== false ? 'active' : '' ?>"><i class="bi bi-file-earmark-text"></i> <span>Product Wise Receipt</span></a></li>
                         <li><a href="<?= BASE_URL ?>modules/reports/sales_by_trend.php" class="<?= strpos($currentUri, '/modules/reports/sales_by_trend') !== false ? 'active' : '' ?>"><i class="bi bi-graph-up-arrow"></i> <span>Sales by Trend</span></a></li>
+                        <?php if ($auth->hasPermission('receipts.delete')): ?>
                         <li><a href="<?= BASE_URL ?>modules/reports/deleted_receipts.php" class="<?= strpos($currentUri, '/modules/reports/deleted_receipts') !== false ? 'active' : '' ?>"><i class="bi bi-trash"></i> <span>Deleted Receipts</span></a></li>
+                        <?php endif; ?>
                         <li><a href="<?= BASE_URL ?>modules/reports/order_type_wise_sales.php" class="<?= strpos($currentUri, '/modules/reports/order_type_wise_sales') !== false ? 'active' : '' ?>"><i class="bi bi-list-check"></i> <span>Order Type Wise Sales</span></a></li>
                         <li><a href="<?= BASE_URL ?>modules/reports/product_wise_tax_charge.php" class="<?= strpos($currentUri, '/modules/reports/product_wise_tax_charge') !== false ? 'active' : '' ?>"><i class="bi bi-calculator"></i> <span>Product Wise Tax/Charge</span></a></li>
                         <li><a href="<?= BASE_URL ?>modules/reports/manual_receipts.php" class="<?= strpos($currentUri, '/modules/reports/manual_receipts') !== false ? 'active' : '' ?>"><i class="bi bi-pencil-square"></i> <span>Manual Receipts</span></a></li>
@@ -163,19 +213,38 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                         <li><a href="<?= BASE_URL ?>modules/reports/deleted_products_open_orders.php" class="<?= strpos($currentUri, '/modules/reports/deleted_products_open_orders') !== false ? 'active' : '' ?>"><i class="bi bi-exclamation-circle"></i> <span>Deleted Products in Open Orders</span></a></li>
                     </ul>
                 </li>
+                <?php endif; ?>
+                <?php if ($auth->hasAnyModulePermission('branches') || $auth->hasAnyModulePermission('users') || $auth->hasAnyModulePermission('roles') || $auth->hasAnyModulePermission('currencies') || $auth->hasAnyModulePermission('settings') || $auth->hasAnyModulePermission('fiscalization')): ?>
                 <li class="has-submenu">
                     <a href="#" class="<?= $isAdministration ? 'active' : '' ?>">
                         <i class="bi bi-gear"></i> <span>Administration</span>
                         <i class="bi bi-chevron-down submenu-arrow"></i>
                     </a>
                     <ul class="submenu">
+                        <?php if ($auth->hasPermission('branches.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/branches/index.php" class="<?= strpos($currentUri, '/modules/branches/') !== false ? 'active' : '' ?>"><i class="bi bi-shop"></i> <span>Branches</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('users.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/users/index.php" class="<?= strpos($currentUri, '/modules/users/') !== false ? 'active' : '' ?>"><i class="bi bi-person-gear"></i> <span>Users</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('roles.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/roles/index.php" class="<?= strpos($currentUri, '/modules/roles/') !== false ? 'active' : '' ?>"><i class="bi bi-shield-check"></i> <span>Roles & Permissions</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('currencies.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/currencies/index.php" class="<?= strpos($currentUri, '/modules/currencies/') !== false ? 'active' : '' ?>"><i class="bi bi-currency-exchange"></i> <span>Currencies</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('settings.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/settings/index.php" class="<?= strpos($currentUri, '/modules/settings/') !== false ? 'active' : '' ?>"><i class="bi bi-sliders"></i> <span>Settings</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('fiscalization.view_status')): ?>
+                        <li><a href="<?= BASE_URL ?>check_fiscalization_status.php" class="<?= strpos($currentUri, '/check_fiscalization_status') !== false ? 'active' : '' ?>"><i class="bi bi-check-circle"></i> <span>Fiscalization Status</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('fiscalization.view_all')): ?>
+                        <li><a href="<?= BASE_URL ?>view_all_fiscalizations.php" class="<?= strpos($currentUri, '/view_all_fiscalizations') !== false ? 'active' : '' ?>"><i class="bi bi-receipt-cutoff"></i> <span>All Fiscalizations</span></a></li>
+                        <?php endif; ?>
                     </ul>
                 </li>
+                <?php endif; ?>
             </ul>
         </nav>
         <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
@@ -198,6 +267,7 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                     $currentBranchName = $_SESSION['branch_name'] ?? 'No Branch Selected';
                     ?>
                     <!-- Branch Selector -->
+                    <?php if ($auth->hasPermission('branches.switch')): ?>
                     <div class="dropdown me-3">
                         <button class="btn btn-outline-primary dropdown-toggle branch-selector" type="button" id="branchDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-shop me-2"></i>
@@ -221,6 +291,15 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                             <?php endif; ?>
                         </ul>
                     </div>
+                    <?php else: ?>
+                    <!-- Branch Display (No Switch Permission) -->
+                    <div class="me-3">
+                        <span class="badge bg-secondary">
+                            <i class="bi bi-shop me-2"></i>
+                            <?= escapeHtml($currentBranchName) ?>
+                        </span>
+                    </div>
+                    <?php endif; ?>
                     
                     <!-- User Dropdown -->
                     <div class="dropdown">

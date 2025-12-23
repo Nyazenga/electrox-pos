@@ -105,8 +105,8 @@ require_once APP_PATH . '/includes/header.php';
 
 <!-- Filters -->
 <div class="card mb-4">
-    <div class="card-body">
-        <form method="GET" class="row g-3">
+    <div class="card-body" style="padding: 12px;">
+        <form method="GET" class="row g-2">
             <?php if (!$branchId): ?>
             <div class="col-md-2">
                 <label class="form-label">Branch</label>

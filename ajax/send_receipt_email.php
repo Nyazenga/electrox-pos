@@ -87,6 +87,29 @@ try {
     // Get base currency
     $baseCurrency = getBaseCurrency($db);
     
+    // Get fiscal receipt and taxes for tax breakdown and QR code
+    $primaryDb = Database::getPrimaryInstance();
+    $fiscalReceipt = $primaryDb->getRow(
+        "SELECT fr.*, fd.device_serial_no, fd.device_id, fc.qr_url 
+         FROM fiscal_receipts fr
+         LEFT JOIN fiscal_devices fd ON fr.device_id = fd.device_id
+         LEFT JOIN fiscal_config fc ON fr.branch_id = fc.branch_id AND fr.device_id = fc.device_id
+         WHERE fr.sale_id = :sale_id
+         LIMIT 1",
+        [':sale_id' => $receiptId]
+    );
+    
+    $fiscalReceiptTaxes = [];
+    if ($fiscalReceipt) {
+        $fiscalReceiptTaxes = $primaryDb->getRows(
+            "SELECT tax_code, tax_percent, tax_id, tax_amount, sales_amount_with_tax 
+             FROM fiscal_receipt_taxes 
+             WHERE fiscal_receipt_id = :fiscal_receipt_id 
+             ORDER BY tax_percent ASC, tax_code ASC",
+            [':fiscal_receipt_id' => $fiscalReceipt['id']]
+        );
+    }
+    
     // Get company details
     $companyName = getSetting('company_name', SYSTEM_NAME);
     $companyAddress = getSetting('company_address', '');
@@ -234,6 +257,61 @@ try {
                 </tr>';
     }
     
+    // Tax Breakdown (if fiscalized)
+    if (!empty($fiscalReceiptTaxes)) {
+        // Group taxes by taxPercent and taxCode for display
+        $taxGroups = [];
+        foreach ($fiscalReceiptTaxes as $tax) {
+            $taxPercent = isset($tax['tax_percent']) && $tax['tax_percent'] !== null ? floatval($tax['tax_percent']) : null;
+            $taxCode = $tax['tax_code'] ?? '';
+            $taxAmount = floatval($tax['tax_amount'] ?? 0);
+            
+            // Create key for grouping: exempt by code, others by percent
+            if ($taxCode === 'E') {
+                $key = 'exempt';
+            } elseif ($taxPercent === 0.0 || $taxPercent === 0) {
+                $key = '0';
+            } else {
+                $key = strval($taxPercent);
+            }
+            
+            if (!isset($taxGroups[$key])) {
+                $taxGroups[$key] = [
+                    'taxPercent' => $taxPercent,
+                    'taxCode' => $taxCode,
+                    'totalAmount' => 0
+                ];
+            }
+            $taxGroups[$key]['totalAmount'] += $taxAmount;
+        }
+        
+        // Sort: exempt first, then 0%, then by percent ascending
+        uksort($taxGroups, function($a, $b) {
+            if ($a === 'exempt') return -1;
+            if ($b === 'exempt') return 1;
+            if ($a === '0') return -1;
+            if ($b === '0') return 1;
+            return floatval($a) <=> floatval($b);
+        });
+        
+        // Display tax breakdowns
+        foreach ($taxGroups as $group) {
+            // Format label based on tax type
+            if ($group['taxCode'] === 'E') {
+                $label = 'Total: Exempt from VAT';
+            } elseif ($group['taxPercent'] === 0.0 || $group['taxPercent'] === 0 || $group['taxPercent'] === null) {
+                $label = 'Total 0% VAT';
+            } else {
+                $label = 'Total ' . number_format($group['taxPercent'], 1) . '% VAT';
+            }
+            
+            $html .= '<tr>
+                        <td colspan="3" style="text-align: right;"><strong>' . htmlspecialchars($label) . ':</strong></td>
+                        <td style="text-align: right;"><strong>' . formatCurrency($group['totalAmount']) . '</strong></td>
+                    </tr>';
+        }
+    }
+    
     $html .= '<tr class="total-row">
                     <td colspan="3" style="text-align: right;"><strong>TOTAL:</strong></td>
                     <td style="text-align: right;"><strong>' . formatCurrency($sale['total_amount']) . '</strong></td>
@@ -283,9 +361,69 @@ try {
     }
     
     $html .= '</tfoot>
-        </table>
+        </table>';
+    
+    // Fiscal Information Section (QR Code and Verification) - if fiscalized
+    if ($fiscalReceipt) {
+        $html .= '<div style="margin-top: 20px; padding-top: 15px; border-top: 2px solid #1e3a8a; text-align: center;">';
         
-        <div class="receipt-footer">
+        // QR Code
+        $qrCodeDisplayed = false;
+        if (isset($fiscalReceipt['receipt_qr_code']) && !empty($fiscalReceipt['receipt_qr_code']) && strlen($fiscalReceipt['receipt_qr_code']) > 0) {
+            try {
+                $qrImageData = base64_decode($fiscalReceipt['receipt_qr_code']);
+                if ($qrImageData !== false && strlen($qrImageData) > 0) {
+                    $qrImageBase64 = base64_encode($qrImageData);
+                    $html .= '<div style="margin: 15px 0;">
+                                <img src="data:image/png;base64,' . $qrImageBase64 . '" alt="QR Code" style="max-width: 150px; height: auto; border: 1px solid #ddd;">
+                              </div>';
+                    $qrCodeDisplayed = true;
+                }
+            } catch (Exception $e) {
+                error_log("QR code image error in email: " . $e->getMessage());
+            }
+        }
+        
+        // Fallback: Generate QR code URL for display
+        if (!$qrCodeDisplayed && isset($fiscalReceipt['receipt_qr_data']) && !empty($fiscalReceipt['receipt_qr_data'])) {
+            $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdmstest.zimra.co.zw';
+            $deviceId = $fiscalReceipt['device_id'] ?? '';
+            $receiptDate = $fiscalReceipt['receipt_date'] ?? '';
+            $receiptGlobalNo = $fiscalReceipt['receipt_global_no'] ?? '';
+            
+            if ($deviceId && $receiptDate && $receiptGlobalNo) {
+                $deviceIdFormatted = str_pad($deviceId, 10, '0', STR_PAD_LEFT);
+                $date = new DateTime($receiptDate);
+                $receiptDateFormatted = $date->format('dmY');
+                $receiptGlobalNoFormatted = str_pad($receiptGlobalNo, 10, '0', STR_PAD_LEFT);
+                $qrDataFormatted = substr($fiscalReceipt['receipt_qr_data'], 0, 16);
+                $qrCodeString = rtrim($qrUrl, '/') . '/' . $deviceIdFormatted . $receiptDateFormatted . $receiptGlobalNoFormatted . $qrDataFormatted;
+                
+                // Use QR code API service to generate the image
+                $qrCodeApiUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' . urlencode($qrCodeString);
+                $html .= '<div style="margin: 15px 0;">
+                            <img src="' . htmlspecialchars($qrCodeApiUrl) . '" alt="QR Code" style="max-width: 150px; height: auto; border: 1px solid #ddd;">
+                          </div>';
+            }
+        }
+        
+        // Verification Code
+        if (isset($fiscalReceipt['receipt_verification_code'])) {
+            $html .= '<div style="margin: 10px 0; font-weight: bold; font-size: 11px;">
+                        Verification code: ' . htmlspecialchars($fiscalReceipt['receipt_verification_code']) . '
+                      </div>';
+        }
+        
+        // Verification URL
+        $html .= '<div style="margin: 8px 0; font-size: 10px; color: #666;">
+                    You can verify this receipt manually at<br>
+                    <a href="https://receipt.zimra.org/" target="_blank" style="color: #1e3a8a; text-decoration: underline;">https://receipt.zimra.org/</a>
+                  </div>';
+        
+        $html .= '</div>';
+    }
+    
+    $html .= '<div class="receipt-footer">
             <div style="margin-bottom: 5px;">Thank you for your business!</div>
             <div>' . SYSTEM_NAME . ' - ' . (SYSTEM_VERSION ?? '1.0.0') . '</div>
         </div>

@@ -63,8 +63,10 @@ require_once APP_PATH . '/includes/header.php';
                         <div class="btn-group btn-group-sm">
                             <a href="grn_view.php?id=<?= $grn['id'] ?>" class="btn btn-info" title="View"><i class="bi bi-eye"></i></a>
                             <a href="grn_print.php?id=<?= $grn['id'] ?>" class="btn btn-primary" target="_blank" title="Print"><i class="bi bi-printer"></i></a>
-                            <?php if ($auth->hasPermission('inventory.edit') && ($grn['status'] ?? 'Draft') == 'Draft'): ?>
+                            <?php if ($auth->hasPermission('grn.edit') && ($grn['status'] ?? 'Draft') == 'Draft'): ?>
                                 <a href="grn_add.php?id=<?= $grn['id'] ?>" class="btn btn-warning" title="Edit"><i class="bi bi-pencil"></i></a>
+                            <?php endif; ?>
+                            <?php if ($auth->hasPermission('grn.change_status') && ($grn['status'] ?? 'Draft') == 'Draft'): ?>
                                 <button type="button" class="btn btn-secondary" onclick='showStatusModal(<?= $grn['id'] ?>, <?= json_encode($grn['status'] ?? 'Draft') ?>, <?= json_encode($grn['grn_number'] ?? '') ?>)' title="Change Status">
                                     <i class="bi bi-arrow-repeat"></i>
                                 </button>

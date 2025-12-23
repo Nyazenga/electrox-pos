@@ -23,5 +23,32 @@ if (!$product) {
     exit;
 }
 
-echo json_encode(['success' => true, 'product' => $product]);
+// Get stock in other branches if user has permission
+$stockInOtherBranches = [];
+if ($auth->hasPermission('inventory.view_other_branches')) {
+    $currentBranchId = $_SESSION['branch_id'] ?? null;
+    $stockInOtherBranches = $db->getRows(
+        "SELECT b.id, b.branch_name, 
+                COALESCE(SUM(CASE WHEN p2.id = :product_id THEN p2.quantity_in_stock ELSE 0 END), 0) as stock
+         FROM branches b
+         LEFT JOIN products p2 ON p2.branch_id = b.id AND p2.id = :product_id
+         WHERE b.status = 'Active' AND b.id != :current_branch_id
+         GROUP BY b.id, b.branch_name
+         ORDER BY b.branch_name",
+        [
+            ':product_id' => $id,
+            ':current_branch_id' => $currentBranchId
+        ]
+    );
+    if ($stockInOtherBranches === false) {
+        $stockInOtherBranches = [];
+    }
+}
+
+$result = ['success' => true, 'product' => $product];
+if (!empty($stockInOtherBranches)) {
+    $result['stock_in_other_branches'] = $stockInOtherBranches;
+}
+
+echo json_encode($result);
 

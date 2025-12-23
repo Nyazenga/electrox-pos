@@ -12,23 +12,20 @@ $auth->requirePermission('settings.view');
 $pageTitle = 'Financial Settings';
 
 $db = Database::getInstance();
-// Use main database for currencies (they're stored in the base database)
-$mainDb = Database::getMainInstance();
-$baseCurrency = getBaseCurrency($mainDb);
-$currencies = getActiveCurrencies($mainDb);
+// Use tenant database for currencies (each tenant has their own currencies)
+$baseCurrency = $db->getRow("SELECT * FROM currencies WHERE is_base = 1");
+$currencies = $db->getRows("SELECT * FROM currencies WHERE is_active = 1 ORDER BY is_base DESC, code ASC");
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $baseCurrencyId = intval($_POST['base_currency_id'] ?? 0);
     
     if ($baseCurrencyId) {
-        // Use main database for currencies
-        $mainDb = Database::getMainInstance();
-        
+        // Use tenant database for currencies
         // Unset all base currencies
-        $mainDb->update('currencies', ['is_base' => 0], []);
+        $db->update('currencies', ['is_base' => 0], []);
         
         // Set new base currency
-        $mainDb->update('currencies', [
+        $db->update('currencies', [
             'is_base' => 1,
             'exchange_rate' => 1.000000
         ], ['id' => $baseCurrencyId]);

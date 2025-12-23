@@ -7,7 +7,10 @@ require_once APP_PATH . '/includes/currency_functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('pos.access');
+// This page matches sidebar "Cash Management" menu item
+if (!$auth->hasPermission('pos.cash_management') && !$auth->hasPermission('drawer.transaction') && !$auth->hasPermission('drawer.report')) {
+    $auth->requirePermission('pos.cash_management'); // This will show access denied
+}
 
 $pageTitle = 'Cash Management';
 
@@ -212,9 +215,16 @@ require_once APP_PATH . '/includes/header.php';
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Cash Management</h2>
     <div>
+        <?php if ($auth->hasPermission('drawer.transaction')): ?>
         <button class="btn btn-primary" onclick="showDrawerTransaction()">
             <i class="bi bi-cash-coin"></i> Drawer Transaction
         </button>
+        <?php endif; ?>
+        <?php if ($auth->hasPermission('drawer.view')): ?>
+        <button class="btn btn-info" onclick="showDrawerReport()">
+            <i class="bi bi-file-earmark-text"></i> Drawer Report
+        </button>
+        <?php endif; ?>
         <button class="btn btn-danger" onclick="showShiftEnd()">
             <i class="bi bi-stop-circle"></i> End Shift
         </button>

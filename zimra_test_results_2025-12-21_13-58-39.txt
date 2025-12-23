@@ -1,0 +1,112 @@
+========================================
+ZIMRA COMPREHENSIVE TEST
+Started: 2025-12-21 14:58:39
+========================================
+
+✓ Database connection established
+
+========================================
+Device: 30199 (Serial: electrox-1)
+========================================
+
+Step 1: Verifying device in database...
+  ✓ Device found (ID: 4)
+  ✓ Device details updated
+
+Step 2: Checking registration status...
+  ✓ Device already registered
+    Certificate valid till: 2026-12-21 14:58:04
+
+Step 3: Syncing configuration...
+  ✓ Configuration synced
+
+Step 4: Checking fiscal day status...
+  Status: N/A
+  Fiscal Day No: N/A
+
+Step 5: Opening fiscal day...
+  ✓ Fiscal day opened
+    Fiscal Day No: 2
+    Operation ID: N/A
+
+Step 6: Testing receipt submission...
+  ✗ Receipt submission failed: ZIMRA Validation Error: Receipt submission failed validation. Validation Errors: Code: RCPT020 (Color: Red). Full response: {
+    "receiptID": 10431986,
+    "serverDate": "2025-12-21T14:58:42",
+    "receiptServerSignature": {
+        "certificateThumbprint": "967C31EBE3BCE74C0255848E999A727A539FC719",
+        "hash": "SnBjtSRUkRZzvqDxeTA+5PAXlVSjLE8jWmXXFN4\/0Os=",
+        "signature": "gUNwTdM6NDwkNmlh7TRsBkNl8WTljyMZSqy74IIwM+qCZsrKYS+QklAgO0SS\/JiE1JZ4KNutSh+62gPxAcJpzVO\/TtAtxdwBQaS5svQ0SgPJe8fo9O\/BKRZm\/HBNKpDOmLjYV5EqQSAbqyfKJVTmbOuNy5g8yCVzgTaIsw4c63sjszsmjs0\/o9aSu4am6rRDnf5Wt++l9xYshjwSqBdjMNxU6uxI3FrNUX1CrbtsDAu2SV5Fe+sAQtbO977tKyxSfl7mDioaTIdn1E0ZdgkDw\/Y6N+NliXA3SkxZ258QTlUKIERgbO7AzIBCqA0PvmxHDsTWU\/eLBICuWeGDJQG1qg=="
+    },
+    "validationErrors": [
+        {
+            "validationErrorCode": "RCPT020",
+            "validationErrorColor": "Red"
+        }
+    ],
+    "operationID": "0HNHV0BLL7INQ:00000001"
+}
+    ⚠ RCPT020 Error: Invalid signature - check logs for signature string
+
+✓ Device 30199 test completed
+
+========================================
+Device: 30200 (Serial: electrox-2)
+========================================
+
+Step 1: Verifying device in database...
+  ✓ Device found (ID: 1)
+  ✓ Device details updated
+
+Step 2: Checking registration status...
+  ✓ Device already registered
+    Certificate valid till: 2026-12-18 14:34:49
+
+Step 3: Syncing configuration...
+  ✓ Configuration synced
+
+Step 4: Checking fiscal day status...
+  Status: N/A
+  Fiscal Day No: N/A
+
+Step 5: Opening fiscal day...
+  ✓ Fiscal day opened
+    Fiscal Day No: 2
+    Operation ID: N/A
+
+Step 6: Testing receipt submission...
+  ✗ Receipt submission failed: ZIMRA Validation Error: Receipt submission failed validation. Validation Errors: Code: RCPT011 (Color: Gray), Code: RCPT020 (Color: Red). Full response: {
+    "receiptID": 10431988,
+    "serverDate": "2025-12-21T14:58:46",
+    "receiptServerSignature": {
+        "certificateThumbprint": "967C31EBE3BCE74C0255848E999A727A539FC719",
+        "hash": "rZRcGp9ibOkkml\/YzB9iq32NkjDGNWWrzwMsUUM1YWU=",
+        "signature": "I4\/y4xYc+NVOjNd7IUNZSo8lsmYf2cVXTNEIGU5ei\/eLs+Kz+qIn2BrpRzSiDJEVUBgjDPr5xx6jFy2b2rqTGGYLPZw95cHlRhgZK8Vu1ZsAqHmKLx3C+8g+AV82baPKptLlI43Oq4255rtocjI+3y4ervKweKHisgrDNC8FLCxI4JiCYj1Lhtz3cQfPZgWRBhjsd\/dkQFpQR+wcZKjT\/craP8UBc1uyFdxAG\/3ohA9kgKiry1qw6SEqcFosJ1dOiM1CzaKMD0LRN6Za3eufmWwBSnfe0pvGlcG4vsobVrRBUiL8IxhuYT9kNEk0FXkw6ri4\/71FNtL4Reoklcmcvg=="
+    },
+    "validationErrors": [
+        {
+            "validationErrorCode": "RCPT011",
+            "validationErrorColor": "Gray"
+        },
+        {
+            "validationErrorCode": "RCPT020",
+            "validationErrorColor": "Red"
+        }
+    ],
+    "operationID": "0HNHV0BLL7IOE:00000001"
+}
+    ⚠ RCPT020 Error: Invalid signature - check logs for signature string
+
+✓ Device 30200 test completed
+
+========================================
+TEST COMPLETE
+Completed: 2025-12-21 14:58:46
+========================================
+
+All operations logged to:
+  - TXT: logs/zimra/zimra_operations_2025-12-21.txt
+  - LOG: logs/error.log
+  - DATABASE: zimra_operation_logs, zimra_receipt_logs, zimra_certificates
+  - TEST RESULTS: C:\xampp\htdocs\electrox-pos/zimra_test_results_2025-12-21_13-58-39.txt
+

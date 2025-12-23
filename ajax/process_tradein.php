@@ -26,7 +26,7 @@ if (!$auth->isLoggedIn()) {
 }
 
 try {
-    $auth->requirePermission('tradeins.process');
+    $auth->requirePermission('tradeins.create');
 } catch (Exception $permError) {
     while (ob_get_level()) {
         ob_end_clean();

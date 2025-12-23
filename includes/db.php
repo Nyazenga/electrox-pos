@@ -13,18 +13,37 @@ class Database {
     private $isTenantConnection = false;
     private $currentDbName = null;
     
-    private function __construct($useTenantConnection = true, $tenantName = null) {
+    private function __construct($useTenantConnection = true, $tenantName = null, $overrideDbName = null) {
         try {
-            $currentTenant = $tenantName ?: getCurrentTenantDbName();
-            
-            if ($useTenantConnection && $currentTenant) {
-                $dbName = 'electrox_' . $currentTenant;
-                $this->isTenantConnection = true;
-                $this->currentDbName = $dbName;
-            } else {
-                $dbName = BASE_DB_NAME;
+            // If override database name is provided, use it (for getMainInstance to connect to BASE)
+            if ($overrideDbName !== null) {
+                $dbName = $overrideDbName;
                 $this->isTenantConnection = false;
                 $this->currentDbName = $dbName;
+            } else {
+                // Ensure session is started to get tenant name
+                if ($useTenantConnection && !$tenantName) {
+                    if (session_status() == PHP_SESSION_NONE) {
+                        if (function_exists('initSession')) {
+                            initSession();
+                        } else {
+                            session_start();
+                        }
+                    }
+                }
+                
+                $currentTenant = $tenantName ?: getCurrentTenantDbName();
+                
+                if ($useTenantConnection && $currentTenant) {
+                    $dbName = 'electrox_' . $currentTenant;
+                    $this->isTenantConnection = true;
+                    $this->currentDbName = $dbName;
+                } else {
+                    // Use PRIMARY_DB_NAME instead of BASE_DB_NAME (we don't use BASE)
+                    $dbName = PRIMARY_DB_NAME;
+                    $this->isTenantConnection = false;
+                    $this->currentDbName = $dbName;
+                }
             }
             
             $dsn = "mysql:host=" . DB_HOST . ";dbname=$dbName;charset=" . DB_CHARSET;
@@ -45,9 +64,22 @@ class Database {
     }
     
     public static function getInstance($useTenantConnection = true, $tenantName = null) {
-        $currentTenant = $tenantName ?: getCurrentTenantDbName();
-        $expectedDbName = $currentTenant && $useTenantConnection ? 'electrox_' . $currentTenant : BASE_DB_NAME;
+        // Ensure session is started to get tenant name
+        if ($useTenantConnection && !$tenantName) {
+            if (session_status() == PHP_SESSION_NONE) {
+                if (function_exists('initSession')) {
+                    initSession();
+                } else {
+                    session_start();
+                }
+            }
+        }
         
+        $currentTenant = $tenantName ?: getCurrentTenantDbName();
+        // Use PRIMARY_DB_NAME instead of BASE_DB_NAME (we don't use BASE)
+        $expectedDbName = $currentTenant && $useTenantConnection ? 'electrox_' . $currentTenant : PRIMARY_DB_NAME;
+        
+        // Always reconnect if tenant changed or instance doesn't exist
         if (self::$instance === null || 
             !self::$instance->isConnectedToDatabase($expectedDbName)) {
             self::$instance = new self($useTenantConnection, $tenantName);
@@ -58,7 +90,17 @@ class Database {
     
     private function isConnectedToDatabase($expectedDbName) {
         try {
-            return $this->currentDbName === $expectedDbName;
+            // Check if we're connected to the expected database
+            if ($this->currentDbName !== $expectedDbName) {
+                return false;
+            }
+            // Verify connection is still active
+            if ($this->pdo === null) {
+                return false;
+            }
+            // Try a simple query to verify connection
+            $this->pdo->query("SELECT 1");
+            return true;
         } catch (Exception $e) {
             return false;
         }
@@ -70,7 +112,9 @@ class Database {
     }
     
     public static function getMainInstance() {
-        return new self(false);
+        // getMainInstance connects to BASE_DB_NAME (admin database for tenant management)
+        // This is where the tenants table lives
+        return new self(false, null, BASE_DB_NAME);
     }
     
     public static function getPrimaryInstance() {

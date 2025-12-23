@@ -88,8 +88,8 @@ require_once APP_PATH . '/includes/header.php';
 </div>
 
 <!-- Filters -->
-<div class="filter-card">
-    <form method="GET" class="row g-3">
+<div class="filter-card" style="padding: 12px;">
+    <form method="GET" class="row g-2">
         <div class="col-md-2">
             <label class="form-label">Start Date</label>
             <input type="date" name="start_date" class="form-control" value="<?= escapeHtml($startDate) ?>">

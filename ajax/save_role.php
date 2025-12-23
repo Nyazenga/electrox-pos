@@ -47,39 +47,35 @@ try {
             throw new Exception('Role not found');
         }
         
-        $isSystemRole = ($role['is_system_role'] ?? 0) == 1;
-        
         // Check if name is being changed and conflicts
         if ($role['name'] !== $roleName && $existingRole && $existingRole['id'] != $roleId) {
             throw new Exception('Role name already exists');
         }
         
-        // Update role
+        // Update role (ALLOW editing system roles)
         $db->update('roles', [
             'name' => $roleName,
             'description' => $roleDescription ?: null,
             'updated_at' => date('Y-m-d H:i:s')
         ], ['id' => $roleId]);
         
-        // Update permissions only if not a system role
-        if (!$isSystemRole) {
-            // Delete existing permissions
-            $db->executeQuery("DELETE FROM role_permissions WHERE role_id = :role_id", [':role_id' => $roleId]);
-            
-            // Add new permissions
-            if (!empty($permissions)) {
-                foreach ($permissions as $permissionId) {
-                    $permissionId = intval($permissionId);
-                    if ($permissionId > 0) {
-                        // Verify permission exists
-                        $perm = $db->getRow("SELECT id FROM permissions WHERE id = :id", [':id' => $permissionId]);
-                        if ($perm) {
-                            $db->insert('role_permissions', [
-                                'role_id' => $roleId,
-                                'permission_id' => $permissionId,
-                                'created_at' => date('Y-m-d H:i:s')
-                            ]);
-                        }
+        // Update permissions (ALLOW editing system roles)
+        // Delete existing permissions
+        $db->executeQuery("DELETE FROM role_permissions WHERE role_id = :role_id", [':role_id' => $roleId]);
+        
+        // Add new permissions
+        if (!empty($permissions)) {
+            foreach ($permissions as $permissionId) {
+                $permissionId = intval($permissionId);
+                if ($permissionId > 0) {
+                    // Verify permission exists
+                    $perm = $db->getRow("SELECT id FROM permissions WHERE id = :id", [':id' => $permissionId]);
+                    if ($perm) {
+                        $db->insert('role_permissions', [
+                            'role_id' => $roleId,
+                            'permission_id' => $permissionId,
+                            'created_at' => date('Y-m-d H:i:s')
+                        ]);
                     }
                 }
             }

@@ -12,7 +12,7 @@ if (!$auth->isLoggedIn()) {
     exit;
 }
 
-$auth->requirePermission('pos.access');
+$auth->requirePermission('drawer.transaction');
 
 $input = json_decode(file_get_contents('php://input'), true);
 

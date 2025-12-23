@@ -1,0 +1,107 @@
+﻿python : INFO:root:Library Info: string to sign: 
+30199FISCALINVOICEUSD12025-12-21T15:14:5010000.0001000
+At line:1 char:34
++ ... tdocs\zimra-public; python test_and_log_exact_payload.py 2>&1 | Out-F ...
++                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (INFO:root:Libra...5010000.0001000 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+================================================================================
+PYTHON LIBRARY - EXACT PAYLOAD LOGGING
+================================================================================
+
+1. INPUT RECEIPT DATA:
+{
+  "deviceID": 30199,
+  "receiptType": "FISCALINVOICE",
+  "receiptCurrency": "USD",
+  "receiptCounter": 1,
+  "receiptGlobalNo": 1,
+  "invoiceNo": "PYTHON-LOG-20251221151450",
+  "receiptDate": "2025-12-21T15:14:50",
+  "receiptLines": [
+    {
+      "item_name": "Test Item",
+      "tax_percent": 0.0,
+      "quantity": 1,
+      "unit_price": 10.0
+    }
+  ],
+  "receiptPayments": [
+    {
+      "moneyTypeCode": 0,
+      "paymentAmount": 10.0
+    }
+  ]
+}
+
+2. PREPARING RECEIPT (calculating taxes, signing)...
+
+3. PREPARED RECEIPT (with signature):
+{
+  "receiptType": "FISCALINVOICE",
+  "receiptCurrency": "USD",
+  "receiptCounter": 1,
+  "receiptGlobalNo": 1,
+  "invoiceNo": "PYTHON-LOG-20251221151450",
+  "receiptDate": "2025-12-21T15:14:50",
+  "receiptLinesTaxInclusive": true,
+  "receiptLines": [
+    {
+      "receiptLineType": "Sale",
+      "receiptLineNo": 1,
+      "receiptLineHSCode": "04021099",
+      "receiptLineName": "Test Item",
+      "receiptLinePrice": 10.0,
+      "receiptLineQuantity": 1,
+      "receiptLineTotal": 10.0,
+      "taxPercent": 0.0,
+      "taxID": 2
+    }
+  ],
+  "receiptTaxes": [
+    {
+      "taxPercent": 0.0,
+      "taxID": 2,
+      "taxAmount": 0.0,
+      "salesAmountWithTax": 10.0
+    }
+  ],
+  "receiptPayments": [
+    {
+      "moneyTypeCode": 0,
+      "paymentAmount": 10.0
+    }
+  ],
+  "receiptTotal": 10.0,
+  "receiptDeviceSignature": {
+    "hash": "0e7KQW27nyIir5a2kJyeTRE+yRBNMTAQyNWOuUTVGZ4=",
+    "signature": "ps2ZVuTqXmQF6HQwUpMfWERoaUd588QhSQssr77KuYXkCZ7S4J8yFdjE3S9yjV1rNDBptJzV0otTlrggeuQ15gSk3QD48zZn2XZ05CS8WbBTksfxEMPVOU0EQ/CqgSVRE2PEP7JpLOtUjYjpfPtX3g7ayI3A5q/w0kW7O0wxityzadK+fyvBaaY1zU42xHDiy5BwpfbTsrvkRKgmuUPqYjIKpE9zXHC32zYgSws51xRLUykFMswmJo7OWUwT2E/LHtdKUyVY47yN4pEGDwDiz7ZUowwV3PhO2WeXD+PtdBOuM/h3NXN1pLSzWhZ7oL/tLzgtc/KPoCX/TQqfbPbotQ=="
+  }
+}
+
+4. SIGNATURE DETAILS:
+   Hash: 0e7KQW27nyIir5a2kJyeTRE+yRBNMTAQyNWOuUTVGZ4=
+   Signature (first 50 chars): ps2ZVuTqXmQF6HQwUpMfWERoaUd588QhSQssr77KuYXkCZ7S4J...
+
+7. SUBMITTING RECEIPT...
+Traceback (most recent call last):
+  File "C:\xampp\htdocs\zimra-public\test_and_log_exact_payload.py", line 137, 
+in <module>
+    result = device.submitReceipt(prepared_receipt)
+TypeError: logged_submit() takes 1 positional argument but 2 were given
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\xampp\htdocs\zimra-public\test_and_log_exact_payload.py", line 158, 
+in <module>
+    print(f"\n\u2717 ERROR: {e}")
+    ~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Eng\AppData\Local\Programs\Python\Python314\Lib\encodings\cp12
+52.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2717' in 
+position 2: character maps to <undefined>

@@ -6,7 +6,8 @@ require_once APP_PATH . '/includes/functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('invoices.view');
+// This page matches sidebar "All Invoices" menu item
+$auth->requirePermission('invoicing.view');
 
 $id = intval($_GET['id'] ?? 0);
 if (!$id) {
@@ -407,6 +408,119 @@ if ($usePDF) {
         }
         $pdf->Ln(8);
     }
+    
+    // Fiscal Information Section (if fiscalized) - Get early for header placement
+    $fiscalDetails = null;
+    $fiscalReceipt = null;
+    if ($invoice['fiscalized'] && $invoice['fiscal_details']) {
+        $fiscalDetails = json_decode($invoice['fiscal_details'], true);
+        
+        // Get fiscal receipt from primary database
+        $primaryDb = Database::getPrimaryInstance();
+        if ($fiscalDetails && isset($fiscalDetails['receipt_global_no'])) {
+            $fiscalReceipt = $primaryDb->getRow(
+                "SELECT fr.*, fd.device_serial_no, fd.device_id, fc.qr_url 
+                 FROM fiscal_receipts fr
+                 LEFT JOIN fiscal_devices fd ON fr.device_id = fd.device_id
+                 LEFT JOIN fiscal_config fc ON fr.branch_id = fc.branch_id AND fr.device_id = fc.device_id
+                 WHERE fr.receipt_global_no = :receipt_global_no AND fr.device_id = :device_id
+                 LIMIT 1",
+                [
+                    ':receipt_global_no' => $fiscalDetails['receipt_global_no'],
+                    ':device_id' => $fiscalDetails['device_id'] ?? null
+                ]
+            );
+        }
+    }
+    
+    // Add QR Code and Verification at TOP RIGHT (according to documentation)
+    if ($fiscalDetails && $fiscalReceipt) {
+        // Save current position
+        $headerY = $pdf->GetY();
+        $headerX = $pdf->GetX();
+        
+        // Position for top right (QR code area)
+        $qrTopX = 195 - 30; // Right margin
+        $qrTopY = 20; // Top margin
+        
+        // QR Code (TOP RIGHT)
+        $qrCodeDisplayed = false;
+        
+        // First, try to use stored QR code image if available
+        if (isset($fiscalReceipt['receipt_qr_code']) && !empty($fiscalReceipt['receipt_qr_code']) && strlen($fiscalReceipt['receipt_qr_code']) > 0) {
+            try {
+                $qrImageData = base64_decode($fiscalReceipt['receipt_qr_code']);
+                if ($qrImageData !== false && strlen($qrImageData) > 0) {
+                    $tempQrFile = tempnam(sys_get_temp_dir(), 'qr_') . '.png';
+                    file_put_contents($tempQrFile, $qrImageData);
+                    $pdf->Image($tempQrFile, $qrTopX, $qrTopY, 25, 25, 'PNG', '', '', false, 300, '', false, false, 0);
+                    @unlink($tempQrFile);
+                    $qrCodeDisplayed = true;
+                }
+            } catch (Exception $e) {
+                error_log("QR code image error: " . $e->getMessage());
+            }
+        }
+        
+        // Fallback: Generate QR code on-the-fly
+        if (!$qrCodeDisplayed && isset($fiscalReceipt['receipt_qr_data']) && !empty($fiscalReceipt['receipt_qr_data'])) {
+            try {
+                $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdmstest.zimra.co.zw';
+                $deviceId = $fiscalReceipt['device_id'] ?? '';
+                $receiptDate = $fiscalReceipt['receipt_date'] ?? '';
+                $receiptGlobalNo = $fiscalReceipt['receipt_global_no'] ?? '';
+                
+                if ($deviceId && $receiptDate && $receiptGlobalNo) {
+                    $deviceIdFormatted = str_pad($deviceId, 10, '0', STR_PAD_LEFT);
+                    $date = new DateTime($receiptDate);
+                    $receiptDateFormatted = $date->format('dmy');
+                    $receiptGlobalNoFormatted = str_pad($receiptGlobalNo, 10, '0', STR_PAD_LEFT);
+                    $qrDataFormatted = substr($fiscalReceipt['receipt_qr_data'], 0, 16);
+                    $qrCodeString = rtrim($qrUrl, '/') . '/' . $deviceIdFormatted . $receiptDateFormatted . $receiptGlobalNoFormatted . $qrDataFormatted;
+                    
+                    $style = array(
+                        'border' => false,
+                        'padding' => 0,
+                        'fgcolor' => array(0,0,0),
+                        'bgcolor' => false,
+                        'module_width' => 1,
+                        'module_height' => 1
+                    );
+                    $pdf->write2DBarcode($qrCodeString, 'QRCODE,L', $qrTopX, $qrTopY, 25, 25, $style, 'N');
+                    $qrCodeDisplayed = true;
+                }
+            } catch (Exception $e) {
+                error_log("QR code generation error: " . $e->getMessage());
+            }
+        }
+        
+        // Verification Code (below QR code)
+        if (isset($fiscalDetails['verification_code'])) {
+            $pdf->SetXY($qrTopX, $qrTopY + 27);
+            $pdf->SetFont('helvetica', 'B', 8);
+            $pdf->Cell(30, 4, 'Verification code', 0, 1, 'L');
+            $pdf->SetFont('helvetica', '', 8);
+            $pdf->SetXY($qrTopX, $pdf->GetY());
+            $pdf->Cell(30, 4, $fiscalDetails['verification_code'], 0, 1, 'L');
+        }
+        
+        // Verification URL
+        $pdf->SetXY($qrTopX, $pdf->GetY() + 2);
+        $pdf->SetFont('helvetica', '', 7);
+        $pdf->Cell(30, 3, 'You can verify this', 0, 1, 'L');
+        $pdf->SetXY($qrTopX, $pdf->GetY());
+        $pdf->Cell(30, 3, 'receipt manually at', 0, 1, 'L');
+        $pdf->SetXY($qrTopX, $pdf->GetY());
+        $pdf->SetFont('helvetica', 'U', 7);
+        $pdf->SetTextColor(30, 58, 138);
+        $pdf->Cell(30, 3, 'https://receipt.zimra.org/', 0, 1, 'L', false, 'https://receipt.zimra.org/');
+        $pdf->SetTextColor(0, 0, 0);
+        
+        // Restore position
+        $pdf->SetXY($headerX, $headerY);
+    }
+    
+    // Fiscal section removed - QR code is now at top right per documentation
     
     // Footer - Position at bottom of page
     if ($invoiceFooterText) {

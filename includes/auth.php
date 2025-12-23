@@ -62,6 +62,28 @@ class Auth {
                 $branch = $db->getRow("SELECT * FROM branches WHERE id = :id", [':id' => $branchId]);
             }
             
+            // Load permissions from role_permissions table
+            $permissions = [];
+            if ($user['role_id']) {
+                $permissionRows = $db->getRows(
+                    "SELECT p.permission_key 
+                     FROM permissions p 
+                     INNER JOIN role_permissions rp ON p.id = rp.permission_id 
+                     WHERE rp.role_id = :role_id",
+                    [':role_id' => $user['role_id']]
+                );
+                if ($permissionRows !== false && is_array($permissionRows)) {
+                    $permissions = array_column($permissionRows, 'permission_key');
+                    // Filter out any null/empty values and re-index
+                    $permissions = array_values(array_filter($permissions, function($p) { return !empty($p); }));
+                }
+            }
+            
+            // Log permissions for debugging (only in development)
+            if (APP_MODE === 'development' && !empty($permissions)) {
+                error_log("User {$user['email']} (Role ID: {$user['role_id']}) loaded " . count($permissions) . " permissions: " . implode(', ', $permissions));
+            }
+            
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['username'] = $user['username'];
             $_SESSION['email'] = $user['email'];
@@ -71,7 +93,7 @@ class Auth {
             $_SESSION['role_name'] = $role['name'] ?? 'User';
             $_SESSION['branch_id'] = $branchId;
             $_SESSION['branch_name'] = $branch['branch_name'] ?? null;
-            $_SESSION['permissions'] = json_decode($role['permissions'] ?? '[]', true);
+            $_SESSION['permissions'] = $permissions;
             $_SESSION['last_activity'] = time();
             
             $db->update('users', [
@@ -113,10 +135,105 @@ class Auth {
     public function hasPermission($permission) {
         initSession();
         if (!isset($_SESSION['permissions'])) {
+            // Try to reload permissions from database if session doesn't have them
+            $this->reloadPermissions();
+        }
+        
+        if (!isset($_SESSION['permissions'])) {
             return false;
         }
+        
         $permissions = $_SESSION['permissions'];
-        return in_array($permission, $permissions) || in_array('*', $permissions);
+        
+        // Check for exact permission match
+        if (in_array($permission, $permissions)) {
+            return true;
+        }
+        
+        // Check for wildcard permission
+        if (in_array('*', $permissions)) {
+            return true;
+        }
+        
+        // Check for System Administrator role (should have all permissions)
+        if (isset($_SESSION['role_name']) && 
+            (strtolower($_SESSION['role_name']) === 'system administrator' || 
+             strtolower($_SESSION['role_name']) === 'administrator')) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Check if user has any permission for a module (e.g., 'pos', 'products', 'sales')
+     * Returns true if user has ANY permission that starts with the module prefix
+     */
+    public function hasAnyModulePermission($modulePrefix) {
+        initSession();
+        if (!isset($_SESSION['permissions'])) {
+            $this->reloadPermissions();
+        }
+        
+        if (!isset($_SESSION['permissions'])) {
+            return false;
+        }
+        
+        $permissions = $_SESSION['permissions'];
+        $prefix = $modulePrefix . '.';
+        
+        // Check for System Administrator role (should have all permissions)
+        if (isset($_SESSION['role_name']) && 
+            (strtolower($_SESSION['role_name']) === 'system administrator' || 
+             strtolower($_SESSION['role_name']) === 'administrator')) {
+            return true;
+        }
+        
+        // Check if any permission starts with the module prefix
+        foreach ($permissions as $perm) {
+            if ($perm === '*' || strpos($perm, $prefix) === 0) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Reload permissions from database
+     */
+    public function reloadPermissions() {
+        if (!isset($_SESSION['role_id']) || !$_SESSION['role_id']) {
+            return;
+        }
+        
+        try {
+            $db = Database::getInstance();
+            $permissionRows = $db->getRows(
+                "SELECT p.permission_key 
+                 FROM permissions p 
+                 INNER JOIN role_permissions rp ON p.id = rp.permission_id 
+                 WHERE rp.role_id = :role_id",
+                [':role_id' => $_SESSION['role_id']]
+            );
+            
+            if ($permissionRows !== false && is_array($permissionRows)) {
+                $permissions = array_column($permissionRows, 'permission_key');
+                // Filter out any null/empty values
+                $permissions = array_filter($permissions, function($p) { return !empty($p); });
+                $_SESSION['permissions'] = array_values($permissions); // Re-index array
+            } else {
+                $_SESSION['permissions'] = [];
+            }
+            
+            // Log for debugging (only in development)
+            if (APP_MODE === 'development' && !empty($_SESSION['permissions'])) {
+                error_log("Reloaded " . count($_SESSION['permissions']) . " permissions for role ID: {$_SESSION['role_id']}");
+            }
+        } catch (Exception $e) {
+            logError("Failed to reload permissions: " . $e->getMessage());
+            $_SESSION['permissions'] = [];
+        }
     }
     
     public function requirePermission($permission) {

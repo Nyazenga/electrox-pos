@@ -6,7 +6,8 @@ require_once APP_PATH . '/includes/functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('invoices.view');
+// This page matches sidebar "All Invoices" menu item
+$auth->requirePermission('invoicing.view');
 
 $id = intval($_GET['id'] ?? 0);
 if (!$id) {
