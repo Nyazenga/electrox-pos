@@ -6,7 +6,7 @@ require_once APP_PATH . '/includes/functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('reports.view');
+$auth->requireAnyPermission('reports.view', 'reports.sales');
 
 $pageTitle = 'Sales Reports';
 

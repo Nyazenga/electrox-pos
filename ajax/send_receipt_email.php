@@ -18,6 +18,16 @@ if (!$auth->isLoggedIn()) {
     exit;
 }
 
+// Check permission to send receipts via email
+try {
+    $auth->requirePermission('receipts.email');
+} catch (Exception $e) {
+    ob_end_clean();
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied: ' . $e->getMessage()]);
+    exit;
+}
+
 header('Content-Type: application/json');
 
 // Suppress errors for clean JSON output (but log them)

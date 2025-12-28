@@ -83,6 +83,22 @@ try {
         throw new Exception('Failed to generate unique invoice number');
     }
     
+    // Validate due date - cannot be earlier than today
+    $dueDate = $input['due_date'] ?? null;
+    if ($dueDate) {
+        $dueDateObj = new DateTime($dueDate);
+        $today = new DateTime();
+        $today->setTime(0, 0, 0);
+        $dueDateObj->setTime(0, 0, 0);
+        
+        if ($dueDateObj < $today) {
+            ob_clean();
+            echo json_encode(['success' => false, 'message' => 'Due date cannot be earlier than today\'s date']);
+            ob_end_flush();
+            exit;
+        }
+    }
+    
     // Insert invoice
     $invoiceData = [
         'invoice_number' => $invoiceNumber,
@@ -96,7 +112,7 @@ try {
         'total_amount' => $input['total_amount'] ?? 0,
         'balance_due' => $input['total_amount'] ?? 0,
         'invoice_date' => $input['invoice_date'] ?? date('Y-m-d H:i:s'),
-        'due_date' => $input['due_date'] ?? null,
+        'due_date' => $dueDate,
         'status' => 'Draft',
         'notes' => $input['notes'] ?? null,
         'terms' => $input['terms'] ?? null

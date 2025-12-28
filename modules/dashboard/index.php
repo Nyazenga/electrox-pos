@@ -6,6 +6,7 @@ require_once APP_PATH . '/includes/functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
+$auth->requirePermission('dashboard.view');
 
 $pageTitle = 'Dashboard';
 
@@ -87,13 +88,34 @@ $totalSalesCount = $db->getRow("SELECT COUNT(*) as count FROM sales WHERE $where
 // Average transaction value
 $avgTransaction = $totalSalesCount['count'] > 0 ? ($grossSales / $totalSalesCount['count']) : 0;
 
-// Low stock products
-$lowStockProducts = $db->getRow("SELECT COUNT(*) as count FROM products WHERE quantity_in_stock <= reorder_level AND status = 'Active'" . ($branchId ? " AND branch_id = :branch_id" : ""), 
+// Low stock products count (for stat card)
+$lowStockCount = $db->getRow("SELECT COUNT(*) as count FROM products WHERE quantity_in_stock <= reorder_level AND status = 'Active'" . ($branchId ? " AND branch_id = :branch_id" : ""), 
     $branchId ? [':branch_id' => $branchId] : []) ?: ['count' => 0];
 
 // Total inventory value
 $inventoryValue = $db->getRow("SELECT COALESCE(SUM(quantity_in_stock * cost_price), 0) as value FROM products WHERE status = 'Active'" . ($branchId ? " AND branch_id = :branch_id" : ""), 
     $branchId ? [':branch_id' => $branchId] : []) ?: ['value' => 0];
+
+// Credit Sales (if enabled)
+$creditSalesStats = ['total_credit_sales' => 0, 'total_outstanding' => 0, 'outstanding_count' => 0];
+if (getSetting('allow_credit_sales', '0') == '1') {
+    $creditSalesWhere = "DATE(sale_date) BETWEEN :start_date AND :end_date AND is_credit_sale = 1";
+    $creditSalesParams = [':start_date' => $startDate, ':end_date' => $endDate];
+    if ($branchId) {
+        $creditSalesWhere .= " AND branch_id = :branch_id";
+        $creditSalesParams[':branch_id'] = $branchId;
+    }
+    
+    $creditSales = $db->getRow("SELECT 
+        COUNT(*) as total_credit_sales,
+        COUNT(CASE WHEN account_balance > 0 THEN 1 END) as outstanding_count,
+        COALESCE(SUM(account_balance), 0) as total_outstanding
+        FROM sales
+        WHERE $creditSalesWhere", $creditSalesParams);
+    if ($creditSales !== false) {
+        $creditSalesStats = $creditSales;
+    }
+}
 
 // Get cash refunds
 $refundData = $db->getRow("SELECT COALESCE(SUM(amount), 0) as total_refunds 
@@ -191,7 +213,47 @@ for ($i = 29; $i >= 0; $i--) {
     ];
 }
 
+require_once APP_PATH . '/includes/settings_functions.php';
 require_once APP_PATH . '/includes/header.php';
+
+// Check for low stock at login (if enabled) - Only for Administrators
+$checkLowStockAtLogin = getSetting('check_low_stock_at_login', '0') == '1';
+$isAdministrator = false;
+if (isset($_SESSION['role_name'])) {
+    $roleName = strtolower($_SESSION['role_name']);
+    $isAdministrator = ($roleName === 'system administrator' || $roleName === 'administrator');
+}
+
+$lowStockProducts = [];
+if ($checkLowStockAtLogin && $isAdministrator && !isset($_SESSION['low_stock_checked'])) {
+    // Get low stock products
+    $lowStockQuery = "SELECT p.*, 
+                     COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
+                     pc.name as category_name,
+                     b.branch_name
+                     FROM products p
+                     LEFT JOIN product_categories pc ON p.category_id = pc.id
+                     LEFT JOIN branches b ON p.branch_id = b.id
+                     WHERE p.status = 'Active' 
+                     AND p.quantity_in_stock <= p.reorder_level
+                     AND p.reorder_level > 0";
+    
+    $lowStockParams = [];
+    if ($branchId) {
+        $lowStockQuery .= " AND p.branch_id = :branch_id";
+        $lowStockParams[':branch_id'] = $branchId;
+    }
+    
+    $lowStockQuery .= " ORDER BY p.quantity_in_stock ASC LIMIT 20";
+    
+    $lowStockProducts = $db->getRows($lowStockQuery, $lowStockParams);
+    if ($lowStockProducts === false) {
+        $lowStockProducts = [];
+    }
+    
+    // Mark as checked for this session
+    $_SESSION['low_stock_checked'] = true;
+}
 ?>
 
 <style>
@@ -767,7 +829,7 @@ require_once APP_PATH . '/includes/header.php';
             <div class="stat-card-header">
                 <div>
                     <div class="stat-label">Low Stock</div>
-                    <div class="stat-value" style="color: <?= $lowStockProducts['count'] > 0 ? '#ef4444' : 'var(--text-dark)' ?>;"><?= number_format($lowStockProducts['count']) ?></div>
+                    <div class="stat-value" style="color: <?= $lowStockCount['count'] > 0 ? '#ef4444' : 'var(--text-dark)' ?>;"><?= number_format($lowStockCount['count']) ?></div>
                 </div>
                 <div class="stat-icon low-stock">
                     <i class="bi bi-exclamation-triangle"></i>
@@ -1264,5 +1326,55 @@ new Chart(trendCtx, {
     }
 });
 </script>
+
+<?php if ($checkLowStockAtLogin && $isAdministrator && !empty($lowStockProducts)): ?>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const lowStockCount = <?= count($lowStockProducts) ?>;
+    const lowStockProducts = <?= json_encode($lowStockProducts) ?>;
+    
+    let productList = '<div style="max-height: 400px; overflow-y: auto; text-align: left;">';
+    productList += '<table class="table table-sm table-bordered">';
+    productList += '<thead><tr><th>Product</th><th>Code</th><th>Stock</th><th>Reorder Level</th><th>Branch</th></tr></thead>';
+    productList += '<tbody>';
+    
+    lowStockProducts.forEach(function(product) {
+        productList += '<tr>';
+        productList += '<td>' + escapeHtml(product.display_name || 'N/A') + '</td>';
+        productList += '<td>' + escapeHtml(product.product_code || 'N/A') + '</td>';
+        productList += '<td class="text-danger fw-bold">' + product.quantity_in_stock + '</td>';
+        productList += '<td>' + product.reorder_level + '</td>';
+        productList += '<td>' + escapeHtml(product.branch_name || 'N/A') + '</td>';
+        productList += '</tr>';
+    });
+    
+    productList += '</tbody></table>';
+    productList += '</div>';
+    
+    Swal.fire({
+        title: 'Low Stock Alert',
+        html: '<p class="mb-3">The following <strong>' + lowStockCount + '</strong> product(s) are at or below their reorder levels:</p>' + productList,
+        icon: 'warning',
+        confirmButtonText: 'View Inventory',
+        showCancelButton: true,
+        cancelButtonText: 'Dismiss',
+        width: '800px',
+        customClass: {
+            popup: 'text-start'
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.location.href = '<?= BASE_URL ?>modules/inventory/index.php';
+        }
+    });
+});
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+<?php endif; ?>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>

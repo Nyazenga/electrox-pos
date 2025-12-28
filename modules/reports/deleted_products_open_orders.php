@@ -8,7 +8,7 @@ require_once APP_PATH . '/includes/report_helper.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('reports.view');
+$auth->requireAnyPermission('reports.suspicious', 'reports.view', 'reports.deleted_products_open_orders');
 
 $pageTitle = 'Deleted Products in Open Orders Report';
 

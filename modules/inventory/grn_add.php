@@ -207,7 +207,12 @@ require_once APP_PATH . '/includes/header.php';
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <label class="form-label">Search Product *</label>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0">Search Product *</label>
+                        <a href="<?= BASE_URL ?>modules/products/add.php?return_to=grn" target="_blank" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-plus-circle"></i> Create New Product
+                        </a>
+                    </div>
                     <div class="position-relative">
                         <input type="text" class="form-control" id="product_search" placeholder="Type to search products..." autocomplete="off">
                         <input type="hidden" id="selected_product_id">

@@ -549,13 +549,9 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
         writeFiscalLog("FISCALIZE SALE: Receipt date being used: $receiptDate (from sale_date: {$sale['sale_date']})");
         writeFiscalLog("FISCALIZE SALE: CRITICAL - RCPT025 requires receiptDate to be in tax valid from/till period. Ensure tax is valid for this date.");
         
-        // Convert receipt total to payment currency
-        $receiptTotal = floatval($sale['total_amount']);
-        if ($exchangeRateToPayment != 1.0) {
-            $receiptTotal = $receiptTotal * $exchangeRateToPayment;
-            writeFiscalLog("FISCALIZE SALE: Converted receiptTotal from base currency {$sale['total_amount']} to payment currency $receiptTotal (rate: $exchangeRateToPayment)");
-        }
-        
+        // Calculate receipt total EXCLUDING delivery_cost (delivery is non-taxable and not part of fiscal invoice)
+        // receiptTotal = sum of all receiptLines (items + discount), excluding delivery_cost
+        // We'll calculate this AFTER all receipt lines are added
         $receiptData = [
             'deviceID' => $device['device_id'], // Required for signature generation
             'receiptType' => 'FiscalInvoice',
@@ -564,7 +560,7 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             'receiptGlobalNo' => $receiptGlobalNo,
             'receiptDate' => $receiptDate,
             'invoiceNo' => $sale['receipt_number'],
-            'receiptTotal' => $receiptTotal, // Already converted to payment currency
+            'receiptTotal' => 0, // Will be calculated from sum of receiptLines (excluding delivery)
             'receiptLinesTaxInclusive' => true,
             'receiptLines' => [],
             'receiptTaxes' => [],
@@ -665,15 +661,35 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             writeFiscalLog("FISCALIZE SALE: Using EXACT tax from ZIMRA - taxID=$taxId, taxPercent=" . ($taxPercent !== null ? $taxPercent : 'NULL (exempt)') . ", taxCode=$taxCode");
             writeFiscalLog("FISCALIZE SALE: NOTE - ZIMRA getConfig returned taxPercent=" . ($selectedTax['taxPercent'] ?? 'NULL (exempt)') . " (raw value from ZIMRA)");
             
-            // Convert item amounts to payment currency if needed
+            // Get tax settings
+            require_once APP_PATH . '/includes/settings_functions.php';
+            $pricesIncludeTax = function_exists('getSetting') && getSetting('prices_include_tax', '1') == '1';
+            
+            // Get stored prices from database
             $unitPrice = floatval($item['unit_price']);
             $totalPrice = floatval($item['total_price'] ?? $item['line_total'] ?? ($item['unit_price'] * $item['quantity']));
+            
+            // CRITICAL: When prices_include_tax is enabled, prices are stored WITHOUT tax in database
+            // But ZIMRA expects prices WITH tax (since receiptLinesTaxInclusive = true)
+            // So we need to convert stored price (without tax) back to include tax
+            if ($pricesIncludeTax && $taxPercent !== null && $taxCode !== 'E') {
+                // Convert taxPercent to decimal if in percentage form
+                $taxPercentDecimal = ($taxPercent > 1) ? ($taxPercent / 100) : $taxPercent;
+                // Add tax back to the stored price (which is without tax)
+                $unitPrice = $unitPrice * (1 + $taxPercentDecimal);
+                $totalPrice = $totalPrice * (1 + $taxPercentDecimal);
+                writeFiscalLog("FISCALIZE SALE: Converted prices to include tax (prices_include_tax enabled) - unit_price: {$item['unit_price']} -> $unitPrice (tax: {$taxPercent}%), total_price: " . ($item['total_price'] ?? 'N/A') . " -> $totalPrice");
+            }
             
             if ($exchangeRateToPayment != 1.0) {
                 $unitPrice = $unitPrice * $exchangeRateToPayment;
                 $totalPrice = $totalPrice * $exchangeRateToPayment;
                 writeFiscalLog("FISCALIZE SALE: Converted item '{$item['product_name']}' - unit_price: {$item['unit_price']} -> $unitPrice, total_price: " . ($item['total_price'] ?? 'N/A') . " -> $totalPrice");
             }
+            
+            // CRITICAL: Round to exactly 2 decimal places for ZIMRA decimal(21,2) requirement
+            $unitPrice = round($unitPrice, 2);
+            $totalPrice = round($totalPrice, 2);
             
             // Build receipt line - for exempt taxes (taxCode='E'), don't include taxPercent field
             // Documentation: "In case of exempt, field will not be provided" (receiptLine)
@@ -682,9 +698,9 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
                 'receiptLineNo' => $lineNo++,
                 'receiptLineHSCode' => '00000000',
                 'receiptLineName' => $item['product_name'] ?? 'Item',
-                'receiptLinePrice' => $unitPrice, // Already converted to payment currency
+                'receiptLinePrice' => round($unitPrice, 2), // Rounded to 2 decimal places for ZIMRA decimal(21,2)
                 'receiptLineQuantity' => floatval($item['quantity']),
-                'receiptLineTotal' => $totalPrice, // Already converted to payment currency
+                'receiptLineTotal' => round($totalPrice, 2), // Rounded to 2 decimal places for ZIMRA decimal(21,2)
                 'taxID' => $taxId, // Exact from ZIMRA
                 'taxCode' => $taxCode // Exact from ZIMRA
             ];
@@ -695,6 +711,108 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             }
             $receiptData['receiptLines'][] = $receiptLine;
         }
+        
+        // Add discount line if discount exists
+        // RCPT022: Discount line must have receiptLineType = 'Discount' (1) and receiptLinePrice < 0
+        $discountAmount = floatval($sale['discount_amount'] ?? 0);
+        if ($discountAmount > 0) {
+            writeFiscalLog("FISCALIZE SALE: Adding discount line - discount_amount: $discountAmount");
+            
+            // Convert discount to payment currency if needed
+            $discountInPaymentCurrency = $discountAmount;
+            if ($exchangeRateToPayment != 1.0) {
+                $discountInPaymentCurrency = $discountAmount * $exchangeRateToPayment;
+                writeFiscalLog("FISCALIZE SALE: Converted discount from base currency $discountAmount to payment currency $discountInPaymentCurrency (rate: $exchangeRateToPayment)");
+            }
+            
+            // Find the most common tax from receipt lines (for discount line tax assignment)
+            // Count tax occurrences
+            $taxCounts = [];
+            foreach ($receiptData['receiptLines'] as $line) {
+                $taxKey = $line['taxID'] . '_' . (isset($line['taxPercent']) ? $line['taxPercent'] : 'NULL') . '_' . $line['taxCode'];
+                $taxCounts[$taxKey] = ($taxCounts[$taxKey] ?? 0) + 1;
+            }
+            
+            // Get the most common tax
+            $mostCommonTaxKey = null;
+            $maxCount = 0;
+            foreach ($taxCounts as $key => $count) {
+                if ($count > $maxCount) {
+                    $maxCount = $count;
+                    $mostCommonTaxKey = $key;
+                }
+            }
+            
+            // Extract tax info from most common tax
+            $discountTaxId = null;
+            $discountTaxPercent = null;
+            $discountTaxCode = null;
+            
+            if ($mostCommonTaxKey) {
+                foreach ($receiptData['receiptLines'] as $line) {
+                    $taxKey = $line['taxID'] . '_' . (isset($line['taxPercent']) ? $line['taxPercent'] : 'NULL') . '_' . $line['taxCode'];
+                    if ($taxKey === $mostCommonTaxKey) {
+                        $discountTaxId = $line['taxID'];
+                        $discountTaxPercent = isset($line['taxPercent']) ? $line['taxPercent'] : null;
+                        $discountTaxCode = $line['taxCode'];
+                        break;
+                    }
+                }
+            } else {
+                // Fallback: use first tax from applicable taxes
+                if (!empty($applicableTaxes)) {
+                    $firstTax = $applicableTaxes[0];
+                    $discountTaxId = intval($firstTax['taxID']);
+                    $discountTaxPercent = isset($firstTax['taxPercent']) && $firstTax['taxPercent'] !== null ? floatval($firstTax['taxPercent']) : null;
+                    $discountTaxCode = $firstTax['taxCode'];
+                }
+            }
+            
+            if (!$discountTaxId) {
+                throw new Exception('Cannot determine tax for discount line. No applicable taxes found.');
+            }
+            
+            writeFiscalLog("FISCALIZE SALE: Discount line will use taxID={$discountTaxId}, taxPercent=" . ($discountTaxPercent !== null ? $discountTaxPercent : 'NULL (exempt)') . ", taxCode={$discountTaxCode}");
+            
+            // Build discount line
+            // RCPT022: receiptLinePrice must be < 0 for FiscalInvoice if ReceiptLineType is Discount
+            $discountLine = [
+                'receiptLineType' => 'Discount', // This is 1 (Discount)
+                'receiptLineNo' => $lineNo++,
+                'receiptLineHSCode' => '00000000',
+                'receiptLineName' => 'Discount',
+                'receiptLinePrice' => round(-abs($discountInPaymentCurrency), 2), // Must be negative (< 0), rounded to 2 decimals
+                'receiptLineQuantity' => 1.0,
+                'receiptLineTotal' => round(-abs($discountInPaymentCurrency), 2), // Negative discount amount, rounded to 2 decimals
+                'taxID' => $discountTaxId,
+                'taxCode' => $discountTaxCode
+            ];
+            
+            // Only include taxPercent if it's not exempt
+            if ($discountTaxCode !== 'E' && $discountTaxPercent !== null) {
+                $discountLine['taxPercent'] = $discountTaxPercent;
+            }
+            
+            $receiptData['receiptLines'][] = $discountLine;
+            writeFiscalLog("FISCALIZE SALE: Added discount line: " . json_encode($discountLine, JSON_PRETTY_PRINT));
+        }
+        
+        // Calculate receiptTotal from sum of all receiptLines (items + discount)
+        // EXCLUDING delivery_cost (delivery is non-taxable and not part of fiscal invoice)
+        $sumReceiptLines = 0;
+        foreach ($receiptData['receiptLines'] as $line) {
+            $sumReceiptLines += floatval($line['receiptLineTotal']);
+        }
+        
+        // Convert to payment currency if needed
+        if ($exchangeRateToPayment != 1.0) {
+            $sumReceiptLines = $sumReceiptLines * $exchangeRateToPayment;
+            writeFiscalLog("FISCALIZE SALE: Converted receiptTotal from base currency to payment currency (rate: $exchangeRateToPayment)");
+        }
+        
+        $receiptData['receiptTotal'] = round($sumReceiptLines, 2);
+        writeFiscalLog("FISCALIZE SALE: Calculated receiptTotal from sum of receiptLines (EXCLUDING delivery_cost): {$receiptData['receiptTotal']}");
+        writeFiscalLog("FISCALIZE SALE: Delivery cost ({$sale['delivery_cost']}) is NOT included in fiscal invoice total");
         
         // Calculate taxes
         // Group by taxID, taxPercent AND taxCode (as per RCPT025: taxID/taxPercent must match FDMS, and RCPT026: "same taxPercent and taxCode values")
@@ -1626,6 +1744,771 @@ function mapPaymentMethodToMoneyType($method) {
         return 'BankTransfer';
     } else {
         return 'Cash'; // Default
+    }
+}
+
+/**
+ * Fiscalize a credit note (refund)
+ * This generates and submits a credit note to ZIMRA for a refund
+ */
+function fiscalizeCreditNote($refundId, $branchId, $db = null) {
+    error_log("FISCALIZE CREDIT NOTE: Starting fiscalization for refund $refundId, branch $branchId");
+    
+    if (!$db) {
+        $db = Database::getInstance();
+    }
+    
+    // Use primary database for branches and fiscal data
+    $primaryDb = Database::getPrimaryInstance();
+    
+    // Check if fiscalization is enabled for branch
+    $branch = $primaryDb->getRow(
+        "SELECT id, fiscalization_enabled FROM branches WHERE id = :id",
+        [':id' => $branchId]
+    );
+    
+    if (!$branch || !$branch['fiscalization_enabled']) {
+        error_log("FISCALIZE CREDIT NOTE: Fiscalization not enabled for branch $branchId");
+        return false;
+    }
+    
+    // Get refund details
+    $refund = $db->getRow(
+        "SELECT * FROM refunds WHERE id = :id",
+        [':id' => $refundId]
+    );
+    
+    if (!$refund) {
+        throw new Exception('Refund not found');
+    }
+    
+    // Get original sale
+    $sale = $db->getRow(
+        "SELECT * FROM sales WHERE id = :id",
+        [':id' => $refund['sale_id']]
+    );
+    
+    if (!$sale) {
+        throw new Exception('Original sale not found');
+    }
+    
+    // Check if original sale was fiscalized
+    $originalFiscalReceipt = $primaryDb->getRow(
+        "SELECT * FROM fiscal_receipts WHERE sale_id = :sale_id AND submission_status = 'Submitted' LIMIT 1",
+        [':sale_id' => $refund['sale_id']]
+    );
+    
+    if (!$originalFiscalReceipt) {
+        error_log("FISCALIZE CREDIT NOTE: Original sale was not fiscalized, skipping credit note fiscalization");
+        return false; // Can't create credit note if original wasn't fiscalized
+    }
+    
+    try {
+        $fiscalService = new FiscalService($branchId);
+        
+        // CRITICAL: Use ORIGINAL fiscalized receipt lines to get EXACT prices sent to ZIMRA
+        // This ensures credit note prices exactly match the original invoice prices
+        // Get original fiscalized receipt lines (these have the EXACT prices sent to ZIMRA)
+        $originalFiscalReceiptId = $originalFiscalReceipt['id'];
+        $originalReceiptLines = $primaryDb->getRows(
+            "SELECT * FROM fiscal_receipt_lines 
+             WHERE fiscal_receipt_id = :fiscal_receipt_id 
+             AND receipt_line_type = 'Sale'
+             ORDER BY receipt_line_no",
+            [':fiscal_receipt_id' => $originalFiscalReceiptId]
+        );
+        
+        // Get refund items to map quantities
+        $refundItems = $db->getRows(
+            "SELECT ri.sale_item_id, ri.quantity as refund_quantity, ri.product_id,
+                    si.unit_price, si.total_price, si.product_name, si.quantity as original_quantity,
+                    p.tax_id as product_tax_id, pc.tax_id as category_tax_id
+             FROM refund_items ri
+             INNER JOIN sale_items si ON ri.sale_item_id = si.id
+             LEFT JOIN products p ON ri.product_id = p.id
+             LEFT JOIN product_categories pc ON p.category_id = pc.id
+             WHERE ri.refund_id = :id",
+            [':id' => $refundId]
+        );
+        
+        // Map refund items to original fiscalized receipt lines by product name
+        // This ensures we use the EXACT prices that were sent to ZIMRA
+        $mappedRefundItems = [];
+        foreach ($refundItems as $refundItem) {
+            // Find matching original receipt line by product name
+            $matchingLine = null;
+            foreach ($originalReceiptLines as $originalLine) {
+                if ($originalLine['receipt_line_name'] === $refundItem['product_name']) {
+                    $matchingLine = $originalLine;
+                    break;
+                }
+            }
+            
+            if ($matchingLine) {
+                // Use EXACT prices from original fiscalized receipt
+                $mappedRefundItems[] = array_merge($refundItem, [
+                    'fiscal_unit_price' => floatval($matchingLine['receipt_line_price']),
+                    'fiscal_total_price' => floatval($matchingLine['receipt_line_total']),
+                    'fiscal_tax_id' => intval($matchingLine['tax_id']),
+                    'fiscal_tax_percent' => $matchingLine['tax_percent'] !== null ? floatval($matchingLine['tax_percent']) : null,
+                    'fiscal_tax_code' => $matchingLine['tax_code']
+                ]);
+            } else {
+                // Fallback: use sale_items prices and convert (shouldn't happen, but safety)
+                $mappedRefundItems[] = $refundItem;
+            }
+        }
+        
+        // Use mapped items for processing
+        $refundItems = $mappedRefundItems;
+        
+        // Get refund payments
+        $refundPayments = $db->getRows(
+            "SELECT rp.*, c.code as currency_code 
+             FROM refund_payments rp
+             LEFT JOIN currencies c ON rp.currency_id = c.id
+             WHERE rp.refund_id = :id",
+            [':id' => $refundId]
+        );
+        
+        // Determine receipt currency
+        $receiptCurrency = 'USD';
+        if (!empty($refundPayments)) {
+            $currencyCodes = array_filter(array_column($refundPayments, 'currency_code'));
+            if (!empty($currencyCodes)) {
+                $receiptCurrency = strtoupper(trim($currencyCodes[0] ?? 'USD'));
+            }
+        }
+        
+        $receiptCurrencyForZimra = mapCurrencyCodeForZimra($receiptCurrency);
+        
+        // Get device and config
+        $device = $primaryDb->getRow(
+            "SELECT * FROM fiscal_devices WHERE branch_id = :branch_id AND is_active = 1",
+            [':branch_id' => $branchId]
+        );
+        
+        $config = $primaryDb->getRow(
+            "SELECT * FROM fiscal_config WHERE branch_id = :branch_id AND device_id = :device_id",
+            [':branch_id' => $branchId, ':device_id' => $device['device_id']]
+        );
+        
+        if (!$config) {
+            throw new Exception('Fiscal configuration not found');
+        }
+        
+        $applicableTaxes = json_decode($config['applicable_taxes'], true) ?? [];
+        if (empty($applicableTaxes)) {
+            throw new Exception('No applicable taxes found');
+        }
+        
+        // Verify taxes have taxID and taxCode
+        if (!isset($applicableTaxes[0]['taxID']) || !isset($applicableTaxes[0]['taxCode'])) {
+            $applicableTaxes = mapApplicableTaxes($applicableTaxes);
+            $primaryDb->update('fiscal_config', [
+                'applicable_taxes' => json_encode($applicableTaxes)
+            ], ['id' => $config['id']]);
+        }
+        
+        // Get fiscal day
+        $fiscalDay = $primaryDb->getRow(
+            "SELECT * FROM fiscal_days WHERE branch_id = :branch_id AND device_id = :device_id AND status IN ('FiscalDayOpened', 'FiscalDayCloseFailed') ORDER BY id DESC LIMIT 1",
+            [':branch_id' => $branchId, ':device_id' => $device['device_id']]
+        );
+        
+        if (!$fiscalDay) {
+            throw new Exception('No open fiscal day');
+        }
+        
+        // Get last receipt counters
+        $lastReceipt = $primaryDb->getRow(
+            "SELECT receipt_counter, receipt_global_no FROM fiscal_receipts 
+             WHERE device_id = :device_id
+             ORDER BY receipt_global_no DESC LIMIT 1",
+            [':device_id' => $device['device_id']]
+        );
+        
+        $receiptCounter = $lastReceipt ? ($lastReceipt['receipt_counter'] + 1) : 1;
+        $receiptGlobalNo = $lastReceipt ? ($lastReceipt['receipt_global_no'] + 1) : 1;
+        
+        // Build credit note receipt data
+        $receiptDate = date('Y-m-d\TH:i:s', strtotime($refund['refund_date']));
+        
+        $receiptData = [
+            'deviceID' => $device['device_id'],
+            'receiptType' => 'CreditNote',
+            'receiptCurrency' => $receiptCurrencyForZimra,
+            'receiptCounter' => $receiptCounter,
+            'receiptGlobalNo' => $receiptGlobalNo,
+            'receiptDate' => $receiptDate,
+            'invoiceNo' => $refund['refund_number'],
+            'receiptTotal' => 0, // Will be calculated from sum of receiptLines (excluding delivery)
+            'receiptLinesTaxInclusive' => true,
+            'receiptLines' => [],
+            'receiptTaxes' => [],
+            'receiptPayments' => [],
+            'receiptPrintForm' => 'InvoiceA4',
+            'creditDebitNote' => (function() use ($originalFiscalReceipt) {
+                // Documentation: "receiptID must be sent or deviceID with receiptGlobalNo and fiscalDayNo must be sent"
+                // "In case receiptID is sent, this field is ignored" (for deviceID, receiptGlobalNo, fiscalDayNo)
+                if (!empty($originalFiscalReceipt['receipt_id'])) {
+                    // Prefer receiptID if available
+                    return [
+                        'receiptID' => intval($originalFiscalReceipt['receipt_id'])
+                    ];
+                } else {
+                    // Fallback: send deviceID + receiptGlobalNo + fiscalDayNo
+                    return [
+                        'deviceID' => intval($originalFiscalReceipt['device_id']),
+                        'receiptGlobalNo' => intval($originalFiscalReceipt['receipt_global_no']),
+                        'fiscalDayNo' => intval($originalFiscalReceipt['fiscal_day_no'])
+                    ];
+                }
+            })(),
+            'receiptNotes' => $refund['reason'] ?? 'Refund: ' . ($refund['notes'] ?? '')
+        ];
+        
+        // Build receipt lines (negative amounts for credit note)
+        // CRITICAL: Use EXACT prices from original fiscalized receipt lines
+        $lineNo = 1;
+        foreach ($refundItems as $item) {
+            $refundQuantity = intval($item['refund_quantity']);
+            $originalQuantity = intval($item['original_quantity'] ?? 0);
+            
+            // Use EXACT fiscalized prices if available (from original invoice sent to ZIMRA)
+            if (isset($item['fiscal_unit_price']) && isset($item['fiscal_total_price'])) {
+                // Use EXACT prices from original fiscalized receipt
+                $unitPrice = floatval($item['fiscal_unit_price']);
+                $originalTotalPrice = floatval($item['fiscal_total_price']);
+                
+                // For full refund, use EXACT original total price
+                // For partial refund, calculate proportionally
+                if ($originalQuantity > 0 && $refundQuantity == $originalQuantity) {
+                    // Full refund: use EXACT original total price
+                    $totalPrice = $originalTotalPrice;
+                } else if ($originalQuantity > 0) {
+                    // Partial refund: calculate proportionally
+                    $proportionalTotal = ($originalTotalPrice / $originalQuantity) * $refundQuantity;
+                    $totalPrice = $proportionalTotal;
+                } else {
+                    // Fallback: calculate from unit price
+                    $totalPrice = $unitPrice * $refundQuantity;
+                }
+                
+                // Use EXACT tax from original fiscalized receipt
+                $taxId = isset($item['fiscal_tax_id']) ? intval($item['fiscal_tax_id']) : null;
+                $taxPercent = isset($item['fiscal_tax_percent']) ? $item['fiscal_tax_percent'] : null;
+                $taxCode = isset($item['fiscal_tax_code']) ? $item['fiscal_tax_code'] : null;
+                
+                // Find matching tax in applicableTaxes to ensure taxID/taxPercent combination is valid
+                $selectedTax = null;
+                if ($taxId) {
+                    foreach ($applicableTaxes as $tax) {
+                        if (intval($tax['taxID']) === $taxId) {
+                            // Also match taxPercent if available
+                            if ($taxPercent !== null && isset($tax['taxPercent'])) {
+                                if (abs(floatval($tax['taxPercent']) - $taxPercent) < 0.01) {
+                                    $selectedTax = $tax;
+                                    break;
+                                }
+                            } else if ($taxPercent === null && (!isset($tax['taxPercent']) || $tax['taxPercent'] === null)) {
+                                $selectedTax = $tax;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // If no match found, use first applicable tax (shouldn't happen)
+                if (!$selectedTax && !empty($applicableTaxes)) {
+                    $selectedTax = $applicableTaxes[0];
+                    $taxId = intval($selectedTax['taxID']);
+                    $taxPercent = isset($selectedTax['taxPercent']) && $selectedTax['taxPercent'] !== null ? floatval($selectedTax['taxPercent']) : null;
+                    $taxCode = $selectedTax['taxCode'];
+                }
+                
+                error_log("FISCALIZE CREDIT NOTE: Using EXACT fiscalized prices - unit_price: $unitPrice, taxID: $taxId, taxPercent: " . ($taxPercent !== null ? $taxPercent : 'NULL') . ", taxCode: $taxCode");
+            } else {
+                // Fallback: use sale_items prices and convert (shouldn't happen if fiscalized receipt exists)
+                error_log("FISCALIZE CREDIT NOTE: WARNING - Using fallback price conversion (fiscalized prices not found)");
+                
+                // Get tax for item (same logic as fiscalizeSale)
+                $selectedTax = null;
+                $productTaxId = isset($item['product_tax_id']) ? intval($item['product_tax_id']) : null;
+                $categoryTaxId = isset($item['category_tax_id']) ? intval($item['category_tax_id']) : null;
+                
+                if ($productTaxId) {
+                    foreach ($applicableTaxes as $tax) {
+                        if (isset($tax['taxID']) && intval($tax['taxID']) === $productTaxId) {
+                            $selectedTax = $tax;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!$selectedTax && $categoryTaxId) {
+                    foreach ($applicableTaxes as $tax) {
+                        if (isset($tax['taxID']) && intval($tax['taxID']) === $categoryTaxId) {
+                            $selectedTax = $tax;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!$selectedTax) {
+                    $selectedTax = $applicableTaxes[0];
+                }
+                
+                $taxId = intval($selectedTax['taxID']);
+                $taxPercent = isset($selectedTax['taxPercent']) && $selectedTax['taxPercent'] !== null ? floatval($selectedTax['taxPercent']) : null;
+                $taxCode = $selectedTax['taxCode'];
+                
+                // Get tax settings
+                require_once APP_PATH . '/includes/settings_functions.php';
+                $pricesIncludeTax = function_exists('getSetting') && getSetting('prices_include_tax', '1') == '1';
+                
+                $originalUnitPrice = floatval($item['unit_price']);
+                $unitPrice = $originalUnitPrice;
+                
+                // Convert to include tax if needed
+                if ($pricesIncludeTax && $taxPercent !== null && $taxCode !== 'E') {
+                    $taxPercentDecimal = ($taxPercent > 1) ? ($taxPercent / 100) : $taxPercent;
+                    $unitPrice = $unitPrice * (1 + $taxPercentDecimal);
+                }
+                
+                $totalPrice = $unitPrice * $refundQuantity;
+            }
+            
+            // CRITICAL: Round to exactly 2 decimal places for ZIMRA decimal(21,2) requirement
+            $unitPrice = round($unitPrice, 2);
+            $totalPrice = round($totalPrice, 2);
+            
+            // Credit note amounts are negative
+            $unitPrice = -abs($unitPrice);
+            $totalPrice = -abs($totalPrice);
+            
+            $receiptLine = [
+                'receiptLineType' => 'Sale',
+                'receiptLineNo' => $lineNo++,
+                'receiptLineHSCode' => '00000000',
+                'receiptLineName' => $item['product_name'] ?? 'Item',
+                'receiptLinePrice' => round($unitPrice, 2), // Rounded to 2 decimal places for ZIMRA decimal(21,2)
+                'receiptLineQuantity' => floatval($refundQuantity),
+                'receiptLineTotal' => round($totalPrice, 2), // Rounded to 2 decimal places for ZIMRA decimal(21,2)
+                'taxID' => $taxId,
+                'taxCode' => $taxCode
+            ];
+            
+            if ($taxCode !== 'E' && $taxPercent !== null) {
+                $receiptLine['taxPercent'] = $taxPercent;
+            }
+            
+            $receiptData['receiptLines'][] = $receiptLine;
+        }
+        
+        // Add discount line if discount exists (negative for credit note)
+        // CRITICAL: Use EXACT discount amount from original fiscalized receipt if available
+        $originalDiscountLine = null;
+        foreach ($originalReceiptLines as $line) {
+            if ($line['receipt_line_type'] === 'Discount') {
+                $originalDiscountLine = $line;
+                break;
+            }
+        }
+        
+        $discountAmount = 0;
+        if ($originalDiscountLine) {
+            // Use EXACT discount from original fiscalized receipt
+            $discountAmount = floatval($originalDiscountLine['receipt_line_total']);
+            error_log("FISCALIZE CREDIT NOTE: Using EXACT discount from original fiscalized receipt: $discountAmount");
+        } else {
+            // Fallback: use refund discount amount
+            $discountAmount = floatval($refund['discount_amount'] ?? 0);
+        }
+        
+        if ($discountAmount > 0 || ($originalDiscountLine && $discountAmount < 0)) {
+            // Find the most common tax from receipt lines (for discount line tax assignment)
+            $taxCounts = [];
+            foreach ($receiptData['receiptLines'] as $line) {
+                $taxKey = $line['taxID'] . '_' . (isset($line['taxPercent']) ? $line['taxPercent'] : 'NULL') . '_' . $line['taxCode'];
+                $taxCounts[$taxKey] = ($taxCounts[$taxKey] ?? 0) + 1;
+            }
+            
+            $mostCommonTaxKey = null;
+            $maxCount = 0;
+            foreach ($taxCounts as $key => $count) {
+                if ($count > $maxCount) {
+                    $maxCount = $count;
+                    $mostCommonTaxKey = $key;
+                }
+            }
+            
+            $discountTaxId = null;
+            $discountTaxPercent = null;
+            $discountTaxCode = null;
+            
+            if ($mostCommonTaxKey) {
+                foreach ($receiptData['receiptLines'] as $line) {
+                    $taxKey = $line['taxID'] . '_' . (isset($line['taxPercent']) ? $line['taxPercent'] : 'NULL') . '_' . $line['taxCode'];
+                    if ($taxKey === $mostCommonTaxKey) {
+                        $discountTaxId = $line['taxID'];
+                        $discountTaxPercent = isset($line['taxPercent']) ? $line['taxPercent'] : null;
+                        $discountTaxCode = $line['taxCode'];
+                        break;
+                    }
+                }
+            } else {
+                if (!empty($applicableTaxes)) {
+                    $firstTax = $applicableTaxes[0];
+                    $discountTaxId = intval($firstTax['taxID']);
+                    $discountTaxPercent = isset($firstTax['taxPercent']) && $firstTax['taxPercent'] !== null ? floatval($firstTax['taxPercent']) : null;
+                    $discountTaxCode = $firstTax['taxCode'];
+                }
+            }
+            
+            // Use EXACT tax from original discount line if available
+            if ($originalDiscountLine) {
+                $discountTaxId = intval($originalDiscountLine['tax_id']);
+                $discountTaxPercent = $originalDiscountLine['tax_percent'] !== null ? floatval($originalDiscountLine['tax_percent']) : null;
+                $discountTaxCode = $originalDiscountLine['tax_code'];
+                
+                // Verify tax is still valid in applicableTaxes
+                $validDiscountTax = null;
+                foreach ($applicableTaxes as $tax) {
+                    if (intval($tax['taxID']) === $discountTaxId) {
+                        if ($discountTaxPercent !== null && isset($tax['taxPercent'])) {
+                            if (abs(floatval($tax['taxPercent']) - $discountTaxPercent) < 0.01) {
+                                $validDiscountTax = $tax;
+                                break;
+                            }
+                        } else if ($discountTaxPercent === null && (!isset($tax['taxPercent']) || $tax['taxPercent'] === null)) {
+                            $validDiscountTax = $tax;
+                            break;
+                        }
+                    }
+                }
+                
+                if ($validDiscountTax) {
+                    $discountTaxId = intval($validDiscountTax['taxID']);
+                    $discountTaxPercent = isset($validDiscountTax['taxPercent']) && $validDiscountTax['taxPercent'] !== null ? floatval($validDiscountTax['taxPercent']) : null;
+                    $discountTaxCode = $validDiscountTax['taxCode'];
+                }
+            }
+            
+            if ($discountTaxId) {
+                // For credit notes, discount should be POSITIVE to cancel out the original negative discount
+                // Original invoice: items (8.00) + discount (-0.24) = 7.76
+                // Credit note: items (-8.00) + discount (+0.24) = -7.76
+                // This ensures receiptTotal = sum of receiptLineTotal (RCPT019 compliance)
+                $originalDiscountAmount = $originalDiscountLine ? floatval($originalDiscountLine['receipt_line_total']) : $discountAmount;
+                // Make discount positive for credit note (negate the original negative discount)
+                $discountLinePrice = round(abs($originalDiscountAmount), 2); // Positive for credit note
+                $discountLineTotal = round(abs($originalDiscountAmount), 2); // Positive for credit note
+                
+                $discountLine = [
+                    'receiptLineType' => 'Discount',
+                    'receiptLineNo' => $lineNo++,
+                    'receiptLineHSCode' => '00000000',
+                    'receiptLineName' => 'Discount',
+                    'receiptLinePrice' => round($discountLinePrice, 2), // Positive for credit note, rounded to 2 decimals
+                    'receiptLineQuantity' => 1.0,
+                    'receiptLineTotal' => round($discountLineTotal, 2), // Positive for credit note, rounded to 2 decimals
+                    'taxID' => $discountTaxId,
+                    'taxCode' => $discountTaxCode
+                ];
+                
+                if ($discountTaxCode !== 'E' && $discountTaxPercent !== null) {
+                    $discountLine['taxPercent'] = $discountTaxPercent;
+                }
+                
+                $receiptData['receiptLines'][] = $discountLine;
+                error_log("FISCALIZE CREDIT NOTE: Added discount line - amount: $discountLineTotal, taxID: $discountTaxId, taxPercent: " . ($discountTaxPercent !== null ? $discountTaxPercent : 'NULL') . ", taxCode: $discountTaxCode");
+            }
+        }
+        
+        // CRITICAL: RCPT019 requires receiptTotal to equal sum of all receiptLineTotal when receiptLinesTaxInclusive is true
+        // Calculate receiptTotal from sum of receiptLines (this ensures RCPT019 compliance)
+        $sumReceiptLines = 0;
+        foreach ($receiptData['receiptLines'] as $line) {
+            $sumReceiptLines += floatval($line['receiptLineTotal']);
+        }
+        $receiptData['receiptTotal'] = round($sumReceiptLines, 2);
+        
+        // Validate against original receiptTotal for RCPT035 compliance
+        // RCPT035: "total credit note amount must not exceed original receipt amount"
+        $originalReceiptTotal = floatval($originalFiscalReceipt['receipt_total']);
+        $sumReceiptLinesAbs = abs($sumReceiptLines);
+        $difference = abs($sumReceiptLinesAbs - $originalReceiptTotal);
+        
+        if ($difference > 0.01) {
+            error_log("FISCALIZE CREDIT NOTE: WARNING - Sum of receiptLines ($sumReceiptLinesAbs) doesn't match original receiptTotal ($originalReceiptTotal), difference: $difference");
+            error_log("FISCALIZE CREDIT NOTE: RCPT019 requires receiptTotal = sum of receiptLines, so using calculated total: {$receiptData['receiptTotal']}");
+            error_log("FISCALIZE CREDIT NOTE: RCPT035 check - Credit note amount ($sumReceiptLinesAbs) vs original ($originalReceiptTotal)");
+            
+            // RCPT035: Credit note amount must not exceed original receipt amount
+            if ($sumReceiptLinesAbs > $originalReceiptTotal) {
+                error_log("FISCALIZE CREDIT NOTE: ERROR - Credit note amount ($sumReceiptLinesAbs) exceeds original receipt amount ($originalReceiptTotal). RCPT035 will fail!");
+            }
+        } else {
+            error_log("FISCALIZE CREDIT NOTE: ✓ Sum of receiptLines ($sumReceiptLinesAbs) matches original receiptTotal ($originalReceiptTotal)");
+            error_log("FISCALIZE CREDIT NOTE: Credit note total: {$receiptData['receiptTotal']} (calculated from sum of receiptLines, matches original: $originalReceiptTotal)");
+        }
+        
+        error_log("FISCALIZE CREDIT NOTE: Delivery cost ({$refund['delivery_cost']}) is NOT included in fiscal credit note total");
+        
+        // CRITICAL: Use EXACT tax amounts from original fiscalized receipt (negated for credit note)
+        // This ensures credit note taxes exactly match the original invoice taxes
+        // RCPT027: "receiptTotal must equal sum of salesAmountWithTax in receiptTaxes"
+        // RCPT028: "taxAmount must be calculated correctly based on receiptLinesTaxInclusive"
+        $originalFiscalReceiptTaxes = $primaryDb->getRows(
+            "SELECT * FROM fiscal_receipt_taxes 
+             WHERE fiscal_receipt_id = :fiscal_receipt_id 
+             ORDER BY tax_id",
+            [':fiscal_receipt_id' => $originalFiscalReceiptId]
+        );
+        
+        if (empty($originalFiscalReceiptTaxes)) {
+            error_log("FISCALIZE CREDIT NOTE: WARNING - No original fiscal receipt taxes found, recalculating from receipt lines");
+            
+            // Fallback: Calculate taxes from receipt lines (should not happen if original was fiscalized correctly)
+            $taxGroups = [];
+            foreach ($receiptData['receiptLines'] as $line) {
+                $taxPercentKey = isset($line['taxPercent']) && $line['taxPercent'] !== null ? $line['taxPercent'] : 'NULL';
+                $taxKey = $line['taxID'] . '_' . $taxPercentKey . '_' . $line['taxCode'];
+                if (!isset($taxGroups[$taxKey])) {
+                    $taxGroups[$taxKey] = [
+                        'taxID' => $line['taxID'],
+                        'taxCode' => $line['taxCode'],
+                        'taxPercent' => isset($line['taxPercent']) ? $line['taxPercent'] : null,
+                        'total' => 0
+                    ];
+                }
+                $taxGroups[$taxKey]['total'] += floatval($line['receiptLineTotal']);
+            }
+            
+            foreach ($taxGroups as $group) {
+                $taxPercentValue = isset($group['taxPercent']) && $group['taxPercent'] !== null ? floatval($group['taxPercent']) : null;
+                $isTaxInclusive = $receiptData['receiptLinesTaxInclusive'] ?? true;
+                
+                if ($taxPercentValue === null) {
+                    $taxAmount = 0;
+                } elseif ($isTaxInclusive) {
+                    if ($taxPercentValue > 1) {
+                        $taxPercentDecimal = $taxPercentValue / 100;
+                    } else {
+                        $taxPercentDecimal = $taxPercentValue;
+                    }
+                    $taxAmount = round($group['total'] * ($taxPercentDecimal / (1 + $taxPercentDecimal)), 2);
+                } else {
+                    if ($taxPercentValue > 1) {
+                        $taxPercentDecimal = $taxPercentValue / 100;
+                    } else {
+                        $taxPercentDecimal = $taxPercentValue;
+                    }
+                    $taxAmount = round($group['total'] * $taxPercentDecimal, 2);
+                }
+                
+                $salesAmountWithTax = round($group['total'], 2);
+                
+                $receiptTaxEntry = [
+                    'taxID' => intval($group['taxID']),
+                    'taxCode' => $group['taxCode'],
+                    'taxAmount' => round(-abs($taxAmount), 2), // Negative for credit note
+                    'salesAmountWithTax' => round(-abs($salesAmountWithTax), 2) // Negative for credit note
+                ];
+                
+                if ($group['taxCode'] !== 'E' && $taxPercentValue !== null) {
+                    $receiptTaxEntry['taxPercent'] = $taxPercentValue;
+                }
+                
+                $receiptData['receiptTaxes'][] = $receiptTaxEntry;
+            }
+        } else {
+            // Use EXACT tax amounts from original fiscalized receipt (negated for credit note)
+            error_log("FISCALIZE CREDIT NOTE: Using EXACT tax amounts from original fiscalized receipt (count: " . count($originalFiscalReceiptTaxes) . ")");
+            
+            foreach ($originalFiscalReceiptTaxes as $originalTax) {
+                $receiptTaxEntry = [
+                    'taxID' => intval($originalTax['tax_id']),
+                    'taxCode' => $originalTax['tax_code'] ?? 'A',
+                    'taxAmount' => round(-abs(floatval($originalTax['tax_amount'])), 2), // Negative for credit note
+                    'salesAmountWithTax' => round(-abs(floatval($originalTax['sales_amount_with_tax'])), 2) // Negative for credit note
+                ];
+                
+                // Include taxPercent if not exempt
+                if ($originalTax['tax_code'] !== 'E' && $originalTax['tax_percent'] !== null) {
+                    $receiptTaxEntry['taxPercent'] = floatval($originalTax['tax_percent']);
+                }
+                
+                $receiptData['receiptTaxes'][] = $receiptTaxEntry;
+                
+                error_log("FISCALIZE CREDIT NOTE: Tax entry - taxID={$receiptTaxEntry['taxID']}, taxCode={$receiptTaxEntry['taxCode']}, taxAmount={$receiptTaxEntry['taxAmount']}, salesAmountWithTax={$receiptTaxEntry['salesAmountWithTax']}");
+            }
+        }
+        
+        // RCPT027: Validate that sum of salesAmountWithTax equals receiptTotal EXACTLY
+        $sumSalesAmountWithTax = 0;
+        foreach ($receiptData['receiptTaxes'] as $tax) {
+            $sumSalesAmountWithTax += floatval($tax['salesAmountWithTax']);
+        }
+        $receiptTotal = floatval($receiptData['receiptTotal']);
+        $difference = abs($receiptTotal - $sumSalesAmountWithTax);
+        
+        error_log("FISCALIZE CREDIT NOTE: RCPT027 Validation - receiptTotal: $receiptTotal, sum of salesAmountWithTax: $sumSalesAmountWithTax, difference: $difference");
+        
+        if ($difference > 0.01) {
+            error_log("FISCALIZE CREDIT NOTE: RCPT027 WARNING - Difference detected ($difference), adjusting salesAmountWithTax to match receiptTotal exactly");
+            
+            // Adjust salesAmountWithTax proportionally to match receiptTotal
+            if (abs($sumSalesAmountWithTax) > 0.01) {
+                $adjustmentFactor = abs($receiptTotal) / abs($sumSalesAmountWithTax);
+                error_log("FISCALIZE CREDIT NOTE: RCPT027 FIX - Adjusting salesAmountWithTax by factor: $adjustmentFactor");
+                
+                foreach ($receiptData['receiptTaxes'] as &$tax) {
+                    $oldSalesAmount = $tax['salesAmountWithTax'];
+                    // Preserve sign (negative for credit note) and adjust proportionally
+                    $sign = $oldSalesAmount < 0 ? -1 : 1;
+                    $tax['salesAmountWithTax'] = round($sign * abs($oldSalesAmount) * $adjustmentFactor, 2);
+                    
+                    // Recalculate taxAmount from adjusted salesAmountWithTax
+                    $taxPercentValue = isset($tax['taxPercent']) && $tax['taxPercent'] !== null ? floatval($tax['taxPercent']) : null;
+                    if ($taxPercentValue !== null && $taxPercentValue > 0) {
+                        $taxPercentDecimal = ($taxPercentValue > 1) ? ($taxPercentValue / 100) : $taxPercentValue;
+                        $tax['taxAmount'] = round($tax['salesAmountWithTax'] * ($taxPercentDecimal / (1 + $taxPercentDecimal)), 2);
+                    }
+                    
+                    error_log("FISCALIZE CREDIT NOTE: RCPT027 FIX - Adjusted tax - salesAmountWithTax: $oldSalesAmount -> {$tax['salesAmountWithTax']}, taxAmount: {$tax['taxAmount']}");
+                }
+                unset($tax);
+                
+                // Re-validate
+                $sumSalesAmountWithTaxAfter = 0;
+                foreach ($receiptData['receiptTaxes'] as $tax) {
+                    $sumSalesAmountWithTaxAfter += floatval($tax['salesAmountWithTax']);
+                }
+                $finalDifference = abs($receiptTotal - $sumSalesAmountWithTaxAfter);
+                error_log("FISCALIZE CREDIT NOTE: RCPT027 FIX - After adjustment: receiptTotal: $receiptTotal, sum of salesAmountWithTax: $sumSalesAmountWithTaxAfter, difference: $finalDifference");
+            }
+        } else {
+            error_log("FISCALIZE CREDIT NOTE: RCPT027 Validation PASSED - receiptTotal matches sum of salesAmountWithTax");
+        }
+        
+        // Build payments (negative for credit note)
+        // RCPT039: receiptTotal must equal sum of all paymentAmount
+        // For credit notes, payment amounts must be negative and match receiptTotal exactly
+        $totalPaymentAmount = 0;
+        foreach ($refundPayments as $payment) {
+            $method = strtolower($payment['payment_method'] ?? 'cash');
+            $moneyTypeCode = 0;
+            if ($method === 'cash') {
+                $moneyTypeCode = 0;
+            } elseif ($method === 'card') {
+                $moneyTypeCode = 1;
+            } elseif ($method === 'ecocash' || $method === 'onemoney' || $method === 'mobile') {
+                $moneyTypeCode = 2;
+            } elseif ($method === 'coupon') {
+                $moneyTypeCode = 3;
+            } elseif ($method === 'credit') {
+                $moneyTypeCode = 4;
+            } elseif ($method === 'bank' || $method === 'banktransfer') {
+                $moneyTypeCode = 5;
+            } else {
+                $moneyTypeCode = 6;
+            }
+            
+            // Credit note payment amounts are negative
+            $paymentAmount = -abs(floatval($payment['amount']));
+            $totalPaymentAmount += $paymentAmount;
+            
+            $receiptData['receiptPayments'][] = [
+                'moneyTypeCode' => $moneyTypeCode,
+                'paymentAmount' => round($paymentAmount, 2)
+            ];
+        }
+        
+        // RCPT039: Ensure payment sum equals receiptTotal (both negative for credit notes)
+        $receiptTotal = floatval($receiptData['receiptTotal']);
+        $paymentDifference = abs($receiptTotal - $totalPaymentAmount);
+        
+        if ($paymentDifference > 0.01) {
+            // Adjust payments to match receiptTotal exactly
+            if (empty($receiptData['receiptPayments'])) {
+                // No payments - add cash payment equal to receiptTotal
+                $receiptData['receiptPayments'] = [[
+                    'moneyTypeCode' => 0, // Cash
+                    'paymentAmount' => round($receiptTotal, 2)
+                ]];
+            } else {
+                // Adjust last payment to match total
+                $lastIndex = count($receiptData['receiptPayments']) - 1;
+                $lastPayment = &$receiptData['receiptPayments'][$lastIndex];
+                $adjustment = $receiptTotal - $totalPaymentAmount;
+                $lastPayment['paymentAmount'] = round($lastPayment['paymentAmount'] + $adjustment, 2);
+            }
+        }
+        
+        // Final validation: ensure payment sum equals receiptTotal
+        $finalPaymentSum = 0;
+        foreach ($receiptData['receiptPayments'] as $payment) {
+            $finalPaymentSum += floatval($payment['paymentAmount']);
+        }
+        
+        $finalDifference = abs($receiptTotal - $finalPaymentSum);
+        if ($finalDifference > 0.01) {
+            error_log("FISCALIZE CREDIT NOTE: WARNING - Payment sum ($finalPaymentSum) doesn't match receiptTotal ($receiptTotal), difference: $finalDifference");
+        } else {
+            error_log("FISCALIZE CREDIT NOTE: ✓ Payment sum ($finalPaymentSum) matches receiptTotal ($receiptTotal)");
+        }
+        
+        // Get previous receipt hash for chaining
+        $previousReceiptHash = null;
+        $previousReceiptRecord = $primaryDb->getRow(
+            "SELECT receipt_hash FROM fiscal_receipts 
+             WHERE device_id = :device_id 
+             AND submission_status = 'Submitted'
+             AND receipt_hash IS NOT NULL
+             ORDER BY receipt_global_no DESC, id DESC 
+             LIMIT 1",
+            [':device_id' => $device['device_id']]
+        );
+        
+        if ($previousReceiptRecord && !empty($previousReceiptRecord['receipt_hash'])) {
+            $previousReceiptHash = $previousReceiptRecord['receipt_hash'];
+        }
+        
+        // Submit credit note
+        $result = $fiscalService->submitReceipt(0, $receiptData, null, $previousReceiptHash);
+        
+        // Update refund with fiscal details
+        $fiscalDetails = [
+            'receipt_id' => $result['receiptID'] ?? '',
+            'receipt_global_no' => $result['receiptGlobalNo'] ?? $receiptGlobalNo,
+            'fiscal_day_no' => $fiscalDay['fiscal_day_no'],
+            'device_id' => $device['device_id'],
+            'qr_code' => $result['qrCode'] ?? '',
+            'verification_code' => $result['verificationCode'] ?? '',
+            'qr_code_image' => $result['qrCodeImage'] ?? ''
+        ];
+        
+        $db->update('refunds', [
+            'fiscalized' => 1,
+            'fiscal_details' => json_encode($fiscalDetails)
+        ], ['id' => $refundId]);
+        
+        // Update credit note record if exists
+        $creditNote = $db->getRow("SELECT * FROM credit_notes WHERE refund_id = :id", [':id' => $refundId]);
+        if ($creditNote) {
+            $db->update('credit_notes', [
+                'fiscalized' => 1,
+                'fiscal_details' => json_encode($fiscalDetails)
+            ], ['id' => $creditNote['id']]);
+        }
+        
+        return $result;
+        
+    } catch (Exception $e) {
+        error_log("FISCALIZE CREDIT NOTE ERROR for refund $refundId: " . $e->getMessage());
+        throw $e;
     }
 }
 

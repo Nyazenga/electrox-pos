@@ -4,6 +4,8 @@ require_once APP_PATH . '/includes/session.php';
 require_once APP_PATH . '/includes/db.php';
 require_once APP_PATH . '/includes/auth.php';
 require_once APP_PATH . '/includes/functions.php';
+require_once APP_PATH . '/includes/fiscal_helper.php';
+require_once APP_PATH . '/includes/currency_functions.php';
 
 initSession();
 
@@ -55,6 +57,8 @@ try {
     }
     
     // Calculate refund amounts
+    // IMPORTANT: Use prices sent from frontend (which are WITH tax if prices_include_tax is enabled)
+    // The frontend converts stored prices (without tax) to prices WITH tax (what customer actually paid)
     $refundSubtotal = 0;
     $refundItems = [];
     
@@ -73,7 +77,10 @@ try {
             throw new Exception('Refund quantity cannot exceed original quantity');
         }
         
-        $refundAmount = $refundQty * floatval($saleItem['unit_price']);
+        // Use prices sent from frontend (WITH tax if prices_include_tax is enabled)
+        // Frontend sends unit_price and total_price that represent what customer actually paid
+        $refundUnitPrice = isset($item['unit_price']) ? floatval($item['unit_price']) : floatval($saleItem['unit_price']);
+        $refundAmount = isset($item['total_price']) ? floatval($item['total_price']) : ($refundQty * $refundUnitPrice);
         $refundSubtotal += $refundAmount;
         
         $refundItems[] = [
@@ -81,20 +88,39 @@ try {
             'product_id' => $saleItem['product_id'],
             'product_name' => $saleItem['product_name'],
             'quantity' => $refundQty,
-            'unit_price' => $saleItem['unit_price'],
+            'unit_price' => $refundUnitPrice,
             'total_price' => $refundAmount
         ];
     }
     
-    // Calculate proportional discount
+    // Full refund only - ZIMRA limitation
     $refundDiscount = 0;
-    if ($sale['discount_amount'] > 0 && $refundSubtotal < $sale['subtotal']) {
-        $refundDiscount = ($refundSubtotal / $sale['subtotal']) * $sale['discount_amount'];
-    } else if ($input['refund_type'] === 'full') {
-        $refundDiscount = $sale['discount_amount'];
+    $isFullRefund = true; // Always full refund
+    
+    if ($sale['discount_amount'] > 0) {
+        if ($isFullRefund) {
+            // Full refund: refund the entire discount
+            $refundDiscount = floatval($sale['discount_amount']);
+        }
+        // For partial refunds, do NOT apply discount - refund items at their original prices
     }
     
-    $refundTotal = $refundSubtotal - $refundDiscount;
+    // Include delivery cost based on checkbox or automatically for full refunds
+    $refundDeliveryCost = 0;
+    $includeDeliveryCost = isset($input['include_delivery_cost']) && $input['include_delivery_cost'] === true;
+    
+    if (!empty($sale['delivery_cost']) && floatval($sale['delivery_cost']) > 0) {
+        if ($includeDeliveryCost) {
+            // User explicitly checked the box to include delivery cost
+            $refundDeliveryCost = floatval($sale['delivery_cost']);
+        } else if ($isFullRefund) {
+            // Auto-include for full refunds if checkbox wasn't explicitly unchecked
+            $refundDeliveryCost = floatval($sale['delivery_cost']);
+        }
+    }
+    
+    // Calculate refund total (subtotal - discount + delivery cost)
+    $refundTotal = $refundSubtotal - $refundDiscount + $refundDeliveryCost;
     
     // Generate refund number with retry logic to handle race conditions
     $datePart = date('ymd');
@@ -147,8 +173,7 @@ try {
         $refundNumber = 'REF-' . $branchPrefix . '-' . $datePart . $microtime . $random;
     }
     
-    // Determine refund type
-    $refundType = ($refundTotal >= $sale['total_amount']) ? 'full' : 'partial';
+    // Only full refunds supported (ZIMRA limitation) - refund_type column removed
     
     // Create refund record
     $refundData = [
@@ -159,9 +184,9 @@ try {
         'user_id' => $userId,
         'customer_id' => $sale['customer_id'],
         'refund_date' => date('Y-m-d H:i:s'),
-        'refund_type' => $refundType,
         'subtotal' => $refundSubtotal,
         'discount_amount' => $refundDiscount,
+        'delivery_cost' => $refundDeliveryCost,
         'tax_amount' => 0,
         'total_amount' => $refundTotal,
         'reason' => $input['reason'] ?? null,
@@ -251,36 +276,79 @@ try {
         }
     }
     
-    // Create refund payments (mirror original payment methods)
-    $originalPayments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $saleId]);
-    if ($originalPayments === false) {
-        $originalPayments = [];
-    }
-    
-    $totalOriginalPaid = array_sum(array_column($originalPayments, 'amount'));
+    // Create refund payments
+    // Use provided payment methods if available, otherwise mirror original payment methods
     $cashRefundAmount = 0;
     
-    foreach ($originalPayments as $payment) {
-        // Calculate proportional refund for each payment method
-        $paymentRefundAmount = ($payment['amount'] / $totalOriginalPaid) * $refundTotal;
+    if (isset($input['payment_methods']) && !empty($input['payment_methods'])) {
+        // Use provided payment methods (from refund modal)
+        foreach ($input['payment_methods'] as $paymentMethod) {
+            $method = $paymentMethod['method'] ?? 'cash';
+            $amount = floatval($paymentMethod['amount'] ?? 0);
+            $currencyId = isset($paymentMethod['currency_id']) ? intval($paymentMethod['currency_id']) : null;
+            
+            if ($amount > 0) {
+                $refundPaymentData = [
+                    'refund_id' => $refundId,
+                    'payment_method' => $method,
+                    'amount' => $amount,
+                    'currency_id' => $currencyId,
+                    'reference' => $paymentMethod['reference'] ?? null
+                ];
+                
+                $db->insert('refund_payments', $refundPaymentData);
+                
+                // Track cash refunds for shift adjustment
+                if (strtolower($method) === 'cash') {
+                    $cashRefundAmount += $amount;
+                }
+            }
+        }
+    } else {
+        // Mirror original payment methods (proportional)
+        $originalPayments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $saleId]);
+        if ($originalPayments === false) {
+            $originalPayments = [];
+        }
         
-        $refundPaymentData = [
-            'refund_id' => $refundId,
-            'payment_method' => $payment['payment_method'],
-            'amount' => $paymentRefundAmount,
-            'reference' => null
-        ];
+        $totalOriginalPaid = array_sum(array_column($originalPayments, 'amount'));
         
-        $db->insert('refund_payments', $refundPaymentData);
-        
-        // Track cash refunds for shift adjustment
-        if (strtolower($payment['payment_method']) === 'cash') {
-            $cashRefundAmount += $paymentRefundAmount;
+        if ($totalOriginalPaid > 0) {
+            foreach ($originalPayments as $payment) {
+                // Calculate proportional refund for each payment method
+                $paymentRefundAmount = ($payment['amount'] / $totalOriginalPaid) * $refundTotal;
+                
+                $refundPaymentData = [
+                    'refund_id' => $refundId,
+                    'payment_method' => $payment['payment_method'],
+                    'amount' => $paymentRefundAmount,
+                    'currency_id' => $payment['currency_id'] ?? null,
+                    'reference' => null
+                ];
+                
+                $db->insert('refund_payments', $refundPaymentData);
+                
+                // Track cash refunds for shift adjustment
+                if (strtolower($payment['payment_method']) === 'cash') {
+                    $cashRefundAmount += $paymentRefundAmount;
+                }
+            }
+        } else {
+            // No original payments found, default to cash
+            $refundPaymentData = [
+                'refund_id' => $refundId,
+                'payment_method' => 'cash',
+                'amount' => $refundTotal,
+                'currency_id' => null,
+                'reference' => null
+            ];
+            $db->insert('refund_payments', $refundPaymentData);
+            $cashRefundAmount = $refundTotal;
         }
     }
     
     // Update sale status
-    $newStatus = ($refundType === 'full') ? 'refunded' : 'paid';
+    $newStatus = 'refunded'; // Always full refund
     $db->update('sales', [
         'payment_status' => $newStatus
     ], ['id' => $saleId]);
@@ -293,13 +361,79 @@ try {
         ], ['id' => $shift['id']]);
     }
     
+    // Generate credit note number
+    $creditNoteNumber = 'CN-' . $branchPrefix . '-' . $datePart . substr(str_replace('.', '', microtime(true)), -6);
+    
+    // Check if original sale was fiscalized
+    $primaryDb = Database::getPrimaryInstance();
+    $originalFiscalReceipt = $primaryDb->getRow(
+        "SELECT * FROM fiscal_receipts WHERE sale_id = :sale_id AND submission_status = 'Submitted' LIMIT 1",
+        [':sale_id' => $saleId]
+    );
+    
+    $creditNoteId = null;
+    $fiscalized = false;
+    
+    // Create credit note record
+    $creditNoteData = [
+        'credit_note_number' => $creditNoteNumber,
+        'refund_id' => $refundId,
+        'sale_id' => $saleId,
+        'branch_id' => $branchId,
+        'customer_id' => $sale['customer_id'],
+        'credit_note_date' => date('Y-m-d H:i:s'),
+        'total_amount' => $refundTotal,
+        'fiscalized' => 0,
+        'created_by' => $userId
+    ];
+    
+    $creditNoteId = $db->insert('credit_notes', $creditNoteData);
+    
+    if ($creditNoteId) {
+        // Create credit note items
+        foreach ($refundItems as $item) {
+            $creditNoteItemData = [
+                'credit_note_id' => $creditNoteId,
+                'product_id' => $item['product_id'],
+                'product_name' => $item['product_name'],
+                'quantity' => $item['quantity'],
+                'unit_price' => $item['unit_price'],
+                'total_price' => $item['total_price']
+            ];
+            $db->insert('credit_note_items', $creditNoteItemData);
+        }
+        
+        // Update refund with credit note ID
+        $db->update('refunds', [
+            'credit_note_id' => $creditNoteId,
+            'credit_note_number' => $creditNoteNumber
+        ], ['id' => $refundId]);
+        
+        // Fiscalize credit note if original sale was fiscalized
+        if ($originalFiscalReceipt && $branchId) {
+            try {
+                require_once APP_PATH . '/includes/fiscal_helper.php';
+                $fiscalResult = fiscalizeCreditNote($refundId, $branchId, $db);
+                if ($fiscalResult) {
+                    $fiscalized = true;
+                    error_log("Credit note fiscalized successfully for refund $refundId");
+                }
+            } catch (Exception $fiscalError) {
+                error_log("Failed to fiscalize credit note for refund $refundId: " . $fiscalError->getMessage());
+                // Don't fail the refund if fiscalization fails, but log it
+            }
+        }
+    }
+    
     // Log activity
     try {
         logActivity($userId, 'pos_refund', [
             'refund_id' => $refundId,
             'sale_id' => $saleId,
             'refund_number' => $refundNumber,
-            'amount' => $refundTotal
+            'credit_note_number' => $creditNoteNumber,
+            'amount' => $refundTotal,
+            'fiscalized' => $fiscalized
         ]);
     } catch (Exception $logError) {
         error_log("Failed to log refund activity: " . $logError->getMessage());
@@ -309,10 +443,13 @@ try {
     
     echo json_encode([
         'success' => true,
-        'message' => 'Refund processed successfully',
+        'message' => 'Refund processed successfully' . ($fiscalized ? ' and credit note fiscalized' : ''),
         'refund_id' => $refundId,
         'refund_number' => $refundNumber,
-        'refund_amount' => $refundTotal
+        'credit_note_id' => $creditNoteId,
+        'credit_note_number' => $creditNoteNumber,
+        'refund_amount' => $refundTotal,
+        'fiscalized' => $fiscalized
     ]);
     
 } catch (Exception $e) {

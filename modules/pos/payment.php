@@ -24,6 +24,7 @@ if (empty($cart)) {
 $pageTitle = 'Payment';
 
 $db = Database::getInstance();
+$primaryDb = Database::getPrimaryInstance();
 $branchId = $_SESSION['branch_id'] ?? null;
 
 // Load currency functions
@@ -32,6 +33,22 @@ require_once APP_PATH . '/includes/currency_functions.php';
 // Get currencies from tenant database (each tenant has their own currencies)
 $currencies = getActiveCurrencies(null); // Uses tenant database
 $baseCurrency = getBaseCurrency(null); // Uses tenant database
+
+// Check if credit sales is enabled
+$allowCreditSales = getSetting('allow_credit_sales', '0') == '1';
+
+// Get payment terms if credit sales is enabled
+$paymentTerms = [];
+if ($allowCreditSales) {
+    $paymentTerms = $primaryDb->getRows("SELECT * FROM payment_terms WHERE is_active = 1 ORDER BY days ASC, name ASC");
+    if ($paymentTerms === false) {
+        $paymentTerms = [];
+    }
+}
+
+// Check if delivery costs are enabled
+$allowDeliveryCosts = getSetting('add_delivery_costs', '0') == '1';
+$deliveryCost = $_SESSION['pos_delivery_cost'] ?? 0;
 
 // Calculate totals
 $subtotal = 0;
@@ -46,7 +63,7 @@ if ($discount['type'] === 'value') {
     $discountAmount = ($subtotal * $discount['amount']) / 100;
 }
 
-$total = $subtotal - $discountAmount;
+$total = $subtotal - $discountAmount + $deliveryCost;
 
 require_once APP_PATH . '/includes/header.php';
 ?>
@@ -731,6 +748,12 @@ require_once APP_PATH . '/includes/header.php';
                     <strong id="orderDiscount" data-base-amount="<?= $discountAmount ?>">-<?= formatCurrency($discountAmount) ?></strong>
                 </div>
             <?php endif; ?>
+            <?php if ($allowDeliveryCosts && $deliveryCost > 0): ?>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Delivery Cost:</span>
+                    <strong id="orderDeliveryCost" data-base-amount="<?= $deliveryCost ?>"><?= formatCurrency($deliveryCost) ?></strong>
+                </div>
+            <?php endif; ?>
             <div class="d-flex justify-content-between pt-2 border-top">
                 <span class="fs-5 fw-bold">Total Charge:</span>
                 <span class="fs-5 fw-bold text-primary" id="orderTotal" data-base-amount="<?= $total ?>"><?= formatCurrency($total) ?></span>
@@ -778,7 +801,29 @@ require_once APP_PATH . '/includes/header.php';
             <small class="text-muted" id="currencyRateInfo"></small>
         </div>
         
-        <div class="amount-due mb-3">
+        <?php if ($allowCreditSales): ?>
+        <div class="mb-3">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="putOnAccount" onchange="toggleCreditSale()" style="width: 3em; height: 1.5em;">
+                <label class="form-check-label fw-bold" for="putOnAccount">
+                    Put on Account Billing
+                </label>
+            </div>
+            <div id="paymentTermsGroup" style="display: none; margin-top: 10px;">
+                <label class="form-label fw-bold">Payment Terms *</label>
+                <select class="form-select form-select-lg" id="paymentTermId" required onchange="updateAmountDue()">
+                    <option value="">Select Payment Terms</option>
+                    <?php foreach ($paymentTerms as $term): ?>
+                        <option value="<?= $term['id'] ?>">
+                            <?= escapeHtml($term['name']) ?> (<?= $term['days'] ?> days)
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+        </div>
+        <?php endif; ?>
+        
+        <div class="amount-due mb-3" id="amountPaidSection">
             <div class="amount-due-label">Amount Paid</div>
             <div class="amount-due-value" id="amountPaidDisplay">$0.00</div>
         </div>
@@ -788,7 +833,7 @@ require_once APP_PATH . '/includes/header.php';
             <div class="amount-due-value text-success fw-bold" id="changeAmount">$0.00</div>
         </div>
         
-        <div class="keypad">
+        <div class="keypad" id="keypadSection">
             <div class="keypad-row">
                 <button class="keypad-btn touch-friendly" onclick="keypadInput('1')">1</button>
                 <button class="keypad-btn touch-friendly" onclick="keypadInput('2')">2</button>
@@ -876,11 +921,27 @@ let cartData = <?= json_encode($cart) ?>;
 let orderSubtotal = <?= $subtotal ?>;
 let orderDiscount = <?= $discountAmount ?>;
 let orderTotal = <?= $total ?>;
+let allowCreditSales = <?= $allowCreditSales ? 'true' : 'false' ?>;
+let customerData = <?= json_encode($customer) ?>;
+
+// Store the update function reference for event listeners
+let paymentTermUpdateHandler = null;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     updateCurrencyDisplay();
     updateAmountDue();
+    
+    // Create a named function for payment terms change handler
+    paymentTermUpdateHandler = function() {
+        updateAmountDue();
+    };
+    
+    // Add event listener for payment terms selection (for credit sales)
+    const paymentTermId = document.getElementById('paymentTermId');
+    if (paymentTermId && paymentTermUpdateHandler) {
+        paymentTermId.addEventListener('change', paymentTermUpdateHandler);
+    }
 });
 
 // Currency conversion functions
@@ -1376,8 +1437,17 @@ function processSplitPayment() {
     // Close modal first
     const modal = bootstrap.Modal.getInstance(document.getElementById('splitPaymentModal'));
     if (modal) modal.hide();
+    
+    // Check if credit sale is enabled
+    const putOnAccount = document.getElementById('putOnAccount');
+    const isCreditSale = putOnAccount && putOnAccount.checked;
+    const creditSaleData = isCreditSale ? {
+        is_credit_sale: true,
+        payment_term_id: document.getElementById('paymentTermId')?.value || null
+    } : null;
+    
     // Process all split payments
-    processPayment(paymentsToProcess);
+    processPayment(paymentsToProcess, creditSaleData);
 }
 
 let keypadInputValue = '0.00';
@@ -1423,6 +1493,23 @@ function updateAmountDue() {
     // Convert paid amount to base currency for validation
     const paidBase = convertToBase(paid, selectedCurrencyId || baseCurrencyId);
     
+    // Check if credit sale is enabled
+    const putOnAccount = document.getElementById('putOnAccount');
+    const isCreditSale = putOnAccount && putOnAccount.checked;
+    const paymentTermId = document.getElementById('paymentTermId');
+    const paymentTermValue = paymentTermId ? paymentTermId.value : '';
+    const hasPaymentTerms = paymentTermValue && paymentTermValue.trim() !== '' && paymentTermValue !== '0';
+    
+    // Debug logging (remove in production)
+    console.log('updateAmountDue called:', {
+        isCreditSale: isCreditSale,
+        paymentTermValue: paymentTermValue,
+        hasPaymentTerms: hasPaymentTerms,
+        paid: paid,
+        paidBase: paidBase,
+        totalAmount: totalAmount
+    });
+    
     // Update amount paid display with currency symbol
     if (amountPaidEl) {
         amountPaidEl.textContent = formatCurrencyAmount(paid, selectedCurrencyId || baseCurrencyId);
@@ -1450,20 +1537,163 @@ function updateAmountDue() {
     
     // Enable/disable charge button based on validation (using base currency)
     if (chargeBtn) {
-        if (paidBase >= totalAmount && paid > 0) {
+        let shouldEnable = false;
+        
+        if (isCreditSale) {
+            // For credit sales: enable if payment terms are selected (amount can be 0 or partial)
+            shouldEnable = hasPaymentTerms;
+            console.log('Credit sale check - shouldEnable:', shouldEnable, 'hasPaymentTerms:', hasPaymentTerms);
+        } else {
+            // For normal sales: enable only if paid >= total and paid > 0
+            shouldEnable = (paidBase >= totalAmount && paid > 0);
+        }
+        
+        console.log('Final shouldEnable:', shouldEnable);
+        
+        if (shouldEnable) {
+            chargeBtn.removeAttribute('disabled');
             chargeBtn.disabled = false;
             chargeBtn.style.opacity = '1';
             chargeBtn.style.cursor = 'pointer';
+            chargeBtn.style.background = 'var(--primary-blue)';
+            chargeBtn.style.color = 'white';
+            console.log('Button ENABLED');
         } else {
+            chargeBtn.setAttribute('disabled', 'disabled');
             chargeBtn.disabled = true;
             chargeBtn.style.opacity = '0.5';
             chargeBtn.style.cursor = 'not-allowed';
+            chargeBtn.style.background = '#9ca3af';
+            console.log('Button DISABLED');
         }
     }
 }
 
+function toggleCreditSale() {
+    const putOnAccount = document.getElementById('putOnAccount');
+    const paymentTermsGroup = document.getElementById('paymentTermsGroup');
+    const paymentTermId = document.getElementById('paymentTermId');
+    const amountPaidSection = document.getElementById('amountPaidSection');
+    const keypadSection = document.getElementById('keypadSection');
+    const changeDisplay = document.getElementById('changeDisplay');
+    
+    if (putOnAccount && putOnAccount.checked) {
+        // Validate customer is selected
+        if (!customerData || !customerData.id) {
+            Swal.fire({
+                title: 'Customer Required',
+                text: 'Please select a customer before putting sale on account. Customer is required for credit sales tracking.',
+                icon: 'warning',
+                confirmButtonText: 'Select Customer',
+                showCancelButton: true,
+                cancelButtonText: 'Cancel'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Redirect to POS index to select customer
+                    window.location.href = 'index.php';
+                } else {
+                    putOnAccount.checked = false;
+                    if (paymentTermsGroup) paymentTermsGroup.style.display = 'none';
+                    if (paymentTermId) paymentTermId.required = false;
+                    // Show amount paid section again
+                    if (amountPaidSection) amountPaidSection.style.display = 'block';
+                    if (keypadSection) keypadSection.style.display = 'block';
+                    // Update button state
+                    updateAmountDue();
+                }
+            });
+            return;
+        }
+        
+        // Hide amount paid section and keypad for credit sales
+        if (amountPaidSection) amountPaidSection.style.display = 'none';
+        if (keypadSection) keypadSection.style.display = 'none';
+        if (changeDisplay) changeDisplay.style.display = 'none';
+        
+        // Show payment terms dropdown
+        if (paymentTermsGroup) paymentTermsGroup.style.display = 'block';
+        if (paymentTermId) {
+            paymentTermId.required = true;
+            // Remove existing listener to avoid duplicates, then add new one
+            if (paymentTermUpdateHandler) {
+                paymentTermId.removeEventListener('change', paymentTermUpdateHandler);
+            }
+            // Create handler if it doesn't exist
+            if (!paymentTermUpdateHandler) {
+                paymentTermUpdateHandler = function() {
+                    updateAmountDue();
+                };
+            }
+            paymentTermId.addEventListener('change', paymentTermUpdateHandler);
+            // Also listen for input events (some browsers trigger this instead)
+            paymentTermId.addEventListener('input', paymentTermUpdateHandler);
+        }
+    } else {
+        // Show amount paid section and keypad again for normal sales
+        if (amountPaidSection) amountPaidSection.style.display = 'block';
+        if (keypadSection) keypadSection.style.display = 'block';
+        
+        // Hide payment terms dropdown
+        if (paymentTermsGroup) paymentTermsGroup.style.display = 'none';
+        if (paymentTermId) {
+            paymentTermId.required = false;
+            paymentTermId.value = '';
+            // Remove change listener
+            if (paymentTermUpdateHandler) {
+                paymentTermId.removeEventListener('change', paymentTermUpdateHandler);
+                paymentTermId.removeEventListener('input', paymentTermUpdateHandler);
+            }
+        }
+    }
+    
+    // Update button state after toggling credit sale
+    updateAmountDue();
+}
+
 function processCharge() {
-    // Process single payment
+    // Check if credit sale is enabled and selected
+    const putOnAccount = document.getElementById('putOnAccount');
+    const isCreditSale = putOnAccount && putOnAccount.checked;
+    
+    if (isCreditSale) {
+        // Validate customer
+        if (!customerData || !customerData.id) {
+            Swal.fire('Error', 'Customer is required for credit sales. Please select a customer.', 'error');
+            return;
+        }
+        
+        // Validate payment terms
+        const paymentTermId = document.getElementById('paymentTermId');
+        if (!paymentTermId || !paymentTermId.value) {
+            Swal.fire('Error', 'Please select payment terms for credit sale.', 'error');
+            return;
+        }
+        
+        // For credit sales, amount paid can be 0 or partial
+        // Process as credit sale
+        const currencyId = selectedCurrencyId || baseCurrencyId;
+        const currency = getCurrencyById(currencyId);
+        const exchangeRate = currency && currency.id != baseCurrencyId ? parseFloat(currency.exchange_rate) : 1.0;
+        
+        const paid = parseFloat(amountPaid) || 0;
+        const paidBase = convertToBase(paid, currencyId);
+        
+        // Process payment (can be 0 for full credit, or partial payment)
+        processPayment([{
+            method: selectedMethod,
+            amount: paid,
+            currency_id: currencyId,
+            exchange_rate: exchangeRate,
+            original_amount: paid,
+            base_amount: paidBase.toFixed(2)
+        }], {
+            is_credit_sale: true,
+            payment_term_id: paymentTermId.value
+        });
+        return;
+    }
+    
+    // Process single payment (normal sale)
     const paid = parseFloat(amountPaid) || 0;
     const currencyId = selectedCurrencyId || baseCurrencyId;
     const currency = getCurrencyById(currencyId);
@@ -1549,7 +1779,7 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function processPayment(payments) {
+function processPayment(payments, creditSaleData = null) {
     Swal.fire({
         title: 'Processing Payment...',
         allowOutsideClick: false,
@@ -1558,16 +1788,25 @@ function processPayment(payments) {
         }
     });
     
+    const requestData = {
+        cart: <?= json_encode($cart) ?>,
+        customer: <?= json_encode($customer) ?>,
+        discount: <?= json_encode($discount) ?>,
+        delivery_cost: <?= $deliveryCost ?>,
+        payments: payments
+    };
+    
+    // Add credit sale data if provided
+    if (creditSaleData) {
+        requestData.is_credit_sale = creditSaleData.is_credit_sale;
+        requestData.payment_term_id = creditSaleData.payment_term_id;
+    }
+    
     fetch('<?= BASE_URL ?>ajax/process_sale.php', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         credentials: 'same-origin',
-        body: JSON.stringify({
-            cart: <?= json_encode($cart) ?>,
-            customer: <?= json_encode($customer) ?>,
-            discount: <?= json_encode($discount) ?>,
-            payments: payments
-        })
+        body: JSON.stringify(requestData)
     })
     .then(r => {
         if (!r.ok) {
@@ -1601,6 +1840,8 @@ function processPayment(payments) {
                     
                     // Print receipt automatically
                     if (data.receipt_id) {
+                        // Store last sale ID for receipt printing
+                        sessionStorage.setItem('lastSaleId', data.receipt_id);
                         // Open receipt in new window for printing with print parameter
                         const receiptWindow = window.open('<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1', '_blank');
                         
@@ -1617,6 +1858,8 @@ function processPayment(payments) {
                 
                 // Print receipt automatically
                 if (data.receipt_id) {
+                    // Store last sale ID for receipt printing
+                    sessionStorage.setItem('lastSaleId', data.receipt_id);
                     // Show success message first (especially if fiscalization was successful)
                     const fiscalizedMsg = data.fiscal_details && data.fiscal_details.fiscalized 
                         ? '<p style="color: #28a745;"><strong>✓ Receipt fiscalized successfully with ZIMRA</strong></p>' 
@@ -1748,6 +1991,8 @@ window.updateSplitMethod = updateSplitMethod;
 window.updateSplitAmount = updateSplitAmount;
 window.removeSplitPayment = removeSplitPayment;
 window.processSplitPayment = processSplitPayment;
+window.updateAmountDue = updateAmountDue;
+window.toggleCreditSale = toggleCreditSale;
 </script>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>

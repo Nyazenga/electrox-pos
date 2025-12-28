@@ -12,6 +12,15 @@ if (!$auth->isLoggedIn()) {
     exit;
 }
 
+// Check permission to send receipts
+try {
+    $auth->requirePermission('receipts.email');
+} catch (Exception $e) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied: ' . $e->getMessage()]);
+    exit;
+}
+
 $input = json_decode(file_get_contents('php://input'), true);
 
 if (!$input || !isset($input['receipt_id'])) {

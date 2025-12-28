@@ -11,7 +11,7 @@ $auth->requirePermission('settings.view');
 $pageTitle = 'Settings';
 
 $currentPage = $_GET['page'] ?? 'company';
-$validPages = ['company', 'pos', 'inventory', 'financial', 'fiscalization'];
+$validPages = ['company', 'general', 'payment_terms', 'pos', 'inventory', 'financial', 'fiscalization'];
 if (!in_array($currentPage, $validPages)) {
     $currentPage = 'company';
 }
@@ -96,6 +96,14 @@ require_once APP_PATH . '/includes/header.php';
             <a class="nav-link <?= $currentPage == 'company' ? 'active' : '' ?>" href="index.php?page=company">
                 <i class="bi bi-building"></i>
                 <span>Company Settings</span>
+            </a>
+            <a class="nav-link <?= $currentPage == 'general' ? 'active' : '' ?>" href="index.php?page=general">
+                <i class="bi bi-gear"></i>
+                <span>General Settings</span>
+            </a>
+            <a class="nav-link <?= $currentPage == 'payment_terms' ? 'active' : '' ?>" href="index.php?page=payment_terms">
+                <i class="bi bi-calendar-check"></i>
+                <span>Payment Terms</span>
             </a>
             <a class="nav-link <?= $currentPage == 'pos' ? 'active' : '' ?>" href="index.php?page=pos">
                 <i class="bi bi-cart"></i>

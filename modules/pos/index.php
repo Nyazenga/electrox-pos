@@ -3,6 +3,7 @@ require_once dirname(dirname(dirname(__FILE__))) . '/config.php';
 require_once APP_PATH . '/includes/db.php';
 require_once APP_PATH . '/includes/auth.php';
 require_once APP_PATH . '/includes/functions.php';
+require_once APP_PATH . '/includes/settings_functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
@@ -26,11 +27,14 @@ $sessionCart = $_SESSION['pos_cart'] ?? [];
 if (empty($sessionCart)) {
     unset($_SESSION['pos_discount']);
     unset($_SESSION['pos_customer']);
+    unset($_SESSION['pos_delivery_cost']);
 }
 
 // Get POS settings
 $homeLayout = getSetting('pos_home_layout', 'grid');
 $cartLayout = getSetting('pos_cart_layout', 'increase_qty');
+$pricesIncludeTax = getSetting('prices_include_tax', '1') == '1';
+$defaultTaxRate = getDefaultTaxRate();
 
 // Check if shifts table exists, create if not
 $tableExists = $db->getRow("SHOW TABLES LIKE 'shifts'");
@@ -1080,12 +1084,22 @@ require_once APP_PATH . '/includes/header.php';
                 $isFavorite = in_array($product['id'], $favoriteIds);
                 $productImage = !empty($product['images']) ? json_decode($product['images'], true)[0] ?? null : null;
                 $productDisplayName = !empty($product['product_name']) ? $product['product_name'] : ($product['brand'] . ' ' . $product['model']);
+                // Calculate display price
+                // If prices_include_tax is TRUE: selling_price already includes tax, use as-is
+                // If prices_include_tax is FALSE: selling_price does NOT include tax, add tax for display
+                $displayPrice = $product['selling_price'];
+                if (!$pricesIncludeTax) {
+                    // Price does NOT include tax, so add tax for display
+                    $displayPrice = calculatePriceWithTax($product['selling_price'], $defaultTaxRate);
+                }
+                // If pricesIncludeTax is true, displayPrice = selling_price (already includes tax)
             ?>
                 <div class="product-card" 
                      data-product-id="<?= $product['id'] ?>" 
                      data-category-id="<?= $product['category_id'] ?? 'no-category' ?>" 
                      data-product-name="<?= escapeHtml($productDisplayName) ?>"
-                     data-product-price="<?= $product['selling_price'] ?>"
+                     data-product-price="<?= $displayPrice ?>"
+                     data-product-price-base="<?= $product['selling_price'] ?>"
                      data-product-stock="<?= $product['quantity_in_stock'] ?>"
                      data-product-barcode="<?= escapeHtml($product['barcode'] ?? '') ?>"
                      data-is-trade-in="<?= ($product['is_trade_in'] ?? 0) ? '1' : '0' ?>"
@@ -1122,7 +1136,7 @@ require_once APP_PATH . '/includes/header.php';
                         <?php endif; ?>
                     </div>
                     <div class="product-name"><?= escapeHtml($productDisplayName) ?></div>
-                    <div class="product-price"><?= formatCurrency($product['selling_price']) ?></div>
+                    <div class="product-price"><?= formatCurrency($displayPrice) ?><?= $pricesIncludeTax ? ' <small style="color: rgba(255, 255, 255, 0.8);">(incl. tax)</small>' : '' ?></div>
                 </div>
             <?php endforeach; ?>
         </div>
@@ -1180,16 +1194,34 @@ require_once APP_PATH . '/includes/header.php';
                     <i class="bi bi-x-circle"></i>
                 </button>
             </div>
+            <?php if (getSetting('add_delivery_costs', '0') == '1'): ?>
+            <div class="summary-row" id="deliveryCostRow">
+                <span>Delivery Cost:</span>
+                <div class="d-flex align-items-center gap-2">
+                    <input type="text" class="form-control form-control-sm" id="deliveryCostInput" 
+                           value="<?= number_format($_SESSION['pos_delivery_cost'] ?? 0, 2, '.', '') ?>" 
+                           placeholder="0.00"
+                           onchange="updateDeliveryCost(this.value)"
+                           oninput="updateDeliveryCost(this.value)"
+                           onfocus="this.select()"
+                           onblur="formatDeliveryCostInput(this)"
+                           style="width: 100px; text-align: right;">
+                    <button class="btn btn-sm btn-link text-muted p-0" onclick="clearDeliveryCost()" title="Clear" style="font-size: 12px;">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                </div>
+            </div>
+            <?php endif; ?>
             <div class="summary-row total">
                 <span>Total:</span>
                 <span id="total"><?= formatCurrency(0) ?></span>
             </div>
             
             <div class="action-buttons">
-                <button class="btn-action btn-discount touch-friendly" onclick="applyDiscount()">
+                <button class="btn-action btn-discount touch-friendly" onclick="applyDiscount()" id="discountBtn">
                     <i class="bi bi-percent"></i> Discount
                 </button>
-                <button class="btn-action btn-charge touch-friendly" onclick="processPayment()">
+                <button class="btn-action btn-charge touch-friendly" onclick="processPayment()" id="chargeBtn">
                     <i class="bi bi-cash-coin"></i> Charge
                 </button>
             </div>
@@ -1939,7 +1971,9 @@ function updateCart() {
         discountAmount = (subtotal * discount.amount) / 100;
     }
     
-    const total = subtotal - discountAmount;
+    const deliveryCostInput = document.getElementById('deliveryCostInput');
+    const deliveryCost = deliveryCostInput ? parseFloat(deliveryCostInput.value) || 0 : 0;
+    const total = subtotal - discountAmount + deliveryCost;
     
     const currencySymbol = '$';
     document.getElementById('subtotal').textContent = currencySymbol + subtotal.toFixed(2);
@@ -2170,11 +2204,11 @@ function removeDiscount() {
     });
 }
 
-// Reset sale - clear cart, customer, and discount
+// Reset sale - clear cart, customer, discount, and delivery cost
 function resetSale() {
     Swal.fire({
         title: 'Reset Sale?',
-        text: 'This will clear the cart, customer, and discount. Start a new sale?',
+        text: 'This will clear the cart, customer, discount, and delivery cost. Start a new sale?',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'Yes, Reset',
@@ -2187,18 +2221,26 @@ function resetSale() {
             selectedCustomer = null;
             discount = { type: null, amount: 0 };
             
-            // Clear from session - ensure discount is cleared
+            // Clear delivery cost input
+            const deliveryCostInput = document.getElementById('deliveryCostInput');
+            if (deliveryCostInput) {
+                deliveryCostInput.value = '0.00';
+                updateDeliveryCost('0.00');
+            }
+            
+            // Clear from session - ensure discount and delivery cost are cleared
             fetch('<?= BASE_URL ?>ajax/clear_pos_cart.php', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     cart: [],
                     customer: null,
-                    discount: { type: null, amount: 0 }
+                    discount: { type: null, amount: 0 },
+                    delivery_cost: 0
                 })
             })
             .then(() => {
-                // Also explicitly clear discount from session
+                // Also explicitly clear everything from session
                 fetch('<?= BASE_URL ?>ajax/clear_pos_cart.php')
                     .then(() => {
                         // Update display
@@ -2227,17 +2269,65 @@ function resetSale() {
 
 // Save cart to session
 function saveCartToSession() {
+    const deliveryCostInput = document.getElementById('deliveryCostInput');
+    const deliveryCost = deliveryCostInput ? parseFloat(deliveryCostInput.value) || 0 : 0;
+    
     fetch('<?= BASE_URL ?>ajax/save_pos_cart.php', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
             cart: cart,
             customer: selectedCustomer,
-            discount: discount
+            discount: discount,
+            delivery_cost: deliveryCost
         })
     }).catch(err => {
         console.error('Error saving cart:', err);
     });
+}
+
+// Format delivery cost input on blur
+function formatDeliveryCostInput(input) {
+    const value = parseFloat(input.value) || 0;
+    input.value = value.toFixed(2);
+    updateDeliveryCost(input.value);
+}
+
+// Update delivery cost
+function updateDeliveryCost(value) {
+    // Remove any non-numeric characters except decimal point
+    let cleaned = String(value).replace(/[^0-9.]/g, '');
+    
+    // Ensure only one decimal point
+    const parts = cleaned.split('.');
+    if (parts.length > 2) {
+        cleaned = parts[0] + '.' + parts.slice(1).join('');
+    }
+    
+    // Limit to 2 decimal places while typing
+    if (parts.length === 2 && parts[1].length > 2) {
+        cleaned = parts[0] + '.' + parts[1].substring(0, 2);
+    }
+    
+    const deliveryCost = parseFloat(cleaned) || 0;
+    
+    // Update the input field with formatted value (only if not focused or empty)
+    const deliveryCostInput = document.getElementById('deliveryCostInput');
+    if (deliveryCostInput && deliveryCostInput !== document.activeElement) {
+        deliveryCostInput.value = deliveryCost.toFixed(2);
+    }
+    
+    updateCart();
+    saveCartToSession();
+}
+
+// Clear delivery cost
+function clearDeliveryCost() {
+    const deliveryCostInput = document.getElementById('deliveryCostInput');
+    if (deliveryCostInput) {
+        deliveryCostInput.value = '0.00';
+        updateDeliveryCost('0.00');
+    }
 }
 
 // Payment
@@ -2992,6 +3082,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
+
 </script>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>

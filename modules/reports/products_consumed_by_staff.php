@@ -8,7 +8,7 @@ require_once APP_PATH . '/includes/report_helper.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('reports.view');
+$auth->requireAnyPermission('reports.advanced_sales', 'reports.view', 'reports.products_consumed_by_staff');
 
 $pageTitle = 'Products Consumed by Staff Report';
 

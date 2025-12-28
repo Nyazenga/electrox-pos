@@ -195,6 +195,19 @@ if (isset($_GET['id'])) {
             }
         }
         
+        // Convert fiscal receipt taxes from payment currency to base currency if needed
+        // Fiscal receipt taxes are stored in payment currency, but sale amounts are in base currency
+        // This must be done AFTER payment currency variables are defined
+        if (!empty($selectedSale['fiscal_receipt_taxes']) && $paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+            // Convert FROM payment currency TO base currency (reverse of exchangeRate)
+            $paymentToBaseRate = getExchangeRate($paymentCurrencyId, $baseCurrency['id'], $db);
+            foreach ($selectedSale['fiscal_receipt_taxes'] as &$tax) {
+                $tax['tax_amount'] = floatval($tax['tax_amount']) * $paymentToBaseRate;
+                $tax['sales_amount_with_tax'] = floatval($tax['sales_amount_with_tax']) * $paymentToBaseRate;
+            }
+            unset($tax);
+        }
+        
         // Helper function to convert and format currency for display
         if (!function_exists('formatCurrencyAmount')) {
             require_once APP_PATH . '/includes/currency_functions.php';
@@ -816,10 +829,24 @@ require_once APP_PATH . '/includes/header.php';
                     <div><strong>Receipt #:</strong> <?= escapeHtml($selectedSale['receipt_number']) ?></div>
                     <div><strong>Date:</strong> <?= formatDateTime($selectedSale['sale_date']) ?></div>
                     <div><strong>Cashier:</strong> <?= escapeHtml(($selectedSale['cashier_first'] ?? '') . ' ' . ($selectedSale['cashier_last'] ?? '')) ?></div>
-                    <?php if ($selectedSale['first_name']): ?>
-                        <div><strong>Customer:</strong> <?= escapeHtml($selectedSale['first_name'] . ' ' . $selectedSale['last_name']) ?></div>
+                </div>
+                
+                <?php if ($selectedSale['first_name'] || $selectedSale['last_name'] || !empty($selectedSale['company_name']) || !empty($selectedSale['phone']) || !empty($selectedSale['address'])): ?>
+                <div class="customer-details-section" style="margin: 12px 0; padding: 0; font-size: 11px; line-height: 1.6;">
+                    <div style="font-weight: bold; margin-bottom: 4px;">Customer Details:</div>
+                    <?php 
+                    $customerName = trim(($selectedSale['first_name'] ?? '') . ' ' . ($selectedSale['last_name'] ?? ''));
+                    $displayName = $customerName ?: ($selectedSale['company_name'] ?? 'Walk-in');
+                    ?>
+                    <div style="margin-bottom: 4px;"><strong>Name:</strong> <?= escapeHtml($displayName) ?></div>
+                    <?php if (!empty($selectedSale['phone'])): ?>
+                        <div style="margin-bottom: 4px;"><strong>Phone:</strong> <?= escapeHtml($selectedSale['phone']) ?></div>
+                    <?php endif; ?>
+                    <?php if (!empty($selectedSale['address'])): ?>
+                        <div style="margin-bottom: 4px;"><strong>Address:</strong> <?= escapeHtml($selectedSale['address']) ?></div>
                     <?php endif; ?>
                 </div>
+                <?php endif; ?>
                 
                 <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
                     <colgroup>
@@ -864,31 +891,53 @@ require_once APP_PATH . '/includes/header.php';
                     </tbody>
                     <tfoot>
                         <?php
-                        // Convert amounts to payment currency if needed
-                        $subtotal = floatval($selectedSale['subtotal']);
+                        // Calculate tax amount from fiscal receipt taxes (if available) or use sale tax_amount
+                        $taxAmount = 0;
+                        if (!empty($selectedSale['fiscal_receipt_taxes'])) {
+                            foreach ($selectedSale['fiscal_receipt_taxes'] as $tax) {
+                                $taxAmount += floatval($tax['tax_amount'] ?? 0);
+                            }
+                        } else {
+                            $taxAmount = floatval($selectedSale['tax_amount'] ?? 0);
+                        }
+                        
                         $discountAmount = floatval($selectedSale['discount_amount'] ?? 0);
+                        $deliveryCost = floatval($selectedSale['delivery_cost'] ?? 0);
                         $totalAmount = floatval($selectedSale['total_amount']);
                         
+                        // Subtotal = Total - Tax - Delivery Cost (excludes tax and delivery)
+                        $subtotal = $totalAmount - $taxAmount - $deliveryCost;
+                        
+                        // Convert amounts to payment currency if needed
                         if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
                             $subtotal = $subtotal * $exchangeRate;
                             $discountAmount = $discountAmount * $exchangeRate;
+                            $deliveryCost = $deliveryCost * $exchangeRate;
+                            $taxAmount = $taxAmount * $exchangeRate;
                             $totalAmount = $totalAmount * $exchangeRate;
                         }
                         
                         $subtotalFormatted = $paymentCurrency ? formatCurrencyAmount($subtotal, $paymentCurrencyId, $db) : formatCurrency($subtotal);
                         $discountFormatted = $paymentCurrency ? formatCurrencyAmount($discountAmount, $paymentCurrencyId, $db) : formatCurrency($discountAmount);
+                        $deliveryCostFormatted = $paymentCurrency ? formatCurrencyAmount($deliveryCost, $paymentCurrencyId, $db) : formatCurrency($deliveryCost);
                         $totalFormatted = $paymentCurrency ? formatCurrencyAmount($totalAmount, $paymentCurrencyId, $db) : formatCurrency($totalAmount);
                         ?>
-                        <tr>
-                            <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Subtotal:</strong></td>
-                            <td style="text-align: right; padding: 6px 4px;"><strong><?= $subtotalFormatted ?></strong></td>
-                        </tr>
                         <?php if ($discountAmount > 0): ?>
                             <tr>
                                 <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
                                 <td style="text-align: right; padding: 6px 4px;"><strong>-<?= $discountFormatted ?></strong></td>
                             </tr>
                         <?php endif; ?>
+                        <?php if ($deliveryCost > 0): ?>
+                            <tr>
+                                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Delivery Cost:</strong></td>
+                                <td style="text-align: right; padding: 6px 4px;"><strong><?= $deliveryCostFormatted ?></strong></td>
+                            </tr>
+                        <?php endif; ?>
+                        <tr>
+                            <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Total(Excl. tax):</strong></td>
+                            <td style="text-align: right; padding: 6px 4px;"><strong><?= $subtotalFormatted ?></strong></td>
+                        </tr>
                         <?php
                         // Tax Breakdown (if fiscalized)
                         if (!empty($selectedSale['fiscal_receipt_taxes'])) {
@@ -954,99 +1003,143 @@ require_once APP_PATH . '/includes/header.php';
                         }
                         ?>
                         <tr class="total-row">
-                            <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>TOTAL:</strong></td>
+                            <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Total(Incl. tax):</strong></td>
                             <td style="text-align: right; padding: 6px 4px;"><strong><?= $totalFormatted ?></strong></td>
                         </tr>
-                        <tr>
-                            <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
-                                <strong>Payment:</strong><br>
-                                <?php 
-                                // Ensure payments are loaded (fallback check)
-                                if (!isset($selectedSale['payments']) || empty($selectedSale['payments'])) {
-                                    // Try to fetch payments again as fallback
-                                    $fallbackPayments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $selectedSale['id']]);
-                                    if ($fallbackPayments !== false && !empty($fallbackPayments)) {
-                                        $selectedSale['payments'] = $fallbackPayments;
-                                        // Enrich with currency info from tenant database
-                                        if (!function_exists('getBaseCurrency')) {
-                                            require_once APP_PATH . '/includes/currency_functions.php';
-                                        }
-                                        foreach ($selectedSale['payments'] as &$payment) {
-                                            if (!empty($payment['currency_id'])) {
-                                                // Get currency from tenant database (where currencies table exists)
-                                                $currency = $db->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $payment['currency_id']]);
-                                                if ($currency) {
-                                                    $payment['currency_code'] = $currency['code'];
-                                                    $payment['currency_symbol'] = $currency['symbol'];
-                                                    $payment['currency_symbol_position'] = $currency['symbol_position'];
-                                                }
-                                            }
-                                        }
-                                        unset($payment);
-                                    }
-                                }
-                                
-                                $totalPaid = 0;
-                                if (empty($selectedSale['payments'])): 
-                                ?>
-                                    <div style="margin-left: 10px; color: #999; font-style: italic;">No payment information available</div>
-                                <?php else: 
-                                    foreach ($selectedSale['payments'] as $payment): 
-                                        // Use original_amount (in payment currency) if available, otherwise convert base_amount
-                                        $paymentAmount = null;
-                                        if (isset($payment['original_amount']) && $payment['original_amount'] !== null) {
-                                            $paymentAmount = floatval($payment['original_amount']);
-                                        } elseif (isset($payment['base_amount']) && $payment['base_amount'] !== null) {
-                                            $baseAmount = floatval($payment['base_amount']);
-                                            // Convert to payment currency if needed
-                                            if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
-                                                $paymentAmount = $baseAmount * $exchangeRate;
-                                            } else {
-                                                $paymentAmount = $baseAmount;
-                                            }
-                                        } else {
-                                            $paymentAmount = floatval($payment['amount']);
-                                            // Convert to payment currency if needed
-                                            if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
-                                                $paymentAmount = $paymentAmount * $exchangeRate;
-                                            }
-                                        }
-                                        $totalPaid += $paymentAmount;
-                                        
-                                        // Display original amount and currency (already in payment currency)
-                                        $displayAmount = isset($payment['original_amount']) ? floatval($payment['original_amount']) : $paymentAmount;
-                                        $currencyCode = $payment['currency_code'] ?? ($paymentCurrency ? $paymentCurrency['code'] : ($baseCurrency ? $baseCurrency['code'] : 'USD'));
-                                        $currencySymbol = $payment['currency_symbol'] ?? ($paymentCurrency ? $paymentCurrency['symbol'] : ($baseCurrency ? $baseCurrency['symbol'] : '$'));
-                                        $symbolPosition = $payment['currency_symbol_position'] ?? ($paymentCurrency ? $paymentCurrency['symbol_position'] : ($baseCurrency ? $baseCurrency['symbol_position'] : 'before'));
-                                        
-                                        if ($symbolPosition === 'before') {
-                                            $formattedAmount = $currencySymbol . number_format($displayAmount, 2);
-                                        } else {
-                                            $formattedAmount = number_format($displayAmount, 2) . ' ' . $currencySymbol;
-                                        }
-                                ?>
-                                    <div style="margin-left: 10px;">
-                                        <?= escapeHtml(ucfirst($payment['payment_method'])) ?>: <?= $formattedAmount ?>
-                                        <?php if ($currencyCode && $currencyCode !== ($baseCurrency ? $baseCurrency['code'] : 'USD')): ?>
-                                            <span style="font-size: 0.9em; color: #666;">(<?= escapeHtml($currencyCode) ?>)</span>
-                                        <?php endif; ?>
-                                    </div>
-                                <?php 
-                                    endforeach; 
-                                endif; 
-                                ?>
-                            </td>
-                        </tr>
                         <?php 
-                        // Calculate change if amount paid exceeds total (convert to payment currency if needed)
-                        $change = $totalPaid - $totalAmount; // Use converted totalAmount
-                        if ($change > 0): 
-                            $changeFormatted = $paymentCurrency ? formatCurrencyAmount($change, $paymentCurrencyId, $db) : formatCurrency($change);
+                        // Check if this is a credit sale
+                        $isCreditSale = isset($selectedSale['is_credit_sale']) && $selectedSale['is_credit_sale'] == 1;
+                        $accountBalance = floatval($selectedSale['account_balance'] ?? 0);
+                        
+                        // Get payment term info if credit sale
+                        $paymentTermName = '';
+                        $paymentTermDays = '';
+                        if ($isCreditSale && !empty($selectedSale['payment_term_id'])) {
+                            $paymentTerm = $db->getRow("SELECT name, days FROM payment_terms WHERE id = :id", [':id' => $selectedSale['payment_term_id']]);
+                            if ($paymentTerm) {
+                                $paymentTermName = $paymentTerm['name'];
+                                $paymentTermDays = $paymentTerm['days'];
+                            }
+                        }
+                        
+                        if ($isCreditSale):
+                            // Convert account balance to payment currency if needed
+                            if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                                $accountBalance = $accountBalance * $exchangeRate;
+                            }
+                            $accountBalanceFormatted = $paymentCurrency ? formatCurrencyAmount($accountBalance, $paymentCurrencyId, $db) : formatCurrency($accountBalance);
                         ?>
                             <tr>
-                                <td colspan="3" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
-                                <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong><?= $changeFormatted ?></strong></td>
+                                <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
+                                    <strong>Put on Account Billing:</strong><br>
+                                    <div style="margin-left: 10px;">
+                                        <?php if (!empty($paymentTermName)): ?>
+                                            <div><strong>Payment Terms:</strong> <?= escapeHtml($paymentTermName) ?>
+                                            <?php if (!empty($paymentTermDays)): ?>
+                                                (<?= intval($paymentTermDays) ?> days)
+                                            <?php endif; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        <?php if ($accountBalance > 0): ?>
+                                            <div><strong>Account Balance:</strong> <?= $accountBalanceFormatted ?></div>
+                                        <?php else: ?>
+                                            <div><strong>Account Balance:</strong> <?= $accountBalanceFormatted ?> (Fully Paid)</div>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
                             </tr>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
+                                    <strong>Payment:</strong><br>
+                                    <?php 
+                                    // Ensure payments are loaded (fallback check)
+                                    if (!isset($selectedSale['payments']) || empty($selectedSale['payments'])) {
+                                        // Try to fetch payments again as fallback
+                                        $fallbackPayments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $selectedSale['id']]);
+                                        if ($fallbackPayments !== false && !empty($fallbackPayments)) {
+                                            $selectedSale['payments'] = $fallbackPayments;
+                                            // Enrich with currency info from tenant database
+                                            if (!function_exists('getBaseCurrency')) {
+                                                require_once APP_PATH . '/includes/currency_functions.php';
+                                            }
+                                            foreach ($selectedSale['payments'] as &$payment) {
+                                                if (!empty($payment['currency_id'])) {
+                                                    // Get currency from tenant database (where currencies table exists)
+                                                    $currency = $db->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $payment['currency_id']]);
+                                                    if ($currency) {
+                                                        $payment['currency_code'] = $currency['code'];
+                                                        $payment['currency_symbol'] = $currency['symbol'];
+                                                        $payment['currency_symbol_position'] = $currency['symbol_position'];
+                                                    }
+                                                }
+                                            }
+                                            unset($payment);
+                                        }
+                                    }
+                                    
+                                    $totalPaid = 0;
+                                    if (empty($selectedSale['payments'])): 
+                                    ?>
+                                        <div style="margin-left: 10px; color: #999; font-style: italic;">No payment information available</div>
+                                    <?php else: 
+                                        foreach ($selectedSale['payments'] as $payment): 
+                                            // Use original_amount (in payment currency) if available, otherwise convert base_amount
+                                            $paymentAmount = null;
+                                            if (isset($payment['original_amount']) && $payment['original_amount'] !== null) {
+                                                $paymentAmount = floatval($payment['original_amount']);
+                                            } elseif (isset($payment['base_amount']) && $payment['base_amount'] !== null) {
+                                                $baseAmount = floatval($payment['base_amount']);
+                                                // Convert to payment currency if needed
+                                                if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                                                    $paymentAmount = $baseAmount * $exchangeRate;
+                                                } else {
+                                                    $paymentAmount = $baseAmount;
+                                                }
+                                            } else {
+                                                $paymentAmount = floatval($payment['amount']);
+                                                // Convert to payment currency if needed
+                                                if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                                                    $paymentAmount = $paymentAmount * $exchangeRate;
+                                                }
+                                            }
+                                            $totalPaid += $paymentAmount;
+                                            
+                                            // Display original amount and currency (already in payment currency)
+                                            $displayAmount = isset($payment['original_amount']) ? floatval($payment['original_amount']) : $paymentAmount;
+                                            $currencyCode = $payment['currency_code'] ?? ($paymentCurrency ? $paymentCurrency['code'] : ($baseCurrency ? $baseCurrency['code'] : 'USD'));
+                                            $currencySymbol = $payment['currency_symbol'] ?? ($paymentCurrency ? $paymentCurrency['symbol'] : ($baseCurrency ? $baseCurrency['symbol'] : '$'));
+                                            $symbolPosition = $payment['currency_symbol_position'] ?? ($paymentCurrency ? $paymentCurrency['symbol_position'] : ($baseCurrency ? $baseCurrency['symbol_position'] : 'before'));
+                                            
+                                            if ($symbolPosition === 'before') {
+                                                $formattedAmount = $currencySymbol . number_format($displayAmount, 2);
+                                            } else {
+                                                $formattedAmount = number_format($displayAmount, 2) . ' ' . $currencySymbol;
+                                            }
+                                    ?>
+                                        <div style="margin-left: 10px;">
+                                            <?= escapeHtml(ucfirst($payment['payment_method'])) ?>: <?= $formattedAmount ?>
+                                            <?php if ($currencyCode && $currencyCode !== ($baseCurrency ? $baseCurrency['code'] : 'USD')): ?>
+                                                <span style="font-size: 0.9em; color: #666;">(<?= escapeHtml($currencyCode) ?>)</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php 
+                                        endforeach; 
+                                    endif; 
+                                    ?>
+                                </td>
+                            </tr>
+                            <?php 
+                            // Calculate change if amount paid exceeds total (convert to payment currency if needed)
+                            $change = $totalPaid - $totalAmount; // Use converted totalAmount
+                            if ($change > 0): 
+                                $changeFormatted = $paymentCurrency ? formatCurrencyAmount($change, $paymentCurrencyId, $db) : formatCurrency($change);
+                            ?>
+                                <tr>
+                                    <td colspan="3" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
+                                    <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong><?= $changeFormatted ?></strong></td>
+                                </tr>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </tfoot>
                 </table>
@@ -1332,74 +1425,175 @@ function sendReceiptWhatsApp() {
 
 <!-- Refund Modal -->
 <div class="modal fade" id="refundModal" tabindex="-1" aria-labelledby="refundModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header bg-warning text-dark">
                 <h5 class="modal-title" id="refundModalLabel">
-                    <i class="bi bi-arrow-counterclockwise"></i> Process Refund
+                    <i class="bi bi-arrow-counterclockwise"></i> Process Refund / Generate Credit Note
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" style="max-height: 80vh; overflow-y: auto;">
                 <input type="hidden" id="refundSaleId" value="">
                 
-                <div class="mb-4">
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <strong>Receipt Number:</strong> <span id="refundReceiptNumber"></span>
-                        </div>
-                        <div class="col-md-6">
-                            <strong>Original Amount:</strong> <span id="refundOriginalAmount" class="text-primary"></span>
-                        </div>
+                <!-- Step 1: Sale Information -->
+                <div class="card mb-3">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-info-circle"></i> Sale Information</h6>
                     </div>
-                    <div class="row">
-                        <div class="col-md-6">
-                            <strong>Sale Date:</strong> <span id="refundDate"></span>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <strong>Receipt Number:</strong><br>
+                                <span id="refundReceiptNumber" class="text-primary"></span>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Sale Date:</strong><br>
+                                <span id="refundDate"></span>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Original Amount:</strong><br>
+                                <span id="refundOriginalAmount" class="text-primary fw-bold"></span>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Sold By:</strong><br>
+                                <span id="refundCashierName"></span>
+                            </div>
                         </div>
-                    </div>
-                </div>
-                
-                <div class="mb-3">
-                    <label class="form-label"><strong>Refund Type</strong></label>
-                    <select class="form-select" id="refundType" onchange="toggleRefundType()">
-                        <option value="full">Full Refund</option>
-                        <option value="partial">Partial Refund</option>
-                    </select>
-                </div>
-                
-                <div class="mb-3">
-                    <label class="form-label"><strong>Select Items to Refund</strong></label>
-                    <div id="refundItemsList" style="max-height: 300px; overflow-y: auto;">
-                        <!-- Items will be populated here -->
                     </div>
                 </div>
                 
-                <div class="alert alert-info">
-                    <strong>Refund Total: <span id="refundTotalAmount" class="text-primary">$0.00</span></strong>
+                <!-- Customer Details -->
+                <div class="card mb-3" id="customerDetailsCard" style="display: none;">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-person"></i> Customer Details</h6>
+                    </div>
+                    <div class="card-body" id="customerDetailsBody">
+                        <!-- Customer details will be populated here -->
+                    </div>
                 </div>
                 
-                <div class="mb-3">
-                    <label class="form-label"><strong>Refund Reason</strong> <span class="text-muted">(Optional)</span></label>
-                    <select class="form-select" id="refundReason">
-                        <option value="">Select a reason...</option>
-                        <option value="Customer Request">Customer Request</option>
-                        <option value="Defective Product">Defective Product</option>
-                        <option value="Wrong Item">Wrong Item</option>
-                        <option value="Duplicate Sale">Duplicate Sale</option>
-                        <option value="Price Error">Price Error</option>
-                        <option value="Other">Other</option>
-                    </select>
+                <!-- ZIMRA Limitation Notice -->
+                <div class="alert alert-info mb-3">
+                    <i class="bi bi-info-circle"></i> <strong>Important:</strong> ZIMRA only supports full refunds. To process a partial refund, you must:
+                    <ol class="mb-0 mt-2">
+                        <li>Process a full refund for the original sale</li>
+                        <li>Create a new sale for the items the customer wants to keep</li>
+                    </ol>
                 </div>
                 
-                <div class="mb-3">
-                    <label class="form-label"><strong>Notes</strong> <span class="text-muted">(Optional)</span></label>
-                    <textarea class="form-control" id="refundNotes" rows="3" placeholder="Additional notes about this refund..."></textarea>
+                <!-- Step 2: Product Selection (Full Refund Only) -->
+                <div class="card mb-3">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0"><i class="bi bi-box-seam"></i> Select Products to Refund</h6>
+                        <input type="text" class="form-control form-control-sm" id="productSearchRefund" placeholder="Search products..." style="width: 200px;" onkeyup="searchRefundProducts()">
+                    </div>
+                    <div class="card-body">
+                        <div id="refundItemsList" style="max-height: 300px; overflow-y: auto;">
+                            <!-- Items will be populated here -->
+                        </div>
+                        <div class="mt-3">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <strong>Remaining Invoice Amount:</strong>
+                                    <span id="remainingInvoiceAmount" class="text-success fw-bold"></span>
+                                </div>
+                                <div class="col-md-6 text-end">
+                                    <strong>Refund Total:</strong>
+                                    <span id="refundTotalAmount" class="text-danger fw-bold fs-5">$0.00</span>
+                                </div>
+                            </div>
+                            <div class="row mt-2" id="deliveryCostCheckboxRow" style="display: none;">
+                                <div class="col-md-12">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="includeDeliveryCost" onchange="updateRefundTotal()">
+                                        <label class="form-check-label" for="includeDeliveryCost">
+                                            <strong>Include Delivery Cost</strong> (<span id="deliveryCostAmount"></span>)
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Step 4: Payment Method Selection -->
+                <div class="card mb-3">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-credit-card"></i> Refund Payment Method</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Payment Method</strong></label>
+                            <select class="form-select" id="refundPaymentMethod" onchange="updateRefundPaymentMethod()">
+                                <option value="cash">Cash</option>
+                                <option value="card">Card</option>
+                                <option value="ecocash">EcoCash</option>
+                                <option value="onemoney">OneMoney</option>
+                                <option value="bank">Bank Transfer</option>
+                                <option value="split">Split Payment</option>
+                            </select>
+                        </div>
+                        <div id="refundCurrencySelection" style="display: none;">
+                            <label class="form-label"><strong>Currency</strong></label>
+                            <select class="form-select" id="refundCurrency">
+                                <!-- Currencies will be populated here -->
+                            </select>
+                        </div>
+                        <div id="splitRefundPayments" style="display: none;">
+                            <label class="form-label"><strong>Split Refund Payments</strong></label>
+                            <div id="splitRefundPaymentsList">
+                                <!-- Split payments will be populated here -->
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addSplitRefundPayment()">
+                                <i class="bi bi-plus"></i> Add Payment
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Step 5: Reason and Notes -->
+                <div class="card mb-3">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-chat-left-text"></i> Refund Reason & Notes</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Refund Reason <span class="text-danger">*</span></strong></label>
+                            <select class="form-select" id="refundReason" required>
+                                <option value="">Select a reason...</option>
+                                <option value="Customer Request">Customer Request</option>
+                                <option value="Defective Product">Defective Product</option>
+                                <option value="Wrong Item">Wrong Item</option>
+                                <option value="Duplicate Sale">Duplicate Sale</option>
+                                <option value="Price Error">Price Error</option>
+                                <option value="Cancelled Order">Cancelled Order</option>
+                                <option value="Returned Goods">Returned Goods</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Additional Notes / Comments</strong></label>
+                            <textarea class="form-control" id="refundNotes" rows="3" placeholder="Enter any additional notes or comments about this refund..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Summary -->
+                <div class="alert alert-warning">
+                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>This refund will restore stock for returned items</li>
+                        <li>A credit note will be generated and fiscalized to ZIMRA (if original sale was fiscalized)</li>
+                        <li>Cash drawer will be adjusted for cash refunds</li>
+                        <li>This action cannot be undone</li>
+                    </ul>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger" id="processRefundBtn" onclick="processRefund()" disabled style="opacity: 0.5;">
-                    <i class="bi bi-check-circle"></i> Process Refund
+                    <i class="bi bi-check-circle"></i> Process Refund & Generate Credit Note
                 </button>
             </div>
         </div>
@@ -1435,67 +1629,295 @@ function refundSale(saleId) {
     });
 }
 
+let currentRefundSale = null;
+let refundPaymentMethods = [];
+
 function showRefundModal(sale) {
-    // Populate refund modal with sale data
+    currentRefundSale = sale;
+    
+    // Populate sale information
     document.getElementById('refundSaleId').value = sale.id;
-    document.getElementById('refundReceiptNumber').textContent = sale.receipt_number;
-    document.getElementById('refundOriginalAmount').textContent = '$' + parseFloat(sale.total_amount).toFixed(2);
+    document.getElementById('refundReceiptNumber').textContent = sale.receipt_number || 'N/A';
+    document.getElementById('refundOriginalAmount').textContent = formatCurrency(sale.total_amount);
     document.getElementById('refundDate').textContent = new Date(sale.sale_date).toLocaleString();
+    
+    // Populate cashier name
+    const cashierName = (sale.cashier_first || '') + ' ' + (sale.cashier_last || '');
+    document.getElementById('refundCashierName').textContent = cashierName.trim() || 'N/A';
+    
+    // Populate customer details
+    if (sale.customer_id && (sale.first_name || sale.last_name || sale.company_name)) {
+        const customerDetailsBody = document.getElementById('customerDetailsBody');
+        customerDetailsBody.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <strong>Name:</strong> ${escapeHtml((sale.first_name || '') + ' ' + (sale.last_name || '') || sale.company_name || 'Walk-in')}
+                </div>
+                ${sale.email ? `<div class="col-md-6"><strong>Email:</strong> ${escapeHtml(sale.email)}</div>` : ''}
+                ${sale.phone ? `<div class="col-md-6"><strong>Phone:</strong> ${escapeHtml(sale.phone)}</div>` : ''}
+                ${sale.address ? `<div class="col-md-12 mt-2"><strong>Address:</strong> ${escapeHtml(sale.address)}</div>` : ''}
+            </div>
+        `;
+        document.getElementById('customerDetailsCard').style.display = 'block';
+    } else {
+        document.getElementById('customerDetailsCard').style.display = 'none';
+    }
     
     // Populate items
     const itemsContainer = document.getElementById('refundItemsList');
     itemsContainer.innerHTML = '';
     
-    let totalRefundAmount = 0;
+    // CRITICAL: Use EXACT fiscalized prices if available (from fiscal_receipt_lines)
+    // This ensures refund modal shows the exact prices that were sent to ZIMRA
+    // If not fiscalized, convert stored prices to include tax using product's actual tax rate
+    const pricesIncludeTax = sale.prices_include_tax === true || sale.prices_include_tax === 1;
+    const defaultTaxRate = parseFloat(sale.default_tax_rate) || 0;
     
     sale.items.forEach((item, index) => {
+        // Priority 1: Use EXACT fiscalized prices (if sale was fiscalized)
+        let unitPriceWithTax = null;
+        let totalPriceWithTax = null;
+        
+        // For DISPLAY: Use the actual prices the customer paid (display_unit_price/display_total_price)
+        // These are calculated from sale_items prices converted to include tax using product's actual tax rate
+        // For FISCALIZATION: Use fiscal_unit_price/fiscal_total_price (already handled in fiscal_helper.php)
+        if (item.display_unit_price !== undefined && item.display_total_price !== undefined) {
+            // Use display prices (what customer actually paid)
+            unitPriceWithTax = parseFloat(item.display_unit_price) || 0;
+            totalPriceWithTax = parseFloat(item.display_total_price) || 0;
+        } else if (pricesIncludeTax && defaultTaxRate > 0) {
+            // Fallback: Convert from price WITHOUT tax to price WITH tax using default tax rate
+            // (This should only happen if display prices weren't calculated)
+            const taxDecimal = defaultTaxRate / 100;
+            unitPriceWithTax = parseFloat(item.unit_price) * (1 + taxDecimal);
+            totalPriceWithTax = parseFloat(item.total_price) * (1 + taxDecimal);
+        } else {
+            // Prices already include tax or tax is 0
+            unitPriceWithTax = parseFloat(item.unit_price) || 0;
+            totalPriceWithTax = parseFloat(item.total_price) || 0;
+        }
+        
+        // Round to 2 decimal places
+        unitPriceWithTax = Math.round(unitPriceWithTax * 100) / 100;
+        totalPriceWithTax = Math.round(totalPriceWithTax * 100) / 100;
+        
         const itemDiv = document.createElement('div');
         itemDiv.className = 'refund-item mb-3 p-3 border rounded';
+        itemDiv.setAttribute('data-product-name', item.product_name.toLowerCase());
         itemDiv.innerHTML = `
             <div class="d-flex align-items-center mb-2">
                 <input type="checkbox" class="form-check-input me-2 refund-item-checkbox" 
                        id="refundItem_${item.id}" 
                        data-item-id="${item.id}"
                        data-product-id="${item.product_id}"
-                       data-unit-price="${item.unit_price}"
-                       data-total-price="${item.total_price}"
+                       data-unit-price="${unitPriceWithTax}"
+                       data-total-price="${totalPriceWithTax}"
                        data-quantity="${item.quantity}"
-                       onchange="updateRefundTotal()"
-                       checked>
+                       data-refund-quantity="${item.quantity}"
+                       checked
+                       disabled
+                       title="Full refund only - all items must be refunded">
                 <label class="form-check-label flex-grow-1" for="refundItem_${item.id}">
                     <strong>${escapeHtml(item.product_name)}</strong>
+                    ${item.barcode ? `<div class="text-muted small">Barcode: ${escapeHtml(item.barcode)}</div>` : ''}
                     <div class="text-muted small">
-                        Qty: ${item.quantity} × $${parseFloat(item.unit_price).toFixed(2)} = $${parseFloat(item.total_price).toFixed(2)}
+                        Qty: ${item.quantity} × ${formatCurrency(unitPriceWithTax)} = ${formatCurrency(totalPriceWithTax)}
                     </div>
                 </label>
                 <div class="refund-item-amount fw-bold text-primary">
-                    $${parseFloat(item.total_price).toFixed(2)}
+                    ${formatCurrency(totalPriceWithTax)}
                 </div>
             </div>
-            <div class="refund-item-quantity" style="display: none;">
-                <label class="form-label small">Refund Quantity:</label>
-                <input type="number" class="form-control form-control-sm" 
-                       id="refundQty_${item.id}"
-                       min="1" 
-                       max="${item.quantity}" 
-                       value="${item.quantity}"
-                       onchange="updateRefundItemAmount(${item.id}, ${item.unit_price}, ${item.quantity})">
-            </div>
+            <!-- Quantity inputs removed - full refund only (all items refunded) -->
         `;
         itemsContainer.appendChild(itemDiv);
-        totalRefundAmount += parseFloat(item.total_price);
     });
     
-    // Set refund type
-    document.getElementById('refundType').value = 'full';
+    // Populate currencies for refund payment
+    const currencySelect = document.getElementById('refundCurrency');
+    currencySelect.innerHTML = '';
+    if (sale.currencies && sale.currencies.length > 0) {
+        sale.currencies.forEach(currency => {
+            const option = document.createElement('option');
+            option.value = currency.id;
+            option.textContent = currency.code + ' - ' + currency.name;
+            if (currency.is_base) {
+                option.selected = true;
+            }
+            currencySelect.appendChild(option);
+        });
+    }
+    
+    // Initialize payment methods from original sale
+    refundPaymentMethods = [];
+    if (sale.payments && sale.payments.length > 0) {
+        sale.payments.forEach(payment => {
+            refundPaymentMethods.push({
+                method: payment.payment_method,
+                amount: parseFloat(payment.amount),
+                currency_id: payment.currency_id || (sale.base_currency ? sale.base_currency.id : null)
+            });
+        });
+    }
+    
+    // Set default refund payment method
+    if (sale.payments && sale.payments.length > 0) {
+        document.getElementById('refundPaymentMethod').value = sale.payments[0].payment_method || 'cash';
+    }
+    
+    // Full refund only - no refund type selection needed
     document.getElementById('refundReason').value = '';
     document.getElementById('refundNotes').value = '';
     
-    // Update total
+    // Initialize delivery cost checkbox
+    const includeDeliveryCheckbox = document.getElementById('includeDeliveryCost');
+    const deliveryCostRow = document.getElementById('deliveryCostCheckboxRow');
+    const deliveryCostAmount = document.getElementById('deliveryCostAmount');
+    
+    if (sale.delivery_cost && parseFloat(sale.delivery_cost) > 0) {
+        if (deliveryCostRow) deliveryCostRow.style.display = 'block';
+        if (deliveryCostAmount) deliveryCostAmount.textContent = formatCurrency(sale.delivery_cost);
+        
+        // For full refunds, auto-check delivery cost if it exists
+        const allCheckboxes = document.querySelectorAll('.refund-item-checkbox');
+        const allChecked = allCheckboxes.length > 0 && Array.from(allCheckboxes).every(cb => cb.checked);
+        if (allChecked && includeDeliveryCheckbox) {
+            includeDeliveryCheckbox.checked = true;
+        } else if (includeDeliveryCheckbox) {
+            includeDeliveryCheckbox.checked = false;
+        }
+    } else {
+        if (deliveryCostRow) deliveryCostRow.style.display = 'none';
+        if (includeDeliveryCheckbox) includeDeliveryCheckbox.checked = false;
+    }
+    
+    // Update totals
     updateRefundTotal();
+    updateRefundPaymentMethod();
     
     // Show modal
     new bootstrap.Modal(document.getElementById('refundModal')).show();
+}
+
+function searchRefundProducts() {
+    const search = document.getElementById('productSearchRefund').value.toLowerCase();
+    document.querySelectorAll('.refund-item').forEach(item => {
+        const productName = item.getAttribute('data-product-name') || '';
+        item.style.display = productName.includes(search) ? 'block' : 'none';
+    });
+}
+
+function updateRefundPaymentMethod() {
+    const method = document.getElementById('refundPaymentMethod').value;
+    const currencySelection = document.getElementById('refundCurrencySelection');
+    const splitPayments = document.getElementById('splitRefundPayments');
+    
+    if (method === 'split') {
+        currencySelection.style.display = 'none';
+        splitPayments.style.display = 'block';
+        initializeSplitRefundPayments();
+    } else {
+        currencySelection.style.display = 'block';
+        splitPayments.style.display = 'none';
+    }
+}
+
+function initializeSplitRefundPayments() {
+    const container = document.getElementById('splitRefundPaymentsList');
+    container.innerHTML = '';
+    
+    const totalRefund = parseFloat(document.getElementById('refundTotalAmount').textContent.replace(/[^0-9.-]/g, '')) || 0;
+    
+    if (totalRefund > 0 && currentRefundSale && currentRefundSale.payments) {
+        // Initialize with original payment methods
+        currentRefundSale.payments.forEach((payment, index) => {
+            addSplitRefundPaymentRow(payment.payment_method, payment.amount, payment.currency_id);
+        });
+    } else {
+        // Default to 2 payments
+        addSplitRefundPaymentRow('cash', 0, null);
+        addSplitRefundPaymentRow('card', 0, null);
+    }
+    
+    validateSplitRefundPayments();
+}
+
+function addSplitRefundPayment() {
+    addSplitRefundPaymentRow('cash', 0, null);
+    validateSplitRefundPayments();
+}
+
+function addSplitRefundPaymentRow(method = 'cash', amount = 0, currencyId = null) {
+    const container = document.getElementById('splitRefundPaymentsList');
+    const index = container.children.length;
+    
+    const row = document.createElement('div');
+    row.className = 'split-payment-item mb-2 p-2 border rounded';
+    row.innerHTML = `
+        <div class="row g-2">
+            <div class="col-md-4">
+                <select class="form-select form-select-sm split-payment-method" onchange="validateSplitRefundPayments()">
+                    <option value="cash" ${method === 'cash' ? 'selected' : ''}>Cash</option>
+                    <option value="card" ${method === 'card' ? 'selected' : ''}>Card</option>
+                    <option value="ecocash" ${method === 'ecocash' ? 'selected' : ''}>EcoCash</option>
+                    <option value="onemoney" ${method === 'onemoney' ? 'selected' : ''}>OneMoney</option>
+                    <option value="bank" ${method === 'bank' ? 'selected' : ''}>Bank Transfer</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm split-payment-currency">
+                    ${currentRefundSale && currentRefundSale.currencies ? currentRefundSale.currencies.map(c => 
+                        `<option value="${c.id}" ${(currencyId == c.id || (!currencyId && c.is_base)) ? 'selected' : ''}>${escapeHtml(c.code)}</option>`
+                    ).join('') : '<option value="">USD</option>'}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <input type="number" class="form-control form-control-sm split-payment-amount" 
+                       step="0.01" min="0" value="${amount.toFixed(2)}" 
+                       placeholder="Amount" onchange="validateSplitRefundPayments()">
+            </div>
+            <div class="col-md-1">
+                <button type="button" class="btn btn-sm btn-danger" onclick="removeSplitRefundPayment(this)">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
+function removeSplitRefundPayment(btn) {
+    btn.closest('.split-payment-item').remove();
+    validateSplitRefundPayments();
+}
+
+function validateSplitRefundPayments() {
+    const totalRefund = parseFloat(document.getElementById('refundTotalAmount').textContent.replace(/[^0-9.-]/g, '')) || 0;
+    let totalPaid = 0;
+    
+    document.querySelectorAll('.split-payment-amount').forEach(input => {
+        totalPaid += parseFloat(input.value) || 0;
+    });
+    
+    const difference = Math.abs(totalRefund - totalPaid);
+    const isValid = difference < 0.01; // Allow 1 cent tolerance
+    
+    // Show validation message
+    let validationMsg = document.getElementById('splitRefundValidation');
+    if (!validationMsg) {
+        validationMsg = document.createElement('div');
+        validationMsg.id = 'splitRefundValidation';
+        validationMsg.className = 'mt-2';
+        document.getElementById('splitRefundPayments').appendChild(validationMsg);
+    }
+    
+    if (isValid) {
+        validationMsg.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> Payment amounts match refund total</span>';
+    } else {
+        validationMsg.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-circle"></i> Total paid (${formatCurrency(totalPaid)}) does not match refund total (${formatCurrency(totalRefund)}). Difference: ${formatCurrency(difference)}</span>`;
+    }
+    
+    return isValid;
 }
 
 function updateRefundItemAmount(itemId, unitPrice, maxQuantity) {
@@ -1527,20 +1949,86 @@ function updateRefundItemAmount(itemId, unitPrice, maxQuantity) {
 
 function updateRefundTotal() {
     const checkboxes = document.querySelectorAll('.refund-item-checkbox:checked');
-    let total = 0;
+    let refundSubtotal = 0;
     
+    // Calculate refund subtotal (sum of selected items)
     checkboxes.forEach(checkbox => {
         const refundQty = parseInt(checkbox.getAttribute('data-refund-quantity')) || parseInt(checkbox.getAttribute('data-quantity'));
         const unitPrice = parseFloat(checkbox.getAttribute('data-unit-price'));
         const amount = refundQty * unitPrice;
-        total += amount;
+        refundSubtotal += amount;
     });
     
-    document.getElementById('refundTotalAmount').textContent = '$' + total.toFixed(2);
+    // Round refund subtotal to 2 decimal places to avoid floating point errors
+    refundSubtotal = Math.round(refundSubtotal * 100) / 100;
+    
+    // Calculate proportional discount and delivery cost
+    let refundDiscount = 0;
+    let refundDeliveryCost = 0;
+    let refundTotal = refundSubtotal;
+    
+    if (currentRefundSale) {
+        const originalSubtotal = parseFloat(currentRefundSale.subtotal) || 0;
+        const originalDiscount = parseFloat(currentRefundSale.discount_amount) || 0;
+        const originalDeliveryCost = parseFloat(currentRefundSale.delivery_cost) || 0;
+        const originalTotal = parseFloat(currentRefundSale.total_amount) || 0;
+        
+        // Check if all items are selected (full refund)
+        const allCheckboxes = document.querySelectorAll('.refund-item-checkbox');
+        const allChecked = allCheckboxes.length > 0 && Array.from(allCheckboxes).every(cb => cb.checked);
+        const allFullQuantity = Array.from(allCheckboxes).every(cb => {
+            const refundQty = parseInt(cb.getAttribute('data-refund-quantity')) || parseInt(cb.getAttribute('data-quantity'));
+            const originalQty = parseInt(cb.getAttribute('data-quantity'));
+            return refundQty === originalQty;
+        });
+        
+        // If all visible items are checked with full quantities, it's a full refund
+        // (regardless of whether subtotals match, as some items may have been previously refunded)
+        const isFullRefund = allChecked && allFullQuantity && allCheckboxes.length > 0;
+        
+        if (originalDiscount > 0) {
+            if (isFullRefund) {
+                // Full refund: refund the entire discount
+                refundDiscount = originalDiscount;
+            }
+            // For partial refunds, do NOT apply discount - refund items at their original prices
+        }
+        
+        // Include delivery cost based on checkbox state
+        const includeDeliveryCheckbox = document.getElementById('includeDeliveryCost');
+        
+        // Respect user's checkbox choice - only include delivery cost if checkbox is checked
+        if (includeDeliveryCheckbox && includeDeliveryCheckbox.checked && originalDeliveryCost > 0) {
+            refundDeliveryCost = originalDeliveryCost;
+        } else {
+            refundDeliveryCost = 0;
+        }
+        
+        // Calculate refund total (subtotal - discount + delivery cost)
+        // Round to 2 decimal places to avoid floating point errors
+        refundTotal = Math.round((refundSubtotal - refundDiscount + refundDeliveryCost) * 100) / 100;
+        
+        // Calculate remaining invoice amount
+        // For full refunds, remaining should always be 0 (tax is handled separately in credit notes)
+        let remaining = 0;
+        
+        // Full refund only: remaining is always 0
+        remaining = 0;
+        
+        document.getElementById('remainingInvoiceAmount').textContent = formatCurrency(remaining);
+    }
+    
+    // Display refund total (which includes discount and delivery cost)
+    document.getElementById('refundTotalAmount').textContent = formatCurrency(refundTotal);
+    
+    // Update split payments if active
+    if (document.getElementById('refundPaymentMethod').value === 'split') {
+        validateSplitRefundPayments();
+    }
     
     // Enable/disable process button
     const processBtn = document.getElementById('processRefundBtn');
-    if (total > 0) {
+    if (refundTotal > 0) {
         processBtn.disabled = false;
         processBtn.style.opacity = '1';
     } else {
@@ -1549,35 +2037,34 @@ function updateRefundTotal() {
     }
 }
 
-function toggleRefundType() {
-    const refundType = document.getElementById('refundType').value;
-    const quantityInputs = document.querySelectorAll('.refund-item-quantity');
-    
-    if (refundType === 'partial') {
-        quantityInputs.forEach(div => div.style.display = 'block');
-        // Uncheck all items first
-        document.querySelectorAll('.refund-item-checkbox').forEach(cb => {
-            cb.checked = false;
-            updateRefundTotal();
-        });
-    } else {
-        quantityInputs.forEach(div => div.style.display = 'none');
-        // Check all items with full quantity
-        document.querySelectorAll('.refund-item-checkbox').forEach(cb => {
-            cb.checked = true;
-            const qty = parseInt(cb.getAttribute('data-quantity'));
-            cb.setAttribute('data-refund-quantity', qty);
-            updateRefundTotal();
-        });
+function formatCurrency(amount) {
+    if (typeof amount !== 'number') {
+        amount = parseFloat(amount) || 0;
     }
-    updateRefundTotal();
+    return '$' + amount.toFixed(2);
 }
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// toggleRefundType() removed - only full refunds are supported
 
 function processRefund() {
     const saleId = document.getElementById('refundSaleId').value;
-    const refundType = document.getElementById('refundType').value;
-    const reason = document.getElementById('refundReason').value;
-    const notes = document.getElementById('refundNotes').value;
+    const refundType = 'full'; // Only full refunds are supported (ZIMRA limitation) - dropdown removed
+    const reasonElement = document.getElementById('refundReason');
+    const reason = reasonElement ? reasonElement.value : '';
+    const notesElement = document.getElementById('refundNotes');
+    const notes = notesElement ? notesElement.value : '';
+    
+    // Validate reason
+    if (!reason || reason.trim() === '') {
+        Swal.fire('Error', 'Please select a refund reason', 'error');
+        return;
+    }
     
     // Get selected items
     const selectedItems = [];
@@ -1602,8 +2089,48 @@ function processRefund() {
         return;
     }
     
-    // Calculate total refund amount
-    const totalRefund = selectedItems.reduce((sum, item) => sum + item.total_price, 0);
+    // Get the refund total (with discount) from the displayed amount
+    const refundTotalElement = document.getElementById('refundTotalAmount');
+    const totalRefund = parseFloat(refundTotalElement.textContent.replace(/[^0-9.-]/g, '')) || 0;
+    
+    // Check if delivery cost should be included
+    const includeDeliveryCheckbox = document.getElementById('includeDeliveryCost');
+    const includeDeliveryCost = includeDeliveryCheckbox ? includeDeliveryCheckbox.checked : false;
+    
+    // Get payment methods
+    const paymentMethod = document.getElementById('refundPaymentMethod').value;
+    let paymentMethods = [];
+    
+    if (paymentMethod === 'split') {
+        // Validate split payments
+        if (!validateSplitRefundPayments()) {
+            Swal.fire('Error', 'Split payment amounts must equal the refund total', 'error');
+            return;
+        }
+        
+        document.querySelectorAll('.split-payment-item').forEach(row => {
+            const method = row.querySelector('.split-payment-method').value;
+            const amount = parseFloat(row.querySelector('.split-payment-amount').value) || 0;
+            const currencyId = parseInt(row.querySelector('.split-payment-currency').value) || null;
+            
+            if (amount > 0) {
+                paymentMethods.push({
+                    method: method,
+                    amount: amount,
+                    currency_id: currencyId,
+                    reference: null
+                });
+            }
+        });
+    } else {
+        const currencyId = parseInt(document.getElementById('refundCurrency').value) || null;
+        paymentMethods.push({
+            method: paymentMethod,
+            amount: totalRefund,
+            currency_id: currencyId,
+            reference: null
+        });
+    }
     
     // Show confirmation
     Swal.fire({
@@ -1611,8 +2138,11 @@ function processRefund() {
         html: `
             <p>Refund Type: <strong>${refundType === 'full' ? 'Full' : 'Partial'}</strong></p>
             <p>Items: <strong>${selectedItems.length}</strong></p>
-            <p>Total Refund Amount: <strong>$${totalRefund.toFixed(2)}</strong></p>
-            ${reason ? `<p>Reason: ${escapeHtml(reason)}</p>` : ''}
+            <p>Total Refund Amount: <strong>${formatCurrency(totalRefund)}</strong></p>
+            ${includeDeliveryCost && currentRefundSale && currentRefundSale.delivery_cost > 0 ? `<p>Includes Delivery Cost: <strong>${formatCurrency(currentRefundSale.delivery_cost)}</strong></p>` : ''}
+            <p>Payment Method: <strong>${paymentMethod === 'split' ? 'Split Payment' : paymentMethod.toUpperCase()}</strong></p>
+            <p>Reason: <strong>${escapeHtml(reason)}</strong></p>
+            <p class="text-muted small mt-3">A credit note will be generated and fiscalized to ZIMRA if the original sale was fiscalized.</p>
         `,
         icon: 'warning',
         showCancelButton: true,
@@ -1624,6 +2154,7 @@ function processRefund() {
             // Process refund
             Swal.fire({
                 title: 'Processing Refund...',
+                html: 'Generating credit note and processing refund...',
                 allowOutsideClick: false,
                 didOpen: () => {
                     Swal.showLoading();
@@ -1638,23 +2169,38 @@ function processRefund() {
                     sale_id: parseInt(saleId),
                     refund_type: refundType,
                     items: selectedItems,
+                    payment_methods: paymentMethods,
                     reason: reason,
-                    notes: notes
+                    notes: notes,
+                    include_delivery_cost: includeDeliveryCost
                 })
             })
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
+                    let message = 'Refund processed successfully';
+                    if (data.fiscalized) {
+                        message += ' and credit note fiscalized to ZIMRA';
+                    }
+                    if (data.credit_note_number) {
+                        message += '<br><br>Credit Note #: <strong>' + data.credit_note_number + '</strong>';
+                    }
+                    
                     Swal.fire({
                         title: 'Success!',
-                        text: 'Refund processed successfully',
+                        html: message,
                         icon: 'success',
                         confirmButtonText: 'OK'
                     }).then(() => {
                         // Close modal
                         bootstrap.Modal.getInstance(document.getElementById('refundModal')).hide();
-                        // Reload page to show updated status
-                        window.location.reload();
+                        // Redirect to credit note view (view_credit_note.php expects refund_id, not credit_note_id)
+                        if (data.refund_id) {
+                            window.location.href = '<?= BASE_URL ?>modules/sales/view_credit_note.php?id=' + data.refund_id;
+                        } else {
+                            // Fallback: reload page if refund ID not available
+                            window.location.reload();
+                        }
                     });
                 } else {
                     Swal.fire('Error', data.message || 'Failed to process refund', 'error');

@@ -74,11 +74,43 @@ try {
                     if ($productId > 0 && $quantity > 0) {
                         // Update product cost and selling prices
                         if ($costPrice > 0 || $sellingPrice > 0) {
+                            // Get current product prices for tracking
+                            $currentProduct = $db->getRow("SELECT cost_price, selling_price FROM products WHERE id = :id", [':id' => $productId]);
+                            $oldCostPrice = $currentProduct ? floatval($currentProduct['cost_price'] ?? 0) : 0;
+                            $oldSellingPrice = $currentProduct ? floatval($currentProduct['selling_price'] ?? 0) : 0;
+                            
                             $priceUpdate = [];
                             if ($costPrice > 0) $priceUpdate['cost_price'] = $costPrice;
                             if ($sellingPrice > 0) $priceUpdate['selling_price'] = $sellingPrice;
                             if (!empty($priceUpdate)) {
                                 $db->update('products', $priceUpdate, ['id' => $productId]);
+                                
+                                // Track price changes
+                                $primaryDb = Database::getPrimaryInstance();
+                                if ($costPrice > 0 && $oldCostPrice != $costPrice) {
+                                    $primaryDb->insert('price_change_history', [
+                                        'product_id' => $productId,
+                                        'branch_id' => $branchId,
+                                        'old_price' => $oldCostPrice,
+                                        'new_price' => $costPrice,
+                                        'price_type' => 'cost_price',
+                                        'changed_by' => $userId,
+                                        'change_reason' => 'GRN Approved',
+                                        'changed_at' => date('Y-m-d H:i:s')
+                                    ]);
+                                }
+                                if ($sellingPrice > 0 && $oldSellingPrice != $sellingPrice) {
+                                    $primaryDb->insert('price_change_history', [
+                                        'product_id' => $productId,
+                                        'branch_id' => $branchId,
+                                        'old_price' => $oldSellingPrice,
+                                        'new_price' => $sellingPrice,
+                                        'price_type' => 'selling_price',
+                                        'changed_by' => $userId,
+                                        'change_reason' => 'GRN Approved',
+                                        'changed_at' => date('Y-m-d H:i:s')
+                                    ]);
+                                }
                             }
                         }
                         

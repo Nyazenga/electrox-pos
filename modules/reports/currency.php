@@ -7,7 +7,7 @@ require_once APP_PATH . '/includes/currency_functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('reports.view');
+$auth->requireAnyPermission('reports.view', 'reports.currency');
 
 $pageTitle = 'Currency Reports';
 

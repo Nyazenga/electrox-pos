@@ -7,6 +7,13 @@ initSession();
 $auth = Auth::getInstance();
 $auth->requireLogin();
 
+// Check permission - allow if user has inventory create or transfers create permissions
+if (!$auth->hasPermission('inventory.create') && !$auth->hasPermission('transfers.create')) {
+    http_response_code(403);
+    echo json_encode(['exists' => false, 'error' => 'Permission denied']);
+    exit;
+}
+
 header('Content-Type: application/json');
 
 $number = $_GET['number'] ?? '';

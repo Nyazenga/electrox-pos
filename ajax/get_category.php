@@ -7,6 +7,13 @@ require_once APP_PATH . '/includes/functions.php';
 $auth = Auth::getInstance();
 $auth->requireLogin();
 
+// Check permission - allow if user has products view or categories permission
+if (!$auth->hasPermission('products.view') && !$auth->hasPermission('products.categories')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied']);
+    exit;
+}
+
 header('Content-Type: application/json');
 
 $id = intval($_GET['id'] ?? 0);

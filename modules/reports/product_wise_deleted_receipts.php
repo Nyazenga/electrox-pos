@@ -8,7 +8,7 @@ require_once APP_PATH . '/includes/report_helper.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('reports.view');
+$auth->requireAnyPermission('reports.suspicious', 'reports.view', 'reports.product_wise_deleted', 'reports.deleted_receipts');
 
 $pageTitle = 'Product Wise Deleted Receipts Report';
 

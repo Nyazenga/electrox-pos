@@ -48,6 +48,9 @@ require_once APP_PATH . '/includes/header.php';
     .badge-warning { background: #f59e0b; color: white; }
     .badge-info { background: #3b82f6; color: white; }
     .badge-ready { background: #10b981; color: white; }
+    .activate-device-btn {
+        white-space: nowrap;
+    }
 </style>
 
 <div class="content-wrapper">
@@ -90,12 +93,13 @@ require_once APP_PATH . '/includes/header.php';
                             <th>Total Receipts</th>
                             <th>Submitted</th>
                             <th>Status</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($branches)): ?>
                             <tr>
-                                <td colspan="10" class="text-center text-muted py-4">
+                                <td colspan="11" class="text-center text-muted py-4">
                                     <i class="bi bi-inbox" style="font-size: 48px;"></i>
                                     <p class="mt-2">No branches found</p>
                                 </td>
@@ -159,6 +163,25 @@ require_once APP_PATH . '/includes/header.php';
                                         }
                                         ?>
                                     </td>
+                                    <td>
+                                        <?php 
+                                        $canManage = $auth->hasPermission('fiscalization.manage');
+                                        if ($branch['device_id'] && !$branch['is_active'] && $canManage): ?>
+                                            <button class="btn btn-sm btn-success activate-device-btn" 
+                                                    data-branch-id="<?= $branch['id'] ?>" 
+                                                    data-device-id="<?= $branch['device_id'] ?>"
+                                                    data-branch-name="<?= htmlspecialchars($branch['branch_name']) ?>"
+                                                    title="Activate this device">
+                                                <i class="bi bi-power"></i> Activate
+                                            </button>
+                                        <?php elseif ($branch['device_id'] && !$branch['is_active'] && !$canManage): ?>
+                                            <span class="text-muted small" title="You don't have permission to activate devices">No Permission</span>
+                                        <?php elseif ($branch['device_id'] && $branch['is_active']): ?>
+                                            <span class="text-muted small"><i class="bi bi-check-circle text-success"></i> Active</span>
+                                        <?php else: ?>
+                                            <span class="text-muted small">-</span>
+                                        <?php endif; ?>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
@@ -170,31 +193,133 @@ require_once APP_PATH . '/includes/header.php';
 </div>
 
 <script>
-$(document).ready(function() {
+// Wait for jQuery and other libraries to load
+function initFiscalStatusPage() {
+    // Check if jQuery is loaded
+    if (typeof jQuery === 'undefined') {
+        setTimeout(initFiscalStatusPage, 100);
+        return;
+    }
+    
+    const $ = jQuery;
+    
     // Initialize DataTable
-    if ($.fn.DataTable) {
-        $('#fiscalStatusTable').DataTable({
-            order: [[0, 'asc']], // Sort by Branch name ascending
-            pageLength: 25,
-            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
-            responsive: true,
-            autoWidth: false,
-            language: {
-                search: "Search:",
-                lengthMenu: "Show _MENU_ entries",
-                info: "Showing _START_ to _END_ of _TOTAL_ entries",
-                infoEmpty: "No entries to show",
-                infoFiltered: "(filtered from _MAX_ total entries)",
-                paginate: {
-                    first: "First",
-                    last: "Last",
-                    next: "Next",
-                    previous: "Previous"
+    $(document).ready(function() {
+        if ($.fn.DataTable) {
+            const table = $('#fiscalStatusTable');
+            
+            // Check if DataTable is already initialized
+            if ($.fn.DataTable.isDataTable('#fiscalStatusTable')) {
+                // Destroy existing instance
+                table.DataTable().destroy();
+            }
+            
+            // Initialize DataTable
+            table.DataTable({
+                order: [[0, 'asc']], // Sort by Branch name ascending
+                pageLength: 25,
+                lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+                responsive: true,
+                autoWidth: false,
+                language: {
+                    search: "Search:",
+                    lengthMenu: "Show _MENU_ entries",
+                    info: "Showing _START_ to _END_ of _TOTAL_ entries",
+                    infoEmpty: "No entries to show",
+                    infoFiltered: "(filtered from _MAX_ total entries)",
+                    paginate: {
+                        first: "First",
+                        last: "Last",
+                        next: "Next",
+                        previous: "Previous"
+                    }
                 }
+            });
+        }
+        
+        // Handle device activation - use vanilla JS event delegation
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.activate-device-btn')) {
+                const btn = e.target.closest('.activate-device-btn');
+                const branchId = btn.getAttribute('data-branch-id');
+                const deviceId = btn.getAttribute('data-device-id');
+                const branchName = btn.getAttribute('data-branch-name');
+                
+                // Check if Swal is available
+                if (typeof Swal === 'undefined') {
+                    console.error('SweetAlert2 is not loaded');
+                    return;
+                }
+                
+                Swal.fire({
+                    title: 'Activate Device?',
+                    html: `Are you sure you want to activate the device for <strong>${branchName}</strong>?<br><br>Device ID: <strong>${deviceId}</strong>`,
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonColor: '#10b981',
+                    cancelButtonColor: '#6b7280',
+                    confirmButtonText: 'Yes, Activate',
+                    cancelButtonText: 'Cancel',
+                    showLoaderOnConfirm: true,
+                    preConfirm: () => {
+                        // Use fetch API instead of jQuery.ajax
+                        const formData = new URLSearchParams();
+                        formData.append('branch_id', branchId);
+                        formData.append('device_id', deviceId);
+                        
+                        return fetch('<?= BASE_URL ?>ajax/activate_fiscal_device.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: formData
+                        })
+                        .then(response => {
+                            if (!response.ok) {
+                                return response.text().then(text => {
+                                    try {
+                                        return JSON.parse(text);
+                                    } catch (e) {
+                                        throw new Error('Invalid JSON response: ' + text.substring(0, 100));
+                                    }
+                                });
+                            }
+                            return response.json();
+                        })
+                        .then(response => {
+                            if (!response.success) {
+                                throw new Error(response.message || 'Failed to activate device');
+                            }
+                            return response;
+                        })
+                        .catch(error => {
+                            Swal.showValidationMessage(error.message || 'An error occurred');
+                        });
+                    },
+                    allowOutsideClick: () => !Swal.isLoading()
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        Swal.fire({
+                            title: 'Success!',
+                            text: 'Device activated successfully',
+                            icon: 'success',
+                            confirmButtonColor: '#10b981'
+                        }).then(() => {
+                            location.reload();
+                        });
+                    }
+                });
             }
         });
-    }
-});
+    });
+}
+
+// Start initialization when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFiscalStatusPage);
+} else {
+    initFiscalStatusPage();
+}
 </script>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>

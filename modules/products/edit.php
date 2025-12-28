@@ -89,6 +89,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'model' => $newIsGeneralCategory ? null : sanitizeInput($_POST['model'] ?? ''),
         'color' => sanitizeInput($_POST['color'] ?? ''),
         'storage' => sanitizeInput($_POST['storage'] ?? ''),
+        'expiry_date' => !empty($_POST['expiry_date']) ? $_POST['expiry_date'] : null,
+        'weight' => !empty($_POST['weight']) ? floatval($_POST['weight']) : null,
+        'unit_of_measure' => sanitizeInput($_POST['unit_of_measure'] ?? ''),
+        'manufacturer' => sanitizeInput($_POST['manufacturer'] ?? ''),
+        'batch_number' => sanitizeInput($_POST['batch_number'] ?? ''),
         'cost_price' => $_POST['cost_price'] ?? 0,
         'selling_price' => $_POST['selling_price'] ?? 0,
         'reorder_level' => $_POST['reorder_level'] ?? 0,
@@ -125,7 +130,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
+    // Track price changes before updating
+    $oldCostPrice = floatval($product['cost_price'] ?? 0);
+    $oldSellingPrice = floatval($product['selling_price'] ?? 0);
+    $newCostPrice = floatval($data['cost_price'] ?? 0);
+    $newSellingPrice = floatval($data['selling_price'] ?? 0);
+    $branchId = intval($data['branch_id'] ?? $product['branch_id'] ?? 0);
+    $userId = $_SESSION['user_id'] ?? 0;
+    
     if ($db->update('products', $data, ['id' => $productId])) {
+        // Track cost price change
+        if ($oldCostPrice != $newCostPrice) {
+            $primaryDb->insert('price_change_history', [
+                'product_id' => $productId,
+                'branch_id' => $branchId,
+                'old_price' => $oldCostPrice,
+                'new_price' => $newCostPrice,
+                'price_type' => 'cost_price',
+                'changed_by' => $userId,
+                'changed_at' => date('Y-m-d H:i:s')
+            ]);
+        }
+        
+        // Track selling price change
+        if ($oldSellingPrice != $newSellingPrice) {
+            $primaryDb->insert('price_change_history', [
+                'product_id' => $productId,
+                'branch_id' => $branchId,
+                'old_price' => $oldSellingPrice,
+                'new_price' => $newSellingPrice,
+                'price_type' => 'selling_price',
+                'changed_by' => $userId,
+                'changed_at' => date('Y-m-d H:i:s')
+            ]);
+        }
+        
         $_SESSION['success_message'] = 'Product updated successfully!';
         redirectTo('modules/products/index.php');
     } else {
@@ -250,12 +289,48 @@ require_once APP_PATH . '/includes/header.php';
                     <input type="number" class="form-control" name="quantity_in_stock" value="<?= $product['quantity_in_stock'] ?>">
                 </div>
             </div>
+            <!-- Grocery/General Fields -->
             <div class="row">
-                <div class="col-md-6 mb-3">
+                <div class="col-md-3 mb-3" id="expiryDateField" style="display: <?= $isGeneralCategory ? 'block' : 'none' ?>;">
+                    <label class="form-label">Expiry Date</label>
+                    <input type="date" class="form-control" name="expiry_date" value="<?= $product['expiry_date'] ?? '' ?>">
+                </div>
+                <div class="col-md-3 mb-3" id="weightField" style="display: <?= $isGeneralCategory ? 'block' : 'none' ?>;">
+                    <label class="form-label">Weight</label>
+                    <input type="number" step="0.001" class="form-control" name="weight" value="<?= $product['weight'] ?? '' ?>" placeholder="e.g., 0.5">
+                </div>
+                <div class="col-md-3 mb-3" id="unitOfMeasureField" style="display: <?= $isGeneralCategory ? 'block' : 'none' ?>;">
+                    <label class="form-label">Unit of Measure</label>
+                    <select class="form-control" name="unit_of_measure">
+                        <option value="">Select</option>
+                        <option value="kg" <?= ($product['unit_of_measure'] ?? '') == 'kg' ? 'selected' : '' ?>>Kilogram (kg)</option>
+                        <option value="g" <?= ($product['unit_of_measure'] ?? '') == 'g' ? 'selected' : '' ?>>Gram (g)</option>
+                        <option value="L" <?= ($product['unit_of_measure'] ?? '') == 'L' ? 'selected' : '' ?>>Liter (L)</option>
+                        <option value="mL" <?= ($product['unit_of_measure'] ?? '') == 'mL' ? 'selected' : '' ?>>Milliliter (mL)</option>
+                        <option value="piece" <?= ($product['unit_of_measure'] ?? '') == 'piece' ? 'selected' : '' ?>>Piece</option>
+                        <option value="pack" <?= ($product['unit_of_measure'] ?? '') == 'pack' ? 'selected' : '' ?>>Pack</option>
+                        <option value="box" <?= ($product['unit_of_measure'] ?? '') == 'box' ? 'selected' : '' ?>>Box</option>
+                        <option value="bottle" <?= ($product['unit_of_measure'] ?? '') == 'bottle' ? 'selected' : '' ?>>Bottle</option>
+                        <option value="can" <?= ($product['unit_of_measure'] ?? '') == 'can' ? 'selected' : '' ?>>Can</option>
+                        <option value="bag" <?= ($product['unit_of_measure'] ?? '') == 'bag' ? 'selected' : '' ?>>Bag</option>
+                    </select>
+                </div>
+                <div class="col-md-3 mb-3" id="manufacturerField" style="display: <?= $isGeneralCategory ? 'block' : 'none' ?>;">
+                    <label class="form-label">Manufacturer</label>
+                    <input type="text" class="form-control" name="manufacturer" value="<?= escapeHtml($product['manufacturer'] ?? '') ?>">
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-3 mb-3" id="batchNumberField" style="display: <?= $isGeneralCategory ? 'block' : 'none' ?>;">
+                    <label class="form-label">Batch Number</label>
+                    <input type="text" class="form-control" name="batch_number" value="<?= escapeHtml($product['batch_number'] ?? '') ?>">
+                </div>
+                <div class="col-md-3 mb-3">
                     <label class="form-label">Reorder Level</label>
                     <input type="number" class="form-control" name="reorder_level" value="<?= $product['reorder_level'] ?>">
                 </div>
-                <div class="col-md-6 mb-3">
+                <div class="col-md-3 mb-3">
                     <label class="form-label">Status</label>
                     <select class="form-control" name="status">
                         <option value="Active" <?= $product['status'] == 'Active' ? 'selected' : '' ?>>Active</option>
@@ -371,13 +446,53 @@ function updateDynamicFields(categoryName) {
         if (modelInput) modelInput.required = true;
     }
     
-    // Show/hide storage field for electronics
+    // Get all dynamic fields
     const storageField = document.getElementById('storageField');
-    if (categoryName.includes('smartphone') || categoryName.includes('phone') || 
-        categoryName.includes('laptop') || categoryName.includes('tablet')) {
+    const batteryHealthField = document.getElementById('batteryHealthField');
+    const serialNumberField = document.getElementById('serialNumberField');
+    const imeiField = document.getElementById('imeiField');
+    const simConfigField = document.getElementById('simConfigField');
+    const expiryDateField = document.getElementById('expiryDateField');
+    const weightField = document.getElementById('weightField');
+    const unitOfMeasureField = document.getElementById('unitOfMeasureField');
+    const manufacturerField = document.getElementById('manufacturerField');
+    const batchNumberField = document.getElementById('batchNumberField');
+    
+    // Hide all fields first
+    [storageField, batteryHealthField, serialNumberField, imeiField, simConfigField,
+     expiryDateField, weightField, unitOfMeasureField, manufacturerField, batchNumberField].forEach(field => {
+        if (field) field.style.display = 'none';
+    });
+    
+    // Show fields based on category
+    if (categoryName.includes('smartphone') || categoryName.includes('phone')) {
+        // Smartphones: Show all electronics fields
         if (storageField) storageField.style.display = 'block';
-    } else {
-        if (storageField) storageField.style.display = 'none';
+        if (batteryHealthField) batteryHealthField.style.display = 'block';
+        if (serialNumberField) serialNumberField.style.display = 'block';
+        if (imeiField) imeiField.style.display = 'block';
+        if (simConfigField) simConfigField.style.display = 'block';
+    } else if (categoryName.includes('laptop')) {
+        // Laptops: Storage, Serial Number
+        if (storageField) storageField.style.display = 'block';
+        if (serialNumberField) serialNumberField.style.display = 'block';
+    } else if (categoryName.includes('tablet')) {
+        // Tablets: Storage, Battery Health, Serial Number
+        if (storageField) storageField.style.display = 'block';
+        if (batteryHealthField) batteryHealthField.style.display = 'block';
+        if (serialNumberField) serialNumberField.style.display = 'block';
+    } else if (categoryName.includes('audio') || categoryName.includes('wearable')) {
+        // Audio Devices & Wearables: Battery Health (for wearables)
+        if (categoryName.includes('wearable') && batteryHealthField) {
+            batteryHealthField.style.display = 'block';
+        }
+    } else if (isGeneral) {
+        // General/Grocery: Show grocery-specific fields
+        if (expiryDateField) expiryDateField.style.display = 'block';
+        if (weightField) weightField.style.display = 'block';
+        if (unitOfMeasureField) unitOfMeasureField.style.display = 'block';
+        if (manufacturerField) manufacturerField.style.display = 'block';
+        if (batchNumberField) batchNumberField.style.display = 'block';
     }
 }
 

@@ -8,7 +8,7 @@ require_once APP_PATH . '/includes/report_helper.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-$auth->requirePermission('reports.view');
+$auth->requireAnyPermission('reports.advanced_sales', 'reports.view', 'reports.sales', 'reports.product_wise_tax');
 
 $pageTitle = 'Product Wise Tax/Charge Report';
 

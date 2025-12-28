@@ -31,6 +31,50 @@ if (count($permissions) < 100) {
     }
 }
 
+// Define report category mappings
+$reportCategoryMappings = [
+    'reports.general' => [
+        'reports.sales_summary', 'reports.receipts', 'reports.refunds', 
+        'reports.sales_by_product', 'reports.sales_by_category', 
+        'reports.sales_by_discount', 'reports.sales_by_payment', 
+        'reports.taxes', 'reports.shifts'
+    ],
+    'reports.advanced_sales' => [
+        'reports.product_wise_receipt', 'reports.sales_by_trend', 
+        'reports.deleted_receipts', 'reports.order_type_wise', 
+        'reports.product_wise_tax', 'reports.manual_receipts', 
+        'reports.sales_by_order', 'reports.product_wise_order', 
+        'reports.sales_by_modifier', 'reports.product_sales_by_staff', 
+        'reports.sales_by_staff', 'reports.products_consumed_by_staff', 
+        'reports.ecommerce_sales'
+    ],
+    'reports.suspicious' => [
+        'reports.product_wise_deleted', 'reports.refunds_credit_notes', 
+        'reports.deleted_products_open_orders'
+    ]
+];
+
+// Create permission key to ID mapping
+$permissionKeyToId = [];
+foreach ($permissions as $perm) {
+    $permissionKeyToId[$perm['permission_key']] = $perm['id'];
+}
+
+// Create category to sub-permission IDs mapping
+$categoryToSubPermissionIds = [];
+foreach ($reportCategoryMappings as $categoryKey => $subKeys) {
+    $categoryId = $permissionKeyToId[$categoryKey] ?? null;
+    if ($categoryId) {
+        $categoryToSubPermissionIds[$categoryId] = [];
+        foreach ($subKeys as $subKey) {
+            $subId = $permissionKeyToId[$subKey] ?? null;
+            if ($subId) {
+                $categoryToSubPermissionIds[$categoryId][] = $subId;
+            }
+        }
+    }
+}
+
 // Group permissions by module
 $permissionsByModule = [];
 foreach ($permissions as $permission) {
@@ -80,13 +124,24 @@ require_once APP_PATH . '/includes/header.php';
                                 </h6>
                                 <div class="row">
                                     <?php foreach ($modulePermissions as $permission): ?>
+                                        <?php 
+                                        $isCategory = isset($categoryToSubPermissionIds[$permission['id']]);
+                                        $categoryClass = $isCategory ? 'category-checkbox' : '';
+                                        $subPermissionIds = $isCategory ? json_encode($categoryToSubPermissionIds[$permission['id']]) : '[]';
+                                        ?>
                                         <div class="col-md-6 mb-2">
                                             <div class="form-check">
-                                                <input class="form-check-input permission-checkbox" type="checkbox" 
+                                                <input class="form-check-input permission-checkbox <?= $categoryClass ?>" 
+                                                       type="checkbox" 
                                                        name="permissions[]" 
                                                        value="<?= $permission['id'] ?>" 
-                                                       id="perm_<?= $permission['id'] ?>">
-                                                <label class="form-check-label" for="perm_<?= $permission['id'] ?>">
+                                                       id="perm_<?= $permission['id'] ?>"
+                                                       data-category="<?= $isCategory ? 'true' : 'false' ?>"
+                                                       data-sub-permissions="<?= htmlspecialchars($subPermissionIds) ?>">
+                                                <label class="form-check-label <?= $isCategory ? 'fw-bold text-primary' : '' ?>" for="perm_<?= $permission['id'] ?>">
+                                                    <?php if ($isCategory): ?>
+                                                        <i class="bi bi-folder-fill me-1"></i>
+                                                    <?php endif; ?>
                                                     <strong><?= escapeHtml($permission['permission_name']) ?></strong>
                                                     <?php if ($permission['description']): ?>
                                                         <br><small class="text-muted"><?= escapeHtml($permission['description']) ?></small>
@@ -177,6 +232,45 @@ function selectAllPermissions() {
 function deselectAllPermissions() {
     document.querySelectorAll('.permission-checkbox').forEach(cb => cb.checked = false);
 }
+
+// Category auto-select functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const categoryCheckboxes = document.querySelectorAll('.category-checkbox');
+    const allCheckboxes = document.querySelectorAll('.permission-checkbox');
+    
+    // When a category checkbox is clicked
+    categoryCheckboxes.forEach(categoryCb => {
+        categoryCb.addEventListener('change', function() {
+            const subPermissionIds = JSON.parse(this.getAttribute('data-sub-permissions') || '[]');
+            subPermissionIds.forEach(subId => {
+                const subCb = document.getElementById('perm_' + subId);
+                if (subCb) {
+                    subCb.checked = this.checked;
+                }
+            });
+        });
+    });
+    
+    // When a sub-permission checkbox is clicked, check/uncheck category accordingly
+    allCheckboxes.forEach(cb => {
+        if (!cb.classList.contains('category-checkbox')) {
+            cb.addEventListener('change', function() {
+                // Find which category this permission belongs to
+                categoryCheckboxes.forEach(categoryCb => {
+                    const subPermissionIds = JSON.parse(categoryCb.getAttribute('data-sub-permissions') || '[]');
+                    if (subPermissionIds.includes(parseInt(this.value))) {
+                        // Check if all sub-permissions are checked
+                        const allChecked = subPermissionIds.every(subId => {
+                            const subCb = document.getElementById('perm_' + subId);
+                            return subCb && subCb.checked;
+                        });
+                        categoryCb.checked = allChecked;
+                    }
+                });
+            });
+        }
+    });
+});
 </script>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>

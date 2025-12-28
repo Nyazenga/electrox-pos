@@ -13,6 +13,7 @@ require_once APP_PATH . '/includes/session.php';
 require_once APP_PATH . '/includes/db.php';
 require_once APP_PATH . '/includes/auth.php';
 require_once APP_PATH . '/includes/functions.php';
+require_once APP_PATH . '/includes/settings_functions.php';
 
 initSession();
 
@@ -267,6 +268,10 @@ try {
         }
     }
     
+    // Get prices_include_tax setting
+    $pricesIncludeTax = getSetting('prices_include_tax', '1') == '1';
+    $defaultTaxRate = getDefaultTaxRate();
+    
     // Calculate totals
     $subtotal = 0;
     foreach ($input['cart'] as $item) {
@@ -281,13 +286,65 @@ try {
         $discountAmount = ($subtotal * $discount['amount']) / 100;
     }
     
-    $total = $subtotal - $discountAmount;
+    $deliveryCost = isset($input['delivery_cost']) ? floatval($input['delivery_cost']) : 0;
+    
+    // Calculate tax based on prices_include_tax setting
+    $taxAmount = 0;
+    if ($pricesIncludeTax) {
+        // Prices already include tax
+        // Calculate: subtotal (without tax) from total (with tax)
+        // total_with_tax = subtotal_without_tax * (1 + tax_rate)
+        // subtotal_without_tax = total_with_tax / (1 + tax_rate)
+        $totalWithTax = $subtotal - $discountAmount + $deliveryCost;
+        if ($defaultTaxRate > 0) {
+            $taxDecimal = $defaultTaxRate / 100;
+            $subtotalWithoutTax = $totalWithTax / (1 + $taxDecimal);
+            $taxAmount = $totalWithTax - $subtotalWithoutTax;
+            $total = $totalWithTax; // Total stays the same (includes tax)
+            $subtotal = $subtotalWithoutTax; // Update subtotal to exclude tax
+        } else {
+            $total = $subtotal - $discountAmount + $deliveryCost;
+            $taxAmount = 0;
+        }
+    } else {
+        // Prices do NOT include tax - add tax on top
+        $subtotalAfterDiscount = $subtotal - $discountAmount;
+        if ($defaultTaxRate > 0) {
+            $taxDecimal = $defaultTaxRate / 100;
+            $taxAmount = $subtotalAfterDiscount * $taxDecimal;
+        }
+        $total = $subtotalAfterDiscount + $taxAmount + $deliveryCost;
+    }
     
     // Create sale record
     $customerId = null;
     if (isset($input['customer']) && is_array($input['customer']) && isset($input['customer']['id'])) {
         $customerId = $input['customer']['id'];
     }
+    
+    // Check if this is a credit sale
+    $isCreditSale = isset($input['is_credit_sale']) && $input['is_credit_sale'] === true;
+    $paymentTermId = isset($input['payment_term_id']) ? intval($input['payment_term_id']) : null;
+    
+    // Validate credit sale requirements
+    if ($isCreditSale) {
+        // Validate customer is selected
+        if (!$customerId) {
+            throw new Exception('Customer is required for credit sales');
+        }
+        
+        // Validate payment terms
+        if (!$paymentTermId) {
+            throw new Exception('Payment terms are required for credit sales');
+        }
+    }
+    
+    // Get payments (will calculate total paid after we have base currency)
+    $payments = $input['payments'] ?? [['method' => 'cash', 'amount' => $total]];
+    
+    // Calculate account balance (for credit sales) - will be calculated after we have base currency
+    $accountBalance = 0;
+    $paymentStatus = 'paid';
     
     $saleData = [
         'receipt_number' => $receiptNumber,
@@ -299,9 +356,13 @@ try {
         'subtotal' => $subtotal,
         'discount_type' => $discount['type'] ?? null,
         'discount_amount' => $discountAmount,
-        'tax_amount' => 0,
+        'delivery_cost' => $deliveryCost,
+        'tax_amount' => $taxAmount,
         'total_amount' => $total,
-        'payment_status' => 'paid',
+        'payment_status' => $paymentStatus,
+        'is_credit_sale' => $isCreditSale ? 1 : 0,
+        'payment_term_id' => $paymentTermId,
+        'account_balance' => $accountBalance,
         'created_at' => date('Y-m-d H:i:s')
     ];
     
@@ -363,17 +424,86 @@ try {
         throw new Exception('Failed to create sale record after ' . $insertRetries . ' attempts. Last receipt number tried: ' . $currentReceiptNumber);
     }
     
+    // Get product tax rates from fiscal config if available (for accurate price storage)
+    $productTaxRates = [];
+    if ($branchId && $pricesIncludeTax) {
+        try {
+            $primaryDb = Database::getPrimaryInstance();
+            $device = $primaryDb->getRow(
+                "SELECT * FROM fiscal_devices WHERE branch_id = :branch_id AND is_active = 1 LIMIT 1",
+                [':branch_id' => $branchId]
+            );
+            
+            if ($device) {
+                $config = $primaryDb->getRow(
+                    "SELECT applicable_taxes FROM fiscal_config WHERE branch_id = :branch_id AND device_id = :device_id LIMIT 1",
+                    [':branch_id' => $branchId, ':device_id' => $device['device_id']]
+                );
+                
+                if ($config && !empty($config['applicable_taxes'])) {
+                    $applicableTaxes = json_decode($config['applicable_taxes'], true);
+                    if (is_array($applicableTaxes)) {
+                        // Create a map of taxID -> taxPercent for quick lookup
+                        foreach ($applicableTaxes as $tax) {
+                            if (isset($tax['taxID']) && isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
+                                $productTaxRates[intval($tax['taxID'])] = floatval($tax['taxPercent']);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            // If fiscal config not available, fall back to default tax rate
+            error_log("PROCESS SALE: Could not get fiscal config for tax rates: " . $e->getMessage());
+        }
+    }
+    
     // Create sale items
     foreach ($input['cart'] as $item) {
-        $product = $db->getRow("SELECT * FROM products WHERE id = :id", [':id' => $item['id']]);
+        $product = $db->getRow("SELECT p.*, pc.tax_id as category_tax_id 
+                                 FROM products p 
+                                 LEFT JOIN product_categories pc ON p.category_id = pc.id 
+                                 WHERE p.id = :id", [':id' => $item['id']]);
+        
+        // Calculate unit price without tax for storage
+        // If prices_include_tax is true, the item['price'] already includes tax, so extract tax
+        // If prices_include_tax is false, the item['price'] does NOT include tax, so use as-is
+        $unitPriceWithTax = $item['price'];
+        $unitPriceWithoutTax = $unitPriceWithTax;
+        
+        if ($pricesIncludeTax) {
+            // Get the ACTUAL tax rate for this product (not the default)
+            $productTaxRate = null;
+            
+            // Priority 1: Product's own tax_id
+            if (!empty($product['tax_id']) && isset($productTaxRates[intval($product['tax_id'])])) {
+                $productTaxRate = $productTaxRates[intval($product['tax_id'])];
+            }
+            // Priority 2: Category's tax_id
+            elseif (!empty($product['category_tax_id']) && isset($productTaxRates[intval($product['category_tax_id'])])) {
+                $productTaxRate = $productTaxRates[intval($product['category_tax_id'])];
+            }
+            // Fallback: Use default tax rate
+            elseif ($defaultTaxRate > 0) {
+                $productTaxRate = $defaultTaxRate;
+            }
+            
+            // Calculate price without tax using the product's actual tax rate
+            if ($productTaxRate > 0) {
+                $taxDecimal = $productTaxRate / 100;
+                $unitPriceWithoutTax = $unitPriceWithTax / (1 + $taxDecimal);
+                error_log("PROCESS SALE: Product '{$item['name']}' - Price with tax: $unitPriceWithTax, Tax rate: $productTaxRate%, Price without tax: $unitPriceWithoutTax");
+            }
+        }
+        // If prices_include_tax is false, unitPriceWithoutTax = unitPriceWithTax (no change)
         
         $itemData = [
             'sale_id' => $saleId,
             'product_id' => $item['id'],
             'product_name' => $item['name'],
             'quantity' => $item['quantity'],
-            'unit_price' => $item['price'],
-            'total_price' => $item['price'] * $item['quantity'],
+            'unit_price' => $unitPriceWithoutTax, // Store price WITHOUT tax
+            'total_price' => $unitPriceWithoutTax * $item['quantity'], // Store total WITHOUT tax
             'created_at' => date('Y-m-d H:i:s')
         ];
         
@@ -429,6 +559,25 @@ try {
     // Update sales table with base currency
     if ($baseCurrencyId) {
         $db->update('sales', ['base_currency_id' => $baseCurrencyId], ['id' => $saleId]);
+    }
+    
+    // Calculate account balance for credit sales (after payments are created)
+    if ($isCreditSale) {
+        // Calculate total paid from payment records
+        $totalPaid = 0;
+        foreach ($payments as $payment) {
+            $baseAmount = isset($payment['base_amount']) ? floatval($payment['base_amount']) : floatval($payment['amount']);
+            $totalPaid += $baseAmount;
+        }
+        
+        $accountBalance = $total - $totalPaid;
+        $paymentStatus = $accountBalance > 0 ? 'pending' : 'paid';
+        
+        // Update sale with account balance and payment status
+        $db->update('sales', [
+            'account_balance' => $accountBalance,
+            'payment_status' => $paymentStatus
+        ], ['id' => $saleId]);
     }
     
     // Update shift expected cash (use base amounts for cash payments)

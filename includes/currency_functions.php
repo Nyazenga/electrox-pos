@@ -157,6 +157,10 @@ function convertCurrency($amount, $fromCurrencyId, $toCurrencyId, $db = null) {
  * Format currency amount
  */
 function formatCurrencyAmount($amount, $currencyId = null, $db = null) {
+    // Ensure amount is a number (default to 0 if null)
+    $amount = $amount ?? 0;
+    $amount = floatval($amount);
+    
     if (!$currencyId) {
         $currency = getBaseCurrency($db);
     } else {

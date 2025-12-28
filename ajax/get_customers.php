@@ -7,6 +7,13 @@ require_once APP_PATH . '/includes/functions.php';
 $auth = Auth::getInstance();
 $auth->requireLogin();
 
+// Check permission - allow if user has customers view or POS access
+if (!$auth->hasPermission('customers.view') && !$auth->hasPermission('pos.access')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied']);
+    exit;
+}
+
 header('Content-Type: application/json');
 
 $db = Database::getInstance();

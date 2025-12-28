@@ -10,7 +10,7 @@ $auth->requireLogin();
 $auth->requirePermission('invoicing.create');
 
 $invoiceType = $_GET['type'] ?? 'proforma';
-$validTypes = ['proforma', 'tax', 'quote', 'credit'];
+$validTypes = ['proforma', 'tax', 'quote'];
 if (!in_array(strtolower($invoiceType), $validTypes)) {
     $invoiceType = 'proforma';
 }
@@ -18,8 +18,7 @@ if (!in_array(strtolower($invoiceType), $validTypes)) {
 $typeMap = [
     'proforma' => 'Proforma',
     'tax' => 'TaxInvoice',
-    'quote' => 'Quote',
-    'credit' => 'CreditNote'
+    'quote' => 'Quote'
 ];
 
 $invoiceTypeEnum = $typeMap[$invoiceType];
@@ -36,7 +35,9 @@ if ($customers === false) $customers = [];
 // Get products - handle both General category (product_name) and others (brand/model)
 $products = $db->getRows("SELECT p.*, 
                          COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
-                         pc.name as category_name
+                         pc.name as category_name,
+                         p.tax_id as product_tax_id,
+                         pc.tax_id as category_tax_id
                          FROM products p
                          LEFT JOIN product_categories pc ON p.category_id = pc.id
                          WHERE p.status = 'Active' 
@@ -46,7 +47,41 @@ if ($products === false) $products = [];
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
 if ($branches === false) $branches = [];
 
-$taxRate = floatval(getSetting('default_tax_rate', 15));
+// Get applicable taxes from fiscal_config for tax per product
+$applicableTaxes = [];
+$primaryDb = Database::getPrimaryInstance();
+if ($branchId) {
+    $fiscalConfig = $primaryDb->getRow(
+        "SELECT applicable_taxes FROM fiscal_config WHERE branch_id = :branch_id LIMIT 1",
+        [':branch_id' => $branchId]
+    );
+    if ($fiscalConfig && !empty($fiscalConfig['applicable_taxes'])) {
+        $applicableTaxes = json_decode($fiscalConfig['applicable_taxes'], true);
+        if (!is_array($applicableTaxes)) {
+            $applicableTaxes = [];
+        }
+    }
+}
+
+// Create a tax lookup map (taxID => taxPercent)
+$taxMap = [];
+foreach ($applicableTaxes as $tax) {
+    if (isset($tax['taxID'])) {
+        $taxMap[$tax['taxID']] = isset($tax['taxPercent']) ? floatval($tax['taxPercent']) : 0;
+    }
+}
+
+// Add tax information to products
+foreach ($products as &$product) {
+    $productTaxId = $product['product_tax_id'] ?? null;
+    $categoryTaxId = $product['category_tax_id'] ?? null;
+    
+    // Priority: product tax_id > category tax_id > default 0
+    $finalTaxId = $productTaxId ?: $categoryTaxId;
+    $product['tax_percent'] = ($finalTaxId && isset($taxMap[$finalTaxId])) ? $taxMap[$finalTaxId] : 0;
+    $product['tax_id'] = $finalTaxId;
+}
+unset($product);
 
 require_once APP_PATH . '/includes/header.php';
 ?>
@@ -158,7 +193,14 @@ require_once APP_PATH . '/includes/header.php';
                 <?php if ($invoiceType !== 'quote'): ?>
                 <div class="mb-3">
                     <label class="form-label">Due Date</label>
-                    <input type="date" name="due_date" class="form-control" value="<?= date('Y-m-d', strtotime('+30 days')) ?>">
+                    <input type="date" 
+                           name="due_date" 
+                           id="dueDate" 
+                           class="form-control" 
+                           value="<?= date('Y-m-d', strtotime('+30 days')) ?>"
+                           min="<?= date('Y-m-d') ?>"
+                           required>
+                    <small class="text-muted">Due date cannot be earlier than today</small>
                 </div>
                 <?php endif; ?>
                 
@@ -170,7 +212,14 @@ require_once APP_PATH . '/includes/header.php';
                 <?php if ($invoiceType === 'quote'): ?>
                 <div class="mb-3">
                     <label class="form-label">Valid Until</label>
-                    <input type="date" name="due_date" class="form-control" value="<?= date('Y-m-d', strtotime('+30 days')) ?>">
+                    <input type="date" 
+                           name="due_date" 
+                           id="validUntilDate" 
+                           class="form-control" 
+                           value="<?= date('Y-m-d', strtotime('+30 days')) ?>"
+                           min="<?= date('Y-m-d') ?>"
+                           required>
+                    <small class="text-muted">Valid until date cannot be earlier than today</small>
                 </div>
                 <?php endif; ?>
             </div>
@@ -201,7 +250,9 @@ require_once APP_PATH . '/includes/header.php';
                                data-id="<?= $product['id'] ?>"
                                data-name="<?= escapeHtml($productDisplayName) ?>"
                                data-price="<?= $product['selling_price'] ?>"
-                               data-stock="<?= $product['quantity_in_stock'] ?>">
+                               data-stock="<?= $product['quantity_in_stock'] ?>"
+                               data-tax-percent="<?= $product['tax_percent'] ?? 0 ?>"
+                               data-tax-id="<?= $product['tax_id'] ?? '' ?>">
                                 <?= escapeHtml($productDisplayName) ?> - 
                                 <?= formatCurrency($product['selling_price']) ?> 
                                 (Stock: <?= $product['quantity_in_stock'] ?>)
@@ -247,10 +298,11 @@ require_once APP_PATH . '/includes/header.php';
                 <thead>
                     <tr>
                         <th width="5%">#</th>
-                        <th width="30%">Item Description</th>
-                        <th width="10%">Qty</th>
-                        <th width="15%">Unit Price</th>
-                        <th width="10%">Discount %</th>
+                        <th width="25%">Item Description</th>
+                        <th width="8%">Qty</th>
+                        <th width="12%">Unit Price</th>
+                        <th width="8%">Discount %</th>
+                        <th width="7%">Tax %</th>
                         <th width="15%">Line Total</th>
                         <th width="5%">Action</th>
                     </tr>
@@ -279,7 +331,7 @@ require_once APP_PATH . '/includes/header.php';
                         <strong id="invoiceDiscount" class="text-warning">$0.00</strong>
                     </div>
                     <div class="d-flex justify-content-between mb-2">
-                        <span>Tax (<?= $taxRate ?>%):</span>
+                        <span>Tax:</span>
                         <strong id="invoiceTax">$0.00</strong>
                     </div>
                     <hr>
@@ -305,7 +357,6 @@ require_once APP_PATH . '/includes/header.php';
 <script>
 let invoiceItems = [];
 let itemCounter = 0;
-const taxRate = <?= $taxRate ?>;
 
 // Initialize: Disable save button on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -369,7 +420,9 @@ if (productSearch && productDropdown) {
                 product_id: item.dataset.id,
                 description: item.dataset.name,
                 unit_price: parseFloat(item.dataset.price),
-                stock: parseInt(item.dataset.stock)
+                stock: parseInt(item.dataset.stock),
+                tax_percent: parseFloat(item.dataset.taxPercent || 0),
+                tax_id: item.dataset.taxId || null
             });
             productSearch.value = '';
             productDropdown.style.display = 'none';
@@ -394,7 +447,9 @@ function addProductItem(product) {
         quantity: 1,
         unit_price: product.unit_price || 0,
         discount_percentage: 0,
-        stock: product.stock || 0
+        stock: product.stock || 0,
+        tax_percent: product.tax_percent || 0,
+        tax_id: product.tax_id || null
     };
     invoiceItems.push(item);
     renderItems();
@@ -405,7 +460,9 @@ function addManualItem() {
         product_id: null,
         description: '',
         unit_price: 0,
-        stock: 0
+        stock: 0,
+        tax_percent: 0,
+        tax_id: null
     });
 }
 
@@ -454,7 +511,11 @@ function renderItems() {
     tbody.innerHTML = '';
     
     invoiceItems.forEach(item => {
-        const lineTotal = (item.quantity * item.unit_price) * (1 - (item.discount_percentage / 100));
+        const lineSubtotal = item.quantity * item.unit_price;
+        const lineDiscount = lineSubtotal * (item.discount_percentage / 100);
+        const lineNet = lineSubtotal - lineDiscount;
+        const lineTax = lineNet * ((item.tax_percent || 0) / 100);
+        const lineTotal = lineNet + lineTax;
         const row = `
             <tr>
                 <td>${item.id + 1}</td>
@@ -490,6 +551,9 @@ function renderItems() {
                            max="100"
                            onchange="updateItem(${item.id}, 'discount_percentage', this.value)">
                 </td>
+                <td>
+                    <small class="text-muted">${(item.tax_percent || 0).toFixed(2)}%</small>
+                </td>
                 <td><strong>$${lineTotal.toFixed(2)}</strong></td>
                 <td>
                     <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(${item.id})">
@@ -513,23 +577,109 @@ function renderItems() {
 function calculateTotals() {
     let subtotal = 0;
     let totalDiscount = 0;
+    let totalTax = 0;
     
     invoiceItems.forEach(item => {
         const lineSubtotal = item.quantity * item.unit_price;
         const lineDiscount = lineSubtotal * (item.discount_percentage / 100);
+        const lineNet = lineSubtotal - lineDiscount;
+        const lineTax = lineNet * ((item.tax_percent || 0) / 100);
+        
         subtotal += lineSubtotal;
         totalDiscount += lineDiscount;
+        totalTax += lineTax;
     });
     
     const netSubtotal = subtotal - totalDiscount;
-    const tax = netSubtotal * (taxRate / 100);
-    const total = netSubtotal + tax;
+    const total = netSubtotal + totalTax;
     
     document.getElementById('invoiceSubtotal').textContent = '$' + subtotal.toFixed(2);
     document.getElementById('invoiceDiscount').textContent = '$' + totalDiscount.toFixed(2);
-    document.getElementById('invoiceTax').textContent = '$' + tax.toFixed(2);
+    document.getElementById('invoiceTax').textContent = '$' + totalTax.toFixed(2);
     document.getElementById('invoiceTotal').textContent = '$' + total.toFixed(2);
 }
+
+// Validate due date
+function validateDueDate() {
+    const dueDateInput = document.getElementById('dueDate') || document.getElementById('validUntilDate');
+    if (!dueDateInput) return true;
+    
+    const selectedDate = new Date(dueDateInput.value);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    selectedDate.setHours(0, 0, 0, 0);
+    
+    if (selectedDate < today) {
+        Swal.fire('Error', 'Due date cannot be earlier than today\'s date', 'error');
+        dueDateInput.focus();
+        return false;
+    }
+    
+    return true;
+}
+
+// Add validation on date change and prevent past date selection
+document.addEventListener('DOMContentLoaded', function() {
+    const dueDateInput = document.getElementById('dueDate');
+    const validUntilInput = document.getElementById('validUntilDate');
+    
+    // Use server timezone to match PHP (avoid UTC timezone issues)
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const today = `${year}-${month}-${day}`;
+    
+    // Set min attribute to today (enforces in date picker) - use server value from PHP
+    const serverToday = '<?= date('Y-m-d') ?>';
+    const minDate = serverToday; // Use PHP's date to match server timezone
+    
+    if (dueDateInput) {
+        // Ensure min is set to today
+        dueDateInput.setAttribute('min', minDate);
+        
+        // If current value is less than today, set it to today
+        if (dueDateInput.value && dueDateInput.value < minDate) {
+            dueDateInput.value = minDate;
+        }
+        
+        dueDateInput.addEventListener('change', function() {
+            if (this.value < minDate) {
+                Swal.fire('Error', 'Due date cannot be earlier than today\'s date', 'error');
+                this.value = minDate;
+            }
+        });
+        // Also prevent manual input of past dates
+        dueDateInput.addEventListener('input', function() {
+            if (this.value < minDate) {
+                this.value = minDate;
+            }
+        });
+    }
+    
+    if (validUntilInput) {
+        // Ensure min is set to today
+        validUntilInput.setAttribute('min', minDate);
+        
+        // If current value is less than today, set it to today
+        if (validUntilInput.value && validUntilInput.value < minDate) {
+            validUntilInput.value = minDate;
+        }
+        
+        validUntilInput.addEventListener('change', function() {
+            if (this.value < minDate) {
+                Swal.fire('Error', 'Valid until date cannot be earlier than today\'s date', 'error');
+                this.value = minDate;
+            }
+        });
+        // Also prevent manual input of past dates
+        validUntilInput.addEventListener('input', function() {
+            if (this.value < minDate) {
+                this.value = minDate;
+            }
+        });
+    }
+});
 
 // Form submission
 document.getElementById('invoiceForm').addEventListener('submit', function(e) {
@@ -537,6 +687,11 @@ document.getElementById('invoiceForm').addEventListener('submit', function(e) {
     
     if (invoiceItems.length === 0) {
         Swal.fire('Error', 'Please add at least one item to the invoice', 'error');
+        return;
+    }
+    
+    // Validate due date
+    if (!validateDueDate()) {
         return;
     }
     
@@ -555,33 +710,47 @@ document.getElementById('invoiceForm').addEventListener('submit', function(e) {
         due_date: formData.get('due_date') || null,
         notes: formData.get('notes') || null,
         terms: formData.get('terms') || null,
-        items: invoiceItems.map(item => ({
-            product_id: item.product_id,
-            description: item.description,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            discount_percentage: item.discount_percentage,
-            line_total: (item.quantity * item.unit_price) * (1 - (item.discount_percentage / 100))
-        }))
+        items: invoiceItems.map(item => {
+            const lineSubtotal = item.quantity * item.unit_price;
+            const lineDiscount = lineSubtotal * (item.discount_percentage / 100);
+            const lineNet = lineSubtotal - lineDiscount;
+            const lineTax = lineNet * ((item.tax_percent || 0) / 100);
+            const lineTotal = lineNet + lineTax;
+            
+            return {
+                product_id: item.product_id,
+                description: item.description,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                discount_percentage: item.discount_percentage,
+                tax_percent: item.tax_percent || 0,
+                tax_id: item.tax_id,
+                line_total: lineTotal
+            };
+        })
     };
     
     // Calculate totals
     let subtotal = 0;
     let totalDiscount = 0;
+    let totalTax = 0;
     data.items.forEach(item => {
         const lineSubtotal = item.quantity * item.unit_price;
         const lineDiscount = lineSubtotal * (item.discount_percentage / 100);
+        const lineNet = lineSubtotal - lineDiscount;
+        const lineTax = lineNet * ((item.tax_percent || 0) / 100);
+        
         subtotal += lineSubtotal;
         totalDiscount += lineDiscount;
+        totalTax += lineTax;
     });
     
     const netSubtotal = subtotal - totalDiscount;
-    const tax = netSubtotal * (taxRate / 100);
-    const total = netSubtotal + tax;
+    const total = netSubtotal + totalTax;
     
     data.subtotal = subtotal;
     data.discount_amount = totalDiscount;
-    data.tax_amount = tax;
+    data.tax_amount = totalTax;
     data.total_amount = total;
     
     Swal.fire({

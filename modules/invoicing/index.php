@@ -79,7 +79,6 @@ require_once APP_PATH . '/includes/header.php';
             <option value="proforma">Proforma Invoice</option>
             <option value="tax">Tax Invoice</option>
             <option value="quote">Quote</option>
-            <option value="credit">Credit Note</option>
         </select>
         <button type="button" class="btn btn-primary" onclick="createInvoice()">
             <i class="bi bi-plus-circle"></i> Create Invoice
@@ -126,7 +125,6 @@ function createInvoice() {
                     <option value="Proforma" <?= $invoiceType === 'Proforma' ? 'selected' : '' ?>>Proforma Invoice</option>
                     <option value="TaxInvoice" <?= $invoiceType === 'TaxInvoice' ? 'selected' : '' ?>>Tax Invoice</option>
                     <option value="Quote" <?= $invoiceType === 'Quote' ? 'selected' : '' ?>>Quote</option>
-                    <option value="CreditNote" <?= $invoiceType === 'CreditNote' ? 'selected' : '' ?>>Credit Note</option>
                 </select>
             </div>
             <div class="col-md-2">

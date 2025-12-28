@@ -84,6 +84,44 @@ class Auth {
                 error_log("User {$user['email']} (Role ID: {$user['role_id']}) loaded " . count($permissions) . " permissions: " . implode(', ', $permissions));
             }
             
+            // Check for duplicate login prevention
+            $disallowDuplicateLogins = getSetting('disallow_duplicate_logins', '0') == '1';
+            if ($disallowDuplicateLogins) {
+                $primaryDb = Database::getPrimaryInstance();
+                $existingSession = $primaryDb->getRow(
+                    "SELECT * FROM user_sessions WHERE user_id = :user_id AND last_activity > DATE_SUB(NOW(), INTERVAL 30 MINUTE) ORDER BY last_activity DESC LIMIT 1",
+                    [':user_id' => $user['id']]
+                );
+                
+                if ($existingSession) {
+                    // Check if session is still active (not expired)
+                    $sessionAge = time() - strtotime($existingSession['last_activity']);
+                    if ($sessionAge < 1800) { // 30 minutes
+                        // Logout the existing session
+                        $primaryDb->executeQuery(
+                            "DELETE FROM user_sessions WHERE session_id = :session_id",
+                            [':session_id' => $existingSession['session_id']]
+                        );
+                    }
+                }
+            }
+            
+            // Create new session record
+            $sessionId = session_id();
+            $primaryDb = Database::getPrimaryInstance();
+            $primaryDb->executeQuery(
+                "DELETE FROM user_sessions WHERE user_id = :user_id AND session_id = :session_id",
+                [':user_id' => $user['id'], ':session_id' => $sessionId]
+            );
+            $primaryDb->insert('user_sessions', [
+                'user_id' => $user['id'],
+                'session_id' => $sessionId,
+                'ip_address' => getClientIp(),
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+                'last_activity' => date('Y-m-d H:i:s'),
+                'created_at' => date('Y-m-d H:i:s')
+            ]);
+            
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['username'] = $user['username'];
             $_SESSION['email'] = $user['email'];
@@ -115,6 +153,20 @@ class Auth {
         initSession();
         if (isset($_SESSION['user_id'])) {
             logActivity($_SESSION['user_id'], 'logout');
+            
+            // Remove session from user_sessions table
+            $sessionId = session_id();
+            if ($sessionId) {
+                try {
+                    $primaryDb = Database::getPrimaryInstance();
+                    $primaryDb->executeQuery(
+                        "DELETE FROM user_sessions WHERE session_id = :session_id",
+                        [':session_id' => $sessionId]
+                    );
+                } catch (Exception $e) {
+                    // Ignore errors during logout
+                }
+            }
         }
         session_unset();
         session_destroy();
@@ -241,6 +293,34 @@ class Auth {
             header('HTTP/1.0 403 Forbidden');
             die('Access denied. You do not have permission to access this resource.');
         }
+    }
+    
+    /**
+     * Check if user has any of the given permissions (OR logic)
+     * Returns true if user has at least one of the specified permissions
+     */
+    public function hasAnyPermission(...$permissions) {
+        foreach ($permissions as $permission) {
+            if ($this->hasPermission($permission)) {
+                return true; // User has at least one permission
+            }
+        }
+        return false; // User doesn't have any of the required permissions
+    }
+    
+    /**
+     * Require any of the given permissions (OR logic)
+     * User must have at least one of the specified permissions
+     */
+    public function requireAnyPermission(...$permissions) {
+        foreach ($permissions as $permission) {
+            if ($this->hasPermission($permission)) {
+                return; // User has at least one permission, allow access
+            }
+        }
+        // User doesn't have any of the required permissions
+        header('HTTP/1.0 403 Forbidden');
+        die('Access denied. You do not have permission to access this resource.');
     }
     
     public function getCurrentUser() {

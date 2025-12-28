@@ -62,6 +62,23 @@ if ($refunds === false) {
     $refunds = ['refund_count' => 0, 'refund_amount' => 0];
 }
 
+// Credit Sales (if enabled)
+$creditSalesStats = ['total_credit_sales' => 0, 'total_outstanding' => 0, 'outstanding_count' => 0];
+if (getSetting('allow_credit_sales', '0') == '1') {
+    $creditSalesWhere = array_merge($whereConditions, ["s.is_credit_sale = 1"]);
+    $creditSalesWhereClause = implode(' AND ', $creditSalesWhere);
+    
+    $creditSales = $db->getRow("SELECT 
+        COUNT(*) as total_credit_sales,
+        COUNT(CASE WHEN s.account_balance > 0 THEN 1 END) as outstanding_count,
+        COALESCE(SUM(s.account_balance), 0) as total_outstanding
+        FROM sales s
+        WHERE $creditSalesWhereClause", $params);
+    if ($creditSales !== false) {
+        $creditSalesStats = $creditSales;
+    }
+}
+
 // Payment methods breakdown (using base amounts)
 $paymentMethods = $db->getRows("SELECT 
     sp.payment_method,
@@ -300,6 +317,41 @@ require_once APP_PATH . '/includes/header.php';
         </div>
     </div>
 </div>
+
+<?php if (getSetting('allow_credit_sales', '0') == '1'): ?>
+<div class="row">
+    <div class="col-md-3">
+        <div class="stats-card">
+            <div class="stats-label">Credit Sales</div>
+            <div class="stats-value"><?= number_format($creditSalesStats['total_credit_sales'] ?? 0) ?></div>
+            <small class="text-muted">Total credit sales</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card border-warning">
+            <div class="stats-label">Outstanding</div>
+            <div class="stats-value text-warning"><?= number_format($creditSalesStats['outstanding_count'] ?? 0) ?></div>
+            <small class="text-muted">Unsettled accounts</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card border-danger">
+            <div class="stats-label">Outstanding Amount</div>
+            <div class="stats-value text-danger"><?= formatCurrency($creditSalesStats['total_outstanding'] ?? 0) ?></div>
+            <small class="text-muted">Total balance due</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card">
+            <a href="credit_sales.php" class="text-decoration-none">
+                <div class="stats-label">View Credit Sales</div>
+                <div class="stats-value text-primary"><i class="bi bi-arrow-right-circle"></i></div>
+                <small class="text-muted">Click to view details</small>
+            </a>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Charts and Tables -->
 <div class="row">
