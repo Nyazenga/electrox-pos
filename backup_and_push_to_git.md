@@ -71,15 +71,30 @@ Replace "Your commit message here" with a descriptive message about the changes.
 
 ### 7. Set Git Remote with PAT (if needed)
 
-The PAT (Personal Access Token) should be stored securely. To set the remote URL with PAT:
+**IMPORTANT:** The PAT (Personal Access Token) should be stored securely in a file named `PAT` in the root folder (`electrox-pos/PAT`). This file is gitignored and should NOT be committed to the repository.
 
+**To store the PAT:**
+1. Create a file named `PAT` (no extension) in the root folder: `electrox-pos/PAT`
+2. Paste your Personal Access Token into this file (one line, no extra spaces)
+3. Ensure `PAT` is in `.gitignore` to prevent accidental commits
+
+**To set the remote URL with PAT:**
+
+**Option 1: Read from PAT file (recommended)**
+```bash
+# PowerShell:
+$pat = Get-Content PAT -Raw | ForEach-Object { $_.Trim() }
+git remote set-url origin "https://$pat@github.com/Nyazenga/electrox-pos.git"
+```
+
+**Option 2: Manual (if PAT file doesn't exist)**
 ```bash
 git remote set-url origin https://YOUR_PAT_HERE@github.com/Nyazenga/electrox-pos.git
 ```
 
-**Note:** Replace `YOUR_PAT_HERE` with your actual Personal Access Token.
+**Note:** Replace `YOUR_PAT_HERE` with your actual Personal Access Token if using Option 2.
 
-**Note:** The PAT in this file may expire. Update it if authentication fails.
+**Note:** The PAT may expire. Update it in the `PAT` file if authentication fails.
 
 ### 8. Push to Git
 

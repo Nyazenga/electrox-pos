@@ -2,6 +2,7 @@
 config.php
 .env
 *.env
+PAT
 
 # Logs
 logs/
