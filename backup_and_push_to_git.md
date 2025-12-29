@@ -14,14 +14,17 @@ This document contains step-by-step instructions for backing up databases and pu
 
 ### 1. Backup Databases
 
+**Note:** If `mysqldump` command is not found, use the full path: `C:\xampp\mysql\bin\mysqldump.exe`
+
 #### Backup electrox_primary database:
-```bash
-mysqldump -u root -p"" electrox_primary > electrox_primary.sql
+```powershell
+# Try with mysqldump first, fallback to full path if needed
+C:\xampp\mysql\bin\mysqldump.exe -u root --password= electrox_primary > electrox_primary.sql
 ```
 
 #### Backup electrox_base database:
-```bash
-mysqldump -u root -p"" electrox_base > electrox_base.sql
+```powershell
+C:\xampp\mysql\bin\mysqldump.exe -u root --password= electrox_base > electrox_base.sql
 ```
 
 ### 2. Verify Backups
@@ -69,32 +72,19 @@ git commit -m "Your commit message here"
 
 Replace "Your commit message here" with a descriptive message about the changes.
 
-### 7. Set Git Remote with PAT (if needed)
+### 7. Set Git Remote with PAT
 
-**IMPORTANT:** The PAT (Personal Access Token) should be stored securely in a file named `PAT` in the root folder (`electrox-pos/PAT`). This file is gitignored and should NOT be committed to the repository.
+**IMPORTANT:** The PAT (Personal Access Token) is stored in a file named `PAT` in the root folder (`electrox-pos/PAT`). This file is gitignored and should NOT be committed to the repository.
 
-**To store the PAT:**
-1. Create a file named `PAT` (no extension) in the root folder: `electrox-pos/PAT`
-2. Paste your Personal Access Token into this file (one line, no extra spaces)
-3. Ensure `PAT` is in `.gitignore` to prevent accidental commits
+**To set the remote URL with PAT (read from PAT file):**
 
-**To set the remote URL with PAT:**
-
-**Option 1: Read from PAT file (recommended)**
-```bash
-# PowerShell:
+**PowerShell:**
+```powershell
 $pat = Get-Content PAT -Raw | ForEach-Object { $_.Trim() }
 git remote set-url origin "https://$pat@github.com/Nyazenga/electrox-pos.git"
 ```
 
-**Option 2: Manual (if PAT file doesn't exist)**
-```bash
-git remote set-url origin https://YOUR_PAT_HERE@github.com/Nyazenga/electrox-pos.git
-```
-
-**Note:** Replace `YOUR_PAT_HERE` with your actual Personal Access Token if using Option 2.
-
-**Note:** The PAT may expire. Update it in the `PAT` file if authentication fails.
+**Note:** The PAT file should already exist. If it doesn't exist or authentication fails, check if the PAT has expired and needs to be updated in the `PAT` file.
 
 ### 8. Push to Git
 
@@ -144,20 +134,28 @@ mysql -u root -p"" electrox_base < electrox_base.sql
 - Check file permissions
 - Verify SQL file is not corrupted
 
-## Quick Command Summary
+## Quick Command Summary (PowerShell)
 
-```bash
-# Backup
-mysqldump -u root -p"" electrox_primary > electrox_primary.sql
-mysqldump -u root -p"" electrox_base > electrox_base.sql
+```powershell
+# Backup (using full path for XAMPP)
+C:\xampp\mysql\bin\mysqldump.exe -u root --password= electrox_primary > electrox_primary.sql
+C:\xampp\mysql\bin\mysqldump.exe -u root --password= electrox_base > electrox_base.sql
 
-# Verify
-Test-Path electrox_primary.sql
-Test-Path electrox_base.sql
+# Verify backups exist and have size > 0
+if (Test-Path electrox_primary.sql) { Write-Host "✓ electrox_primary.sql - $((Get-Item electrox_primary.sql).Length) bytes" } else { Write-Host "✗ electrox_primary.sql NOT FOUND" }
+if (Test-Path electrox_base.sql) { Write-Host "✓ electrox_base.sql - $((Get-Item electrox_base.sql).Length) bytes" } else { Write-Host "✗ electrox_base.sql NOT FOUND" }
 
-# Git
+# Configure Git (if needed)
+git config user.name "Nyazenga"
+git config user.email "nyazengamd@gmail.com"
+
+# Set remote with PAT from file
+$pat = Get-Content PAT -Raw | ForEach-Object { $_.Trim() }
+git remote set-url origin "https://$pat@github.com/Nyazenga/electrox-pos.git"
+
+# Stage, commit, and push
 git add .
-git commit -m "Your message"
+git commit -m "Your commit message here"
 git push origin main
 ```
 
