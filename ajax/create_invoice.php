@@ -113,7 +113,7 @@ try {
         'balance_due' => $input['total_amount'] ?? 0,
         'invoice_date' => $input['invoice_date'] ?? date('Y-m-d H:i:s'),
         'due_date' => $dueDate,
-        'status' => 'Draft',
+        'status' => 'Pending',
         'notes' => $input['notes'] ?? null,
         'terms' => $input['terms'] ?? null
     ];

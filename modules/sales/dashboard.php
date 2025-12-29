@@ -178,308 +178,838 @@ require_once APP_PATH . '/includes/header.php';
 ?>
 
 <style>
-.stats-card {
-    background: white;
+/* Modern Dashboard Styles */
+.dashboard-container {
+    padding: 0;
+    background: var(--light-gray);
+    min-height: 100vh;
+}
+
+/* Filter Section - Modern Design */
+.dashboard-filters {
+    background: var(--white);
     border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
-    transition: transform 0.2s;
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--border-color);
 }
 
-.stats-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+.filter-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    flex-wrap: wrap;
 }
 
-.stats-value {
-    font-size: 32px;
-    font-weight: 700;
-    color: var(--primary-blue);
-    margin: 10px 0;
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    min-width: 200px;
 }
 
-.stats-label {
-    color: #6b7280;
-    font-size: 14px;
+.filter-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
-.chart-container {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
+.filter-label i {
+    font-size: 13px;
+    color: var(--secondary-blue);
 }
 
-.filter-card {
-    background: white;
+.filter-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.filter-input-wrapper .form-select,
+.filter-input-wrapper .form-control {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 13px;
+    height: 42px;
+    transition: all 0.2s ease;
+    background: var(--white);
+}
+
+.filter-input-wrapper .form-select:focus,
+.filter-input-wrapper .form-control:focus {
+    border-color: var(--secondary-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    outline: none;
+}
+
+.filter-btn-wrapper {
+    display: flex;
+    align-items: flex-end;
+    margin-top: 24px;
+}
+
+.filter-btn {
+    height: 42px;
+    padding: 0 28px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    border: none;
+    white-space: nowrap;
+}
+
+.filter-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+/* Modern Stat Cards */
+.stat-card-modern {
+    background: var(--white);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    border: 1px solid var(--border-color);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: fadeInUp 0.5s ease-out;
+}
+
+.stat-card-modern::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--secondary-blue);
+    transition: width 0.3s ease;
+}
+
+.stat-card-modern:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card-modern:hover::before {
+    width: 6px;
+}
+
+.stat-card-modern.total-sales::before { background: #3b82f6; }
+.stat-card-modern.subtotal::before { background: #10b981; }
+.stat-card-modern.discounts::before { background: #f59e0b; }
+.stat-card-modern.refunds::before { background: #ef4444; }
+.stat-card-modern.tax::before { background: #6366f1; }
+.stat-card-modern.avg-sale::before { background: #06b6d4; }
+.stat-card-modern.net-sales::before { background: #10b981; }
+.stat-card-modern.transactions::before { background: #8b5cf6; }
+.stat-card-modern.credit-sales::before { background: #ec4899; }
+.stat-card-modern.outstanding::before { background: #f97316; }
+.stat-card-modern.outstanding-amount::before { background: #ef4444; }
+.stat-card-modern.view-credit::before { background: #3b82f6; }
+
+.stat-card-header-modern {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.stat-icon-modern {
+    width: 56px;
+    height: 56px;
     border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: var(--white);
+    flex-shrink: 0;
+    animation: iconPulse 2s ease-in-out infinite;
+    position: relative;
+}
+
+.stat-icon-modern::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    opacity: 0.3;
+    animation: iconRipple 2s ease-in-out infinite;
+}
+
+.stat-icon-modern.total-sales { background: #3b82f6; }
+.stat-icon-modern.subtotal { background: #10b981; }
+.stat-icon-modern.discounts { background: #f59e0b; }
+.stat-icon-modern.refunds { background: #ef4444; }
+.stat-icon-modern.tax { background: #6366f1; }
+.stat-icon-modern.avg-sale { background: #06b6d4; }
+.stat-icon-modern.net-sales { background: #10b981; }
+.stat-icon-modern.transactions { background: #8b5cf6; }
+.stat-icon-modern.credit-sales { background: #ec4899; }
+.stat-icon-modern.outstanding { background: #f97316; }
+.stat-icon-modern.outstanding-amount { background: #ef4444; }
+.stat-icon-modern.view-credit { background: #3b82f6; }
+
+.stat-content-modern {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-label-modern {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stat-label-modern i {
+    font-size: 12px;
+}
+
+.stat-value-modern {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-dark);
+    margin: 0;
+    line-height: 1.2;
+    animation: countUp 0.8s ease-out;
+}
+
+.stat-subtext-modern {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Chart Cards */
+.chart-card-modern {
+    background: var(--white);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    border: 1px solid var(--border-color);
+    height: 100%;
+    animation: fadeInUp 0.6s ease-out;
+}
+
+.chart-card-header-modern {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.chart-title-modern {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-dark);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.chart-title-modern i {
+    font-size: 20px;
+    color: var(--secondary-blue);
+}
+
+.chart-container-modern {
+    position: relative;
+    height: 400px;
+}
+
+.table-card-modern {
+    background: var(--white);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    border: 1px solid var(--border-color);
+    height: 100%;
+    animation: fadeInUp 0.6s ease-out;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes iconPulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+@keyframes iconRipple {
+    0% {
+        transform: scale(1);
+        opacity: 0.3;
+    }
+    100% {
+        transform: scale(1.3);
+        opacity: 0;
+    }
+}
+
+@keyframes countUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Stagger animation delays for cards */
+.stat-card-modern:nth-child(1) { animation-delay: 0.1s; }
+.stat-card-modern:nth-child(2) { animation-delay: 0.2s; }
+.stat-card-modern:nth-child(3) { animation-delay: 0.3s; }
+.stat-card-modern:nth-child(4) { animation-delay: 0.4s; }
+.stat-card-modern:nth-child(5) { animation-delay: 0.5s; }
+.stat-card-modern:nth-child(6) { animation-delay: 0.6s; }
+
+/* Responsive Design */
+@media (max-width: 1366px) {
+    .stat-value-modern {
+        font-size: 24px;
+    }
+    
+    .stat-icon-modern {
+        width: 48px;
+        height: 48px;
+        font-size: 20px;
+    }
+    
+    .chart-container-modern {
+        height: 300px;
+    }
+}
+
+@media (max-width: 768px) {
+    .filter-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .filter-group {
+        width: 100%;
+        min-width: 100%;
+    }
+    
+    .filter-btn-wrapper {
+        margin-top: 0;
+        width: 100%;
+    }
+    
+    .filter-btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .stat-value-modern {
+        font-size: 20px;
+    }
+    
+    .stat-icon-modern {
+        width: 44px;
+        height: 44px;
+        font-size: 18px;
+    }
+    
+    .chart-container-modern {
+        height: 250px;
+    }
 }
 </style>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Sales Dashboard</h2>
-</div>
+<div class="dashboard-container">
+    <!-- Modern Filter Section -->
+    <div class="dashboard-filters">
+        <form method="GET" class="filter-row">
+            <div class="filter-group">
+                <label class="filter-label">
+                    <i class="bi bi-calendar3"></i>
+                    <span>Start Date</span>
+                </label>
+                <div class="filter-input-wrapper">
+                    <input type="date" name="start_date" class="form-control" value="<?= escapeHtml($startDate) ?>">
+                </div>
+            </div>
+            
+            <div class="filter-group">
+                <label class="filter-label">
+                    <i class="bi bi-calendar-check"></i>
+                    <span>End Date</span>
+                </label>
+                <div class="filter-input-wrapper">
+                    <input type="date" name="end_date" class="form-control" value="<?= escapeHtml($endDate) ?>">
+                </div>
+            </div>
+            
+            <?php if (!$branchId): ?>
+            <div class="filter-group">
+                <label class="filter-label">
+                    <i class="bi bi-building"></i>
+                    <span>Branch</span>
+                </label>
+                <div class="filter-input-wrapper">
+                    <select name="branch_id" class="form-select">
+                        <option value="all" <?= $selectedBranch === 'all' ? 'selected' : '' ?>>All Branches</option>
+                        <?php foreach ($branches as $branch): ?>
+                            <option value="<?= $branch['id'] ?>" <?= $selectedBranch == $branch['id'] ? 'selected' : '' ?>>
+                                <?= escapeHtml($branch['branch_name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <?php endif; ?>
+            
+            <div class="filter-btn-wrapper">
+                <button type="submit" class="btn btn-primary filter-btn">
+                    <i class="bi bi-funnel"></i>
+                    <span>Apply Filters</span>
+                </button>
+            </div>
+        </form>
+    </div>
 
-<!-- Filters -->
-<div class="filter-card">
-    <form method="GET" class="row g-3">
-        <div class="col-md-3">
-            <label class="form-label">Start Date</label>
-            <input type="date" name="start_date" class="form-control" value="<?= escapeHtml($startDate) ?>">
+    <!-- Primary Stats Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern total-sales">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-cash-stack"></i>
+                            <span>Total Sales</span>
+                        </div>
+                        <div class="stat-value-modern"><?= formatCurrency($totalSales['total_amount'] ?? 0) ?></div>
+                        <div class="stat-subtext-modern"><?= number_format($totalSales['total_count'] ?? 0) ?> transactions</div>
+                    </div>
+                    <div class="stat-icon-modern total-sales">
+                        <i class="bi bi-cash-stack"></i>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="col-md-3">
-            <label class="form-label">End Date</label>
-            <input type="date" name="end_date" class="form-control" value="<?= escapeHtml($endDate) ?>">
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern subtotal">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-receipt"></i>
+                            <span>Subtotal</span>
+                        </div>
+                        <div class="stat-value-modern"><?= formatCurrency($totalSales['total_subtotal'] ?? 0) ?></div>
+                        <div class="stat-subtext-modern">Before discounts & tax</div>
+                    </div>
+                    <div class="stat-icon-modern subtotal">
+                        <i class="bi bi-receipt"></i>
+                    </div>
+                </div>
+            </div>
         </div>
-        <?php if (!$branchId): ?>
-        <div class="col-md-3">
-            <label class="form-label">Branch</label>
-            <select name="branch_id" class="form-select">
-                <option value="all" <?= $selectedBranch === 'all' ? 'selected' : '' ?>>All Branches</option>
-                <?php foreach ($branches as $branch): ?>
-                    <option value="<?= $branch['id'] ?>" <?= $selectedBranch == $branch['id'] ? 'selected' : '' ?>>
-                        <?= escapeHtml($branch['branch_name']) ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern discounts">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-tag"></i>
+                            <span>Discounts</span>
+                        </div>
+                        <div class="stat-value-modern" style="color: #f59e0b;"><?= formatCurrency($totalSales['total_discount'] ?? 0) ?></div>
+                        <div class="stat-subtext-modern">Total discounts given</div>
+                    </div>
+                    <div class="stat-icon-modern discounts">
+                        <i class="bi bi-tag"></i>
+                    </div>
+                </div>
+            </div>
         </div>
-        <?php endif; ?>
-        <div class="col-md-3 d-flex align-items-end">
-            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel"></i> Apply Filters</button>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern refunds">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-arrow-counterclockwise"></i>
+                            <span>Refunds</span>
+                        </div>
+                        <div class="stat-value-modern" style="color: #ef4444;"><?= formatCurrency($refunds['refund_amount'] ?? 0) ?></div>
+                        <div class="stat-subtext-modern"><?= number_format($refunds['refund_count'] ?? 0) ?> refunds</div>
+                    </div>
+                    <div class="stat-icon-modern refunds">
+                        <i class="bi bi-arrow-counterclockwise"></i>
+                    </div>
+                </div>
+            </div>
         </div>
-    </form>
-</div>
+    </div>
 
-<!-- Stats Cards -->
-<div class="row">
-    <div class="col-md-3">
-        <div class="stats-card">
-            <div class="stats-label">Total Sales</div>
-            <div class="stats-value"><?= formatCurrency($totalSales['total_amount'] ?? 0) ?></div>
-            <small class="text-muted"><?= number_format($totalSales['total_count'] ?? 0) ?> transactions</small>
+    <!-- Secondary Stats Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern tax">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-percent"></i>
+                            <span>Tax Collected</span>
+                        </div>
+                        <div class="stat-value-modern"><?= formatCurrency($totalSales['total_tax'] ?? 0) ?></div>
+                    </div>
+                    <div class="stat-icon-modern tax">
+                        <i class="bi bi-percent"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern avg-sale">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-calculator"></i>
+                            <span>Average Sale</span>
+                        </div>
+                        <div class="stat-value-modern" style="font-size: 22px;"><?= formatCurrency($totalSales['avg_sale'] ?? 0) ?></div>
+                    </div>
+                    <div class="stat-icon-modern avg-sale">
+                        <i class="bi bi-calculator"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern net-sales">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-graph-up-arrow"></i>
+                            <span>Net Sales</span>
+                        </div>
+                        <div class="stat-value-modern" style="color: #10b981;"><?= formatCurrency(($totalSales['total_amount'] ?? 0) - ($refunds['refund_amount'] ?? 0)) ?></div>
+                        <div class="stat-subtext-modern">After refunds</div>
+                    </div>
+                    <div class="stat-icon-modern net-sales">
+                        <i class="bi bi-graph-up-arrow"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern transactions">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-receipt-cutoff"></i>
+                            <span>Transactions</span>
+                        </div>
+                        <div class="stat-value-modern"><?= number_format($totalSales['total_count'] ?? 0) ?></div>
+                        <div class="stat-subtext-modern">Total count</div>
+                    </div>
+                    <div class="stat-icon-modern transactions">
+                        <i class="bi bi-receipt-cutoff"></i>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="stats-card">
-            <div class="stats-label">Subtotal</div>
-            <div class="stats-value"><?= formatCurrency($totalSales['total_subtotal'] ?? 0) ?></div>
-            <small class="text-muted">Before discounts & tax</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stats-card">
-            <div class="stats-label">Discounts</div>
-            <div class="stats-value text-warning"><?= formatCurrency($totalSales['total_discount'] ?? 0) ?></div>
-            <small class="text-muted">Total discounts given</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stats-card">
-            <div class="stats-label">Refunds</div>
-            <div class="stats-value text-danger"><?= formatCurrency($refunds['refund_amount'] ?? 0) ?></div>
-            <small class="text-muted"><?= number_format($refunds['refund_count'] ?? 0) ?> refunds</small>
-        </div>
-    </div>
-</div>
 
-<div class="row">
-    <div class="col-md-3">
-        <div class="stats-card">
-            <div class="stats-label">Tax Collected</div>
-            <div class="stats-value"><?= formatCurrency($totalSales['total_tax'] ?? 0) ?></div>
+    <?php if (getSetting('allow_credit_sales', '0') == '1'): ?>
+    <!-- Credit Sales Stats Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern credit-sales">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-credit-card"></i>
+                            <span>Credit Sales</span>
+                        </div>
+                        <div class="stat-value-modern"><?= number_format($creditSalesStats['total_credit_sales'] ?? 0) ?></div>
+                        <div class="stat-subtext-modern">Total credit sales</div>
+                    </div>
+                    <div class="stat-icon-modern credit-sales">
+                        <i class="bi bi-credit-card"></i>
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stats-card">
-            <div class="stats-label">Average Sale</div>
-            <div class="stats-value"><?= formatCurrency($totalSales['avg_sale'] ?? 0) ?></div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern outstanding">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <span>Outstanding</span>
+                        </div>
+                        <div class="stat-value-modern" style="color: #f97316;"><?= number_format($creditSalesStats['outstanding_count'] ?? 0) ?></div>
+                        <div class="stat-subtext-modern">Unsettled accounts</div>
+                    </div>
+                    <div class="stat-icon-modern outstanding">
+                        <i class="bi bi-exclamation-triangle"></i>
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stats-card">
-            <div class="stats-label">Net Sales</div>
-            <div class="stats-value text-success"><?= formatCurrency(($totalSales['total_amount'] ?? 0) - ($refunds['refund_amount'] ?? 0)) ?></div>
-            <small class="text-muted">After refunds</small>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern outstanding-amount">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-currency-dollar"></i>
+                            <span>Outstanding Amount</span>
+                        </div>
+                        <div class="stat-value-modern" style="color: #ef4444; font-size: 22px;"><?= formatCurrency($creditSalesStats['total_outstanding'] ?? 0) ?></div>
+                        <div class="stat-subtext-modern">Total balance due</div>
+                    </div>
+                    <div class="stat-icon-modern outstanding-amount">
+                        <i class="bi bi-currency-dollar"></i>
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stats-card">
-            <div class="stats-label">Transactions</div>
-            <div class="stats-value"><?= number_format($totalSales['total_count'] ?? 0) ?></div>
-            <small class="text-muted">Total count</small>
-        </div>
-    </div>
-</div>
-
-<?php if (getSetting('allow_credit_sales', '0') == '1'): ?>
-<div class="row">
-    <div class="col-md-3">
-        <div class="stats-card">
-            <div class="stats-label">Credit Sales</div>
-            <div class="stats-value"><?= number_format($creditSalesStats['total_credit_sales'] ?? 0) ?></div>
-            <small class="text-muted">Total credit sales</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stats-card border-warning">
-            <div class="stats-label">Outstanding</div>
-            <div class="stats-value text-warning"><?= number_format($creditSalesStats['outstanding_count'] ?? 0) ?></div>
-            <small class="text-muted">Unsettled accounts</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stats-card border-danger">
-            <div class="stats-label">Outstanding Amount</div>
-            <div class="stats-value text-danger"><?= formatCurrency($creditSalesStats['total_outstanding'] ?? 0) ?></div>
-            <small class="text-muted">Total balance due</small>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stats-card">
+        
+        <div class="col-lg-3 col-md-6">
             <a href="credit_sales.php" class="text-decoration-none">
-                <div class="stats-label">View Credit Sales</div>
-                <div class="stats-value text-primary"><i class="bi bi-arrow-right-circle"></i></div>
-                <small class="text-muted">Click to view details</small>
+                <div class="stat-card-modern view-credit">
+                    <div class="stat-card-header-modern">
+                        <div class="stat-content-modern">
+                            <div class="stat-label-modern">
+                                <i class="bi bi-arrow-right-circle"></i>
+                                <span>View Credit Sales</span>
+                            </div>
+                            <div class="stat-value-modern" style="color: #3b82f6; font-size: 24px;">
+                                <i class="bi bi-arrow-right-circle-fill"></i>
+                            </div>
+                            <div class="stat-subtext-modern">Click to view details</div>
+                        </div>
+                        <div class="stat-icon-modern view-credit">
+                            <i class="bi bi-arrow-right-circle"></i>
+                        </div>
+                    </div>
+                </div>
             </a>
         </div>
     </div>
-</div>
-<?php endif; ?>
+    <?php endif; ?>
 
-<!-- Charts and Tables -->
-<div class="row">
-    <div class="col-md-8">
-        <div class="chart-container">
-            <h5 class="mb-3">Daily Sales Trend</h5>
-            <canvas id="dailySalesChart" height="80"></canvas>
+    <!-- Charts Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-8">
+            <div class="chart-card-modern">
+                <div class="chart-card-header-modern">
+                    <h5 class="chart-title-modern">
+                        <i class="bi bi-graph-up"></i>
+                        <span>Daily Sales Trend</span>
+                    </h5>
+                </div>
+                <div class="chart-container-modern">
+                    <canvas id="dailySalesChart"></canvas>
+                </div>
+            </div>
         </div>
-    </div>
-    <div class="col-md-4">
-        <div class="chart-container">
-            <h5 class="mb-3">Payment Methods</h5>
-            <canvas id="paymentMethodsChart"></canvas>
-        </div>
-    </div>
-</div>
-
-<?php if (!empty($currencyBreakdown)): ?>
-<div class="row">
-    <div class="col-md-6">
-        <div class="chart-container">
-            <h5 class="mb-3">Currency Breakdown</h5>
-            <div class="table-responsive">
-                <table class="table table-sm">
-                    <thead>
-                        <tr>
-                            <th>Currency</th>
-                            <th>Transactions</th>
-                            <th>Amount</th>
-                            <th>Base Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($currencyBreakdown as $breakdown): 
-                            $currency = $breakdown['currency'];
-                        ?>
-                            <tr>
-                                <td><strong><?= escapeHtml($currency['code']) ?></strong></td>
-                                <td><?= $breakdown['transaction_count'] ?></td>
-                                <td><?= formatCurrencyAmount($breakdown['total_original'], $currency['id'], $db) ?></td>
-                                <td><?= formatCurrencyAmount($breakdown['total_base'], getBaseCurrency($db)['id'], $db) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+        
+        <div class="col-lg-4">
+            <div class="chart-card-modern">
+                <div class="chart-card-header-modern">
+                    <h5 class="chart-title-modern">
+                        <i class="bi bi-pie-chart-fill"></i>
+                        <span>Payment Methods</span>
+                    </h5>
+                </div>
+                <div class="chart-container-modern">
+                    <canvas id="paymentMethodsChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-6">
-        <div class="chart-container">
-            <h5 class="mb-3">Payment Method & Currency Split</h5>
-            <div class="table-responsive">
-                <table class="table table-sm">
-                    <thead>
-                        <tr>
-                            <th>Method</th>
-                            <th>Currency</th>
-                            <th>Count</th>
-                            <th>Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($paymentMethodCurrencyBreakdown as $breakdown): 
-                            $currency = getCurrency($breakdown['currency_id'], $db);
-                        ?>
-                            <tr>
-                                <td><?= escapeHtml(ucfirst($breakdown['payment_method'])) ?></td>
-                                <td><?= escapeHtml($currency ? $currency['code'] : 'N/A') ?></td>
-                                <td><?= $breakdown['count'] ?></td>
-                                <td><?= formatCurrencyAmount($breakdown['total_original'], $breakdown['currency_id'], $db) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
 
-<div class="row">
-    <div class="col-md-6">
-        <div class="chart-container">
-            <h5 class="mb-3">Top Products</h5>
-            <div class="table-responsive">
-                <table class="table table-sm">
-                    <thead>
-                        <tr>
-                            <th>Product</th>
-                            <th>Qty</th>
-                            <th>Revenue</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($topProducts as $product): ?>
+    <?php if (!empty($currencyBreakdown)): ?>
+    <!-- Currency Breakdown Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-6">
+            <div class="table-card-modern">
+                <div class="chart-card-header-modern">
+                    <h5 class="chart-title-modern">
+                        <i class="bi bi-currency-exchange"></i>
+                        <span>Currency Breakdown</span>
+                    </h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
                             <tr>
-                                <td><?= escapeHtml($product['product_name']) ?></td>
-                                <td><?= number_format($product['total_quantity']) ?></td>
-                                <td><?= formatCurrency($product['total_revenue']) ?></td>
+                                <th>Currency</th>
+                                <th>Transactions</th>
+                                <th>Amount</th>
+                                <th>Base Amount</th>
                             </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($currencyBreakdown as $breakdown): 
+                                $currency = $breakdown['currency'];
+                            ?>
+                                <tr>
+                                    <td><strong><?= escapeHtml($currency['code']) ?></strong></td>
+                                    <td><?= $breakdown['transaction_count'] ?></td>
+                                    <td><?= formatCurrencyAmount($breakdown['total_original'], $currency['id'], $db) ?></td>
+                                    <td><?= formatCurrencyAmount($breakdown['total_base'], getBaseCurrency($db)['id'], $db) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-6">
+            <div class="table-card-modern">
+                <div class="chart-card-header-modern">
+                    <h5 class="chart-title-modern">
+                        <i class="bi bi-list-ul"></i>
+                        <span>Payment Method & Currency Split</span>
+                    </h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Currency</th>
+                                <th>Count</th>
+                                <th>Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($paymentMethodCurrencyBreakdown as $breakdown): 
+                                $currency = getCurrency($breakdown['currency_id'], $db);
+                            ?>
+                                <tr>
+                                    <td><?= escapeHtml(ucfirst($breakdown['payment_method'])) ?></td>
+                                    <td><?= escapeHtml($currency ? $currency['code'] : 'N/A') ?></td>
+                                    <td><?= $breakdown['count'] ?></td>
+                                    <td><?= formatCurrencyAmount($breakdown['total_original'], $breakdown['currency_id'], $db) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-6">
-        <div class="chart-container">
-            <h5 class="mb-3">Top Customers</h5>
-            <div class="table-responsive">
-                <table class="table table-sm">
-                    <thead>
-                        <tr>
-                            <th>Customer</th>
-                            <th>Purchases</th>
-                            <th>Total Spent</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($topCustomers as $customer): ?>
+    <?php endif; ?>
+
+    <!-- Top Products and Customers Row -->
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="table-card-modern">
+                <div class="chart-card-header-modern">
+                    <h5 class="chart-title-modern">
+                        <i class="bi bi-trophy"></i>
+                        <span>Top Products</span>
+                    </h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
                             <tr>
-                                <td><?= escapeHtml(trim(($customer['first_name'] ?? '') . ' ' . ($customer['last_name'] ?? 'Walk-in'))) ?></td>
-                                <td><?= number_format($customer['purchase_count']) ?></td>
-                                <td><?= formatCurrency($customer['total_spent']) ?></td>
+                                <th>Product</th>
+                                <th>Qty</th>
+                                <th>Revenue</th>
                             </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($topProducts as $product): ?>
+                                <tr>
+                                    <td><?= escapeHtml($product['product_name']) ?></td>
+                                    <td><?= number_format($product['total_quantity']) ?></td>
+                                    <td><?= formatCurrency($product['total_revenue']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-6">
+            <div class="table-card-modern">
+                <div class="chart-card-header-modern">
+                    <h5 class="chart-title-modern">
+                        <i class="bi bi-people"></i>
+                        <span>Top Customers</span>
+                    </h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Customer</th>
+                                <th>Purchases</th>
+                                <th>Total Spent</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($topCustomers as $customer): ?>
+                                <tr>
+                                    <td><?= escapeHtml(trim(($customer['first_name'] ?? '') . ' ' . ($customer['last_name'] ?? 'Walk-in'))) ?></td>
+                                    <td><?= number_format($customer['purchase_count']) ?></td>
+                                    <td><?= formatCurrency($customer['total_spent']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -500,25 +1030,48 @@ new Chart(dailySalesCtx, {
         datasets: [{
             label: 'Sales',
             data: dailySalesData.map(d => d.total),
-            borderColor: 'rgb(30, 58, 138)',
-            backgroundColor: 'rgba(30, 58, 138, 0.1)',
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
             tension: 0.4,
-            fill: true
+            fill: true,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5
         }]
     },
     options: {
         responsive: true,
-        maintainAspectRatio: true,
+        maintainAspectRatio: false,
         plugins: {
-            legend: { display: false }
+            legend: { display: false },
+            tooltip: {
+                bodyFont: { size: 12 },
+                titleFont: { size: 13 }
+            }
         },
         scales: {
             y: {
                 beginAtZero: true,
                 ticks: {
                     callback: function(value) {
-                        return '$' + value.toFixed(0);
-                    }
+                        return new Intl.NumberFormat('en-US', {
+                            style: 'currency',
+                            currency: 'USD',
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0
+                        }).format(value);
+                    },
+                    font: { size: 11 }
+                },
+                grid: {
+                    color: 'rgba(0, 0, 0, 0.05)'
+                }
+            },
+            x: {
+                ticks: {
+                    font: { size: 10 },
+                    maxRotation: 45,
+                    minRotation: 45
                 }
             }
         }
@@ -538,24 +1091,49 @@ new Chart(paymentCtx, {
         datasets: [{
             data: paymentData.map(d => d.total),
             backgroundColor: [
-                'rgb(30, 58, 138)',
-                'rgb(59, 130, 246)',
-                'rgb(96, 165, 250)',
-                'rgb(147, 197, 253)',
-                'rgb(191, 219, 254)'
+                '#3b82f6',
+                '#10b981',
+                '#f59e0b',
+                '#ef4444',
+                '#8b5cf6',
+                '#06b6d4',
+                '#ec4899'
             ]
         }]
     },
     options: {
         responsive: true,
-        maintainAspectRatio: true,
+        maintainAspectRatio: false,
         plugins: {
-            legend: { position: 'bottom' }
+            legend: { 
+                position: 'bottom',
+                labels: {
+                    font: { size: 11 },
+                    padding: 15
+                }
+            },
+            tooltip: {
+                bodyFont: { size: 12 },
+                titleFont: { size: 13 },
+                callbacks: {
+                    label: function(context) {
+                        let label = context.label || '';
+                        if (label) {
+                            label += ': ';
+                        }
+                        if (context.parsed !== null) {
+                            label += new Intl.NumberFormat('en-US', {
+                                style: 'currency',
+                                currency: 'USD'
+                            }).format(context.parsed);
+                        }
+                        return label;
+                    }
+                }
+            }
         }
     }
 });
 </script>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>
-
-

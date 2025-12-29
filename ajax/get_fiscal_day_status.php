@@ -59,6 +59,8 @@ try {
                     if ($zimraStatus && isset($zimraStatus['fiscalDayStatus'])) {
                         $branchStatus['fiscal_day_status'] = $zimraStatus['fiscalDayStatus'];
                         $branchStatus['fiscal_day_no'] = $zimraStatus['lastFiscalDayNo'] ?? null;
+                        $branchStatus['last_receipt_global_no'] = $zimraStatus['lastReceiptGlobalNo'] ?? null;
+                        $branchStatus['fiscal_day_closing_error_code'] = $zimraStatus['fiscalDayClosingErrorCode'] ?? null;
                         
                         // Determine if we can open or close
                         $isOpen = ($zimraStatus['fiscalDayStatus'] === 'FiscalDayOpened' || 

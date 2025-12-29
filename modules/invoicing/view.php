@@ -14,17 +14,8 @@ if (!$id) {
     redirectTo('modules/invoicing/index.php');
 }
 
-$db = Database::getInstance();
-$invoice = $db->getRow("SELECT i.*, c.first_name, c.last_name, c.email, c.phone, c.address, b.branch_name, u.first_name as user_first, u.last_name as user_last 
-    FROM invoices i 
-    LEFT JOIN customers c ON i.customer_id = c.id 
-    LEFT JOIN branches b ON i.branch_id = b.id
-    LEFT JOIN users u ON i.user_id = u.id
-    WHERE i.id = :id", [':id' => $id]);
-
-if (!$invoice) {
-    redirectTo('modules/invoicing/index.php');
-}
+// Redirect to print.php instead
+redirectTo('modules/invoicing/print.php?id=' . $id);
 
 $invoiceItems = $db->getRows("SELECT ii.*, p.brand, p.model FROM invoice_items ii LEFT JOIN products p ON ii.product_id = p.id WHERE ii.invoice_id = :id", [':id' => $id]);
 if ($invoiceItems === false) $invoiceItems = [];

@@ -18,7 +18,14 @@ $userId = $_SESSION['user_id'] ?? null;
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
 if ($branches === false) $branches = [];
 
-$products = $db->getRows("SELECT p.*, c.name as category_name FROM products p LEFT JOIN product_categories c ON p.category_id = c.id WHERE p.status = 'Active' ORDER BY p.brand, p.model");
+// Get products - handle both General category (product_name) and others (brand/model)
+$products = $db->getRows("SELECT p.*, 
+                         COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
+                         c.name as category_name 
+                         FROM products p 
+                         LEFT JOIN product_categories c ON p.category_id = c.id 
+                         WHERE p.status = 'Active' 
+                         ORDER BY COALESCE(p.product_name, p.brand, ''), p.model");
 if ($products === false) $products = [];
 
 require_once APP_PATH . '/includes/header.php';
@@ -160,20 +167,7 @@ require_once APP_PATH . '/includes/header.php';
                         <input type="text" class="form-control" id="product_search" placeholder="Type to search products..." autocomplete="off">
                         <input type="hidden" id="selected_product_id">
                         <div class="dropdown-menu position-absolute w-100" id="product_dropdown" style="max-height: 300px; overflow-y: auto; z-index: 1050; display: none;">
-                        <?php foreach ($products as $product): ?>
-                            <a class="dropdown-item product-item" href="#" 
-                               data-id="<?= $product['id'] ?>"
-                               data-name="<?= escapeHtml(trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? ''))) ?>"
-                               data-stock="<?= $product['quantity_in_stock'] ?? 0 ?>">
-                                <strong><?= escapeHtml(trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? ''))) ?></strong>
-                                <br>
-                                <small class="text-muted">
-                                    <?= escapeHtml($product['category_name'] ?? 'N/A') ?> | 
-                                    Code: <?= escapeHtml($product['product_code'] ?? 'N/A') ?> |
-                                    Stock: <span id="stock_<?= $product['id'] ?>"><?= $product['quantity_in_stock'] ?? 0 ?></span>
-                                </small>
-                            </a>
-                        <?php endforeach; ?>
+                            <!-- Products will be loaded dynamically based on selected branch -->
                         </div>
                     </div>
                 </div>
@@ -206,6 +200,9 @@ let fromBranchId = document.getElementById('from_branch_id').value;
 document.addEventListener('DOMContentLoaded', function() {
     generateTransferNumber();
     
+    // Load products for initial branch
+    loadProductsForBranch(fromBranchId);
+    
     // Update from branch ID when changed
     document.getElementById('from_branch_id').addEventListener('change', function() {
         fromBranchId = this.value;
@@ -213,6 +210,8 @@ document.addEventListener('DOMContentLoaded', function() {
         transferItems = [];
         renderItems();
         updateTotal();
+        // Reload products for new branch
+        loadProductsForBranch(fromBranchId);
     });
     
     // Product search
@@ -220,7 +219,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const productDropdown = document.getElementById('product_dropdown');
     
     productSearch.addEventListener('input', function() {
-        filterDropdown(this.value, productDropdown, '.product-item');
+        const searchTerm = this.value.toLowerCase().trim();
+        const items = productDropdown.querySelectorAll('.product-item');
+        
+        items.forEach(item => {
+            const text = item.textContent.toLowerCase();
+            if (text.includes(searchTerm) || searchTerm === '') {
+                item.style.display = 'block';
+            } else {
+                item.style.display = 'none';
+            }
+        });
     });
     
     productSearch.addEventListener('focus', function() {
@@ -291,6 +300,46 @@ function generateTransferNumber() {
     tryGenerate();
 }
 
+function loadProductsForBranch(branchId) {
+    if (!branchId) {
+        document.getElementById('product_dropdown').innerHTML = '<div class="dropdown-item text-muted">Please select a branch first</div>';
+        return;
+    }
+    
+    fetch('<?= BASE_URL ?>ajax/get_products_for_branch.php?branch_id=' + encodeURIComponent(branchId))
+        .then(response => response.json())
+        .then(data => {
+            const dropdown = document.getElementById('product_dropdown');
+            if (data.success && data.products && data.products.length > 0) {
+                dropdown.innerHTML = '';
+                data.products.forEach(product => {
+                    const item = document.createElement('a');
+                    item.className = 'dropdown-item product-item';
+                    item.href = '#';
+                    item.setAttribute('data-id', product.id);
+                    item.setAttribute('data-name', product.display_name);
+                    item.setAttribute('data-stock', product.quantity_in_stock);
+                    item.innerHTML = `
+                        <strong>${escapeHtml(product.display_name)}</strong>
+                        <br>
+                        <small class="text-muted">
+                            ${escapeHtml(product.category_name)} | 
+                            Code: ${escapeHtml(product.product_code)} |
+                            Stock: ${product.quantity_in_stock}
+                        </small>
+                    `;
+                    dropdown.appendChild(item);
+                });
+            } else {
+                dropdown.innerHTML = '<div class="dropdown-item text-muted">No products available in this branch</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading products:', error);
+            document.getElementById('product_dropdown').innerHTML = '<div class="dropdown-item text-danger">Error loading products</div>';
+        });
+}
+
 function addItem() {
     // Reset modal fields
     document.getElementById('product_search').value = '';
@@ -298,6 +347,12 @@ function addItem() {
     document.getElementById('item_quantity').value = '1';
     document.getElementById('item_serial_numbers').value = '';
     document.getElementById('available_stock_text').textContent = '';
+    
+    // Ensure products are loaded for current branch
+    const currentBranchId = document.getElementById('from_branch_id').value;
+    if (currentBranchId) {
+        loadProductsForBranch(currentBranchId);
+    }
     
     const modal = new bootstrap.Modal(document.getElementById('addItemModal'));
     modal.show();

@@ -24,6 +24,9 @@ $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
+    // Store action type for SweetAlert display
+    $_SESSION['fiscal_action'] = $action;
+    
     if ($action === 'save_device') {
         $branchId = intval($_POST['branch_id']);
         $deviceId = intval($_POST['device_id']);
@@ -72,6 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (Exception $e) {
                 $db->rollbackTransaction();
                 $error = 'Error saving settings: ' . $e->getMessage();
+                $_SESSION['fiscal_error'] = $error;
             }
         }
     } elseif ($action === 'register_device') {
@@ -81,8 +85,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $fiscalService = new FiscalService($branchId);
             $result = $fiscalService->registerDevice();
             $success = 'Device registered successfully with ZIMRA!';
+            $_SESSION['fiscal_success'] = $success;
         } catch (Exception $e) {
             $error = 'Error registering device: ' . $e->getMessage();
+            $_SESSION['fiscal_error'] = $error;
         }
     } elseif ($action === 'sync_config') {
         $branchId = intval($_POST['branch_id']);
@@ -91,8 +97,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $fiscalService = new FiscalService($branchId);
             $result = $fiscalService->syncConfig();
             $success = 'Configuration synced successfully from ZIMRA!';
+            $_SESSION['fiscal_success'] = $success;
         } catch (Exception $e) {
             $error = 'Error syncing configuration: ' . $e->getMessage();
+            $_SESSION['fiscal_error'] = $error;
         }
     } elseif ($action === 'verify_taxpayer') {
         $deviceId = intval($_POST['device_id']);
@@ -103,9 +111,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $api = new ZimraApi('Server', 'v1', true);
             $result = $api->verifyTaxpayerInformation($deviceId, $activationKey, $deviceSerialNo);
             $success = 'Taxpayer information verified! Taxpayer: ' . $result['taxPayerName'];
+            $_SESSION['fiscal_success'] = $success;
             $_SESSION['verify_result'] = $result;
         } catch (Exception $e) {
             $error = 'Error verifying taxpayer: ' . $e->getMessage();
+            $_SESSION['fiscal_error'] = $error;
         }
     } elseif ($action === 'open_fiscal_day') {
         $branchId = intval($_POST['branch_id']);
@@ -125,26 +135,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Check if day is already open
             if ($fiscalDayStatus === 'FiscalDayOpened') {
                 $error = 'Fiscal day is already open (Day No: ' . ($fiscalDayNo ?? 'Unknown') . '). Please close it first before opening a new one.';
+                $_SESSION['fiscal_error'] = $error;
             }
             // Check if a previous close attempt failed (day is still considered "open" for receipt submission)
             elseif ($fiscalDayStatus === 'FiscalDayCloseFailed') {
                 $error = 'Fiscal day close previously failed (Day No: ' . ($fiscalDayNo ?? 'Unknown') . '). Please close the current fiscal day first before opening a new one.';
+                $_SESSION['fiscal_error'] = $error;
             }
             // Check if close is in progress
             elseif ($fiscalDayStatus === 'FiscalDayCloseInitiated') {
                 $error = 'Fiscal day close is in progress (Day No: ' . ($fiscalDayNo ?? 'Unknown') . '). Please wait for the close operation to complete before opening a new day.';
+                $_SESSION['fiscal_error'] = $error;
             }
             // Only allow opening if day is closed
             elseif ($fiscalDayStatus === 'FiscalDayClosed') {
                 $result = $fiscalService->openFiscalDay();
                 $success = 'Fiscal day opened successfully! Day No: ' . $result['fiscalDayNo'];
+                $_SESSION['fiscal_success'] = $success;
+                $_SESSION['fiscal_branch_id'] = $branchId; // Store for Check Status button
             }
             // Unknown status
             else {
                 $error = 'Unknown fiscal day status: ' . $fiscalDayStatus . '. Please check ZIMRA status and try again.';
+                $_SESSION['fiscal_error'] = $error;
             }
         } catch (Exception $e) {
             $error = 'Error opening fiscal day: ' . $e->getMessage();
+            $_SESSION['fiscal_error'] = $error;
         }
     } elseif ($action === 'close_fiscal_day') {
         $branchId = intval($_POST['branch_id']);
@@ -164,22 +181,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Check if day is closed
             if ($fiscalDayStatus === 'FiscalDayClosed') {
                 $error = 'Fiscal day is already closed (Last Day No: ' . ($fiscalDayNo ?? 'Unknown') . '). No action needed.';
+                $_SESSION['fiscal_error'] = $error;
             }
             // Check if close is already in progress
             elseif ($fiscalDayStatus === 'FiscalDayCloseInitiated') {
                 $error = 'Fiscal day close is already in progress (Day No: ' . ($fiscalDayNo ?? 'Unknown') . '). Please wait for the operation to complete.';
+                $_SESSION['fiscal_error'] = $error;
             }
             // Allow closing if day is open or if previous close failed (retry)
             elseif ($fiscalDayStatus === 'FiscalDayOpened' || $fiscalDayStatus === 'FiscalDayCloseFailed') {
                 $result = $fiscalService->closeFiscalDay();
                 $success = 'Fiscal day close initiated successfully! Operation ID: ' . ($result['operationID'] ?? 'N/A') . ' (Day No: ' . ($fiscalDayNo ?? 'Unknown') . ')';
+                $_SESSION['fiscal_success'] = $success;
+                $_SESSION['fiscal_branch_id'] = $branchId; // Store for Check Status button
             }
             // Unknown status
             else {
                 $error = 'Cannot close fiscal day. Status: ' . $fiscalDayStatus . '. Please check ZIMRA status and try again.';
+                $_SESSION['fiscal_error'] = $error;
             }
         } catch (Exception $e) {
             $error = 'Error closing fiscal day: ' . $e->getMessage();
+            $_SESSION['fiscal_error'] = $error;
         }
     } elseif ($action === 'get_status') {
         $branchId = intval($_POST['branch_id']);
@@ -188,13 +211,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $fiscalService = new FiscalService($branchId);
             $result = $fiscalService->getFiscalDayStatus();
             if ($result) {
-                $success = 'Fiscal day status: ' . $result['fiscalDayStatus'];
+                $statusText = '<strong>Status:</strong> ' . escapeHtml($result['fiscalDayStatus']);
+                if (isset($result['lastFiscalDayNo'])) {
+                    $statusText .= '<br><strong>Fiscal Day No:</strong> ' . escapeHtml($result['lastFiscalDayNo']);
+                }
+                if (isset($result['lastReceiptGlobalNo'])) {
+                    $statusText .= '<br><strong>Last Receipt Global No:</strong> ' . escapeHtml($result['lastReceiptGlobalNo']);
+                }
+                if (isset($result['fiscalDayClosingErrorCode']) && ($result['fiscalDayStatus'] ?? '') === 'FiscalDayCloseFailed') {
+                    $errorCode = $result['fiscalDayClosingErrorCode'];
+                    $errorDescriptions = [
+                        'BadCertificateSignature' => 'Bad certificate signature is used',
+                        'MissingReceipts' => 'There are missing receipts in fiscal day (Grey validation error)',
+                        'ReceiptsWithValidationErrors' => 'There are receipts with validation errors (Red validation error)',
+                        'CountersMismatch' => 'There are mismatches between counters'
+                    ];
+                    $errorDesc = $errorDescriptions[$errorCode] ?? 'Unknown error';
+                    $statusText .= '<br><br><strong style="color: #dc3545;">Error Code:</strong> ' . escapeHtml($errorCode);
+                    $statusText .= '<br><strong style="color: #dc3545;">Description:</strong> ' . escapeHtml($errorDesc);
+                    $statusText .= '<br><br><small><a href="' . BASE_URL . 'diagnose_fiscal_day_close.php?branch_id=' . $branchId . '" target="_blank" style="color: #0d6efd;">🔍 Diagnose Issue</a></small>';
+                }
+                $success = $statusText;
+                $_SESSION['fiscal_success'] = $success;
                 $_SESSION['status_result'] = $result;
             } else {
                 $error = 'Could not retrieve fiscal day status';
+                $_SESSION['fiscal_error'] = $error;
             }
         } catch (Exception $e) {
             $error = 'Error getting status: ' . $e->getMessage();
+            $_SESSION['fiscal_error'] = $error;
         }
     }
 }
@@ -261,18 +307,82 @@ require_once APP_PATH . '/includes/header.php';
     <h2>Fiscalization Settings (ZIMRA)</h2>
 </div>
 
-<?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show" role="alert">
-        <?= escapeHtml($success) ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-<?php endif; ?>
+<?php
+// Get messages from session for custom modal
+$fiscalAction = $_SESSION['fiscal_action'] ?? null;
+$fiscalSuccess = $_SESSION['fiscal_success'] ?? null;
+$fiscalError = $_SESSION['fiscal_error'] ?? null;
+$fiscalBranchId = $_SESSION['fiscal_branch_id'] ?? null;
 
-<?php if ($error): ?>
-    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        <?= escapeHtml($error) ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+// Clear session variables after reading
+$showModal = false;
+$modalType = '';
+$modalTitle = '';
+$modalMessage = '';
+$showCheckStatusBtn = false;
+
+if ($fiscalError) {
+    $showModal = true;
+    $modalType = 'error';
+    $modalTitle = 'Error';
+    $modalMessage = $fiscalError;
+    unset($_SESSION['fiscal_action']);
+    unset($_SESSION['fiscal_success']);
+    unset($_SESSION['fiscal_error']);
+    unset($_SESSION['fiscal_branch_id']);
+} elseif ($fiscalSuccess) {
+    $showModal = true;
+    $modalType = ($fiscalAction === 'get_status') ? 'info' : 'success';
+    $modalTitle = ($fiscalAction === 'get_status') ? 'Fiscal Day Status' : 'Success';
+    $modalMessage = $fiscalSuccess;
+    $showCheckStatusBtn = ($fiscalAction === 'open_fiscal_day' || $fiscalAction === 'close_fiscal_day');
+    unset($_SESSION['fiscal_action']);
+    unset($_SESSION['fiscal_success']);
+    unset($_SESSION['fiscal_error']);
+    unset($_SESSION['fiscal_branch_id']);
+}
+?>
+
+<?php if ($showModal): ?>
+<!-- Custom Alert Modal -->
+<div class="modal fade" id="fiscalAlertModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header <?= $modalType === 'error' ? 'bg-danger text-white' : ($modalType === 'info' ? 'bg-info text-white' : 'bg-success text-white') ?>">
+                <h5 class="modal-title">
+                    <?php if ($modalType === 'error'): ?>
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                    <?php elseif ($modalType === 'info'): ?>
+                        <i class="bi bi-info-circle-fill"></i>
+                    <?php else: ?>
+                        <i class="bi bi-check-circle-fill"></i>
+                    <?php endif; ?>
+                    <?= escapeHtml($modalTitle) ?>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="fiscal-alert-message">
+                    <?= $modalMessage ?>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <?php if ($showCheckStatusBtn): ?>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">OK</button>
+                    <form method="POST" style="display: inline;">
+                        <input type="hidden" name="action" value="get_status">
+                        <input type="hidden" name="branch_id" value="<?= intval($fiscalBranchId) ?>">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-info-circle"></i> Check Status
+                        </button>
+                    </form>
+                <?php else: ?>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
+                <?php endif; ?>
+            </div>
+        </div>
     </div>
+</div>
 <?php endif; ?>
 
 <?php if (isset($_SESSION['verify_result'])): ?>
@@ -288,19 +398,14 @@ require_once APP_PATH . '/includes/header.php';
     <?php unset($_SESSION['verify_result']); ?>
 <?php endif; ?>
 
-<?php if (isset($_SESSION['status_result'])): ?>
-    <div class="alert alert-info">
-        <h5>Fiscal Day Status:</h5>
-        <p><strong>Status:</strong> <?= escapeHtml($_SESSION['status_result']['fiscalDayStatus']) ?></p>
-        <?php if (isset($_SESSION['status_result']['lastFiscalDayNo'])): ?>
-            <p><strong>Fiscal Day No:</strong> <?= escapeHtml($_SESSION['status_result']['lastFiscalDayNo']) ?></p>
-        <?php endif; ?>
-        <?php if (isset($_SESSION['status_result']['lastReceiptGlobalNo'])): ?>
-            <p><strong>Last Receipt Global No:</strong> <?= escapeHtml($_SESSION['status_result']['lastReceiptGlobalNo']) ?></p>
-        <?php endif; ?>
-    </div>
-    <?php unset($_SESSION['status_result']); ?>
-<?php endif; ?>
+<?php
+// Status result is now shown in SweetAlert, but we keep it in session for the alert
+// The alert display is removed since it's shown in SweetAlert
+if (isset($_SESSION['status_result'])) {
+    // Status will be shown in SweetAlert, so we don't need the persistent alert
+    // But we keep the session variable for SweetAlert to use
+}
+?>
 
 <div class="card mb-4">
     <div class="card-header">
@@ -703,6 +808,20 @@ require_once APP_PATH . '/includes/header.php';
                                     <span class="badge bg-success">Open</span>
                                     <?php if ($actualFiscalDayStatus === 'FiscalDayCloseFailed'): ?>
                                         <br><small class="text-danger">Close Failed - Retry Close</small>
+                                        <?php if ($zimraStatus && isset($zimraStatus['fiscalDayClosingErrorCode'])): ?>
+                                            <?php
+                                            $errorCode = $zimraStatus['fiscalDayClosingErrorCode'];
+                                            $errorDescriptions = [
+                                                'BadCertificateSignature' => 'Bad certificate signature',
+                                                'MissingReceipts' => 'Missing receipts (Grey)',
+                                                'ReceiptsWithValidationErrors' => 'Receipts with errors (Red)',
+                                                'CountersMismatch' => 'Counter mismatch'
+                                            ];
+                                            $errorDesc = $errorDescriptions[$errorCode] ?? $errorCode;
+                                            ?>
+                                            <br><small class="text-danger"><strong>Error:</strong> <?= escapeHtml($errorDesc) ?></small>
+                                            <br><small><a href="<?= BASE_URL ?>diagnose_fiscal_day_close.php?branch_id=<?= $branch['id'] ?>" target="_blank" class="text-info">🔍 Diagnose Issue</a></small>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                     <?php if ($zimraStatus && isset($zimraStatus['lastFiscalDayNo'])): ?>
                                         <br><small class="text-muted">Day #<?= $zimraStatus['lastFiscalDayNo'] ?></small>
@@ -751,6 +870,9 @@ require_once APP_PATH . '/includes/header.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Define BASE_URL as a JavaScript constant to avoid escape sequence issues
+    const BASE_URL = <?= json_encode(BASE_URL) ?>;
+    
     const branchSelect = document.getElementById('branchSelect');
     const enableSwitch = document.getElementById('enableFiscalization');
     const deviceIdInput = document.getElementById('deviceIdInput');
@@ -787,7 +909,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const statusTableBody = document.getElementById('statusTableBody');
     
     function updateFiscalDayStatus() {
-        fetch('<?= APP_PATH ?>/ajax/get_fiscal_day_status.php')
+        fetch(BASE_URL + 'ajax/get_fiscal_day_status.php')
             .then(response => response.json())
             .then(data => {
                 if (data.success && data.statuses) {
@@ -810,6 +932,17 @@ document.addEventListener('DOMContentLoaded', function() {
                                     html = `<span class="badge bg-${badgeColor}">${badgeText}</span>`;
                                     if (status.fiscal_day_status === 'FiscalDayCloseFailed') {
                                         html += '<br><small class="text-danger">Close Failed - Retry Close</small>';
+                                        if (status.fiscal_day_closing_error_code) {
+                                            const errorDescriptions = {
+                                                'BadCertificateSignature': 'Bad certificate signature',
+                                                'MissingReceipts': 'Missing receipts (Grey)',
+                                                'ReceiptsWithValidationErrors': 'Receipts with errors (Red)',
+                                                'CountersMismatch': 'Counter mismatch'
+                                            };
+                                            const errorDesc = errorDescriptions[status.fiscal_day_closing_error_code] || status.fiscal_day_closing_error_code;
+                                            html += `<br><small class="text-danger"><strong>Error:</strong> ${errorDesc}</small>`;
+                                            html += `<br><small><a href="${BASE_URL}diagnose_fiscal_day_close.php?branch_id=${status.branch_id}" target="_blank" class="text-info">🔍 Diagnose Issue</a></small>`;
+                                        }
                                     }
                                     if (status.fiscal_day_no) {
                                         html += `<br><small class="text-muted">Day #${status.fiscal_day_no}</small>`;
@@ -869,6 +1002,16 @@ document.addEventListener('DOMContentLoaded', function() {
             clearInterval(statusCheckInterval);
         }
     });
+    
+    // Show custom modal if it exists
+    const fiscalModal = document.getElementById('fiscalAlertModal');
+    if (fiscalModal) {
+        const modal = new bootstrap.Modal(fiscalModal, {
+            backdrop: 'static',
+            keyboard: false
+        });
+        modal.show();
+    }
 });
 </script>
 

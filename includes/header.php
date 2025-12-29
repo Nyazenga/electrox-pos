@@ -87,7 +87,10 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                         <li><a href="<?= BASE_URL ?>modules/products/barcodes.php" class="<?= strpos($currentUri, '/modules/products/barcodes') !== false ? 'active' : '' ?>"><i class="bi bi-upc-scan"></i> <span>Product Barcodes</span></a></li>
                         <?php endif; ?>
                         <?php if ($auth->hasPermission('products.stock_take') && getSetting('allow_stock_take', '1') == '1'): ?>
-                        <li><a href="<?= BASE_URL ?>modules/products/stock_take.php" class="<?= strpos($currentUri, '/modules/products/stock_take') !== false ? 'active' : '' ?>"><i class="bi bi-clipboard-check"></i> <span>Stock Take</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/products/stock_take.php" class="<?= strpos($currentUri, '/modules/products/stock_take.php') !== false ? 'active' : '' ?>"><i class="bi bi-clipboard-check"></i> <span>Stock Take</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('products.stock_take_reports') && getSetting('allow_stock_take', '1') == '1'): ?>
+                        <li><a href="<?= BASE_URL ?>modules/products/stock_take_reports.php" class="<?= strpos($currentUri, '/modules/products/stock_take_reports') !== false ? 'active' : '' ?>"><i class="bi bi-file-earmark-text"></i> <span>Stock Take Reports</span></a></li>
                         <?php endif; ?>
                         <?php if ($auth->hasPermission('inventory.view')): ?>
                         <li><a href="<?= BASE_URL ?>modules/inventory/index.php" class="<?= strpos($currentUri, '/modules/inventory/index') !== false || (strpos($currentUri, '/modules/inventory/') !== false && strpos($currentUri, '/modules/inventory/grn') === false && strpos($currentUri, '/modules/inventory/transfers') === false) ? 'active' : '' ?>"><i class="bi bi-archive"></i> <span>Stock Levels</span></a></li>
@@ -123,6 +126,9 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                         <?php if ($auth->hasPermission('pos.customize')): ?>
                         <li><a href="<?= BASE_URL ?>modules/pos/customize.php" class="<?= strpos($currentUri, '/modules/pos/customize') !== false ? 'active' : '' ?>"><i class="bi bi-sliders"></i> <span>POS Customization</span></a></li>
                         <?php endif; ?>
+                        <?php if ($auth->hasPermission('pos.shift_management')): ?>
+                        <li><a href="<?= BASE_URL ?>modules/pos/shift_management.php" class="<?= strpos($currentUri, '/modules/pos/shift_management') !== false ? 'active' : '' ?>"><i class="bi bi-clock-history"></i> <span>Shift Management</span></a></li>
+                        <?php endif; ?>
                     </ul>
                 </li>
                 <?php endif; ?>
@@ -157,9 +163,7 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                         <li><a href="<?= BASE_URL ?>modules/invoicing/index.php" class="<?= strpos($currentUri, '/modules/invoicing/index') !== false || (strpos($currentUri, '/modules/invoicing/') !== false && strpos($currentUri, '/modules/invoicing/create') === false && strpos($currentUri, '/modules/invoicing/customize') === false) ? 'active' : '' ?>"><i class="bi bi-list-ul"></i> <span>All Invoices</span></a></li>
                         <?php endif; ?>
                         <?php if ($auth->hasPermission('invoicing.create')): ?>
-                        <li><a href="<?= BASE_URL ?>modules/invoicing/create.php?type=proforma" class="<?= strpos($currentUri, '/modules/invoicing/create') !== false && isset($_GET['type']) && $_GET['type'] === 'proforma' ? 'active' : '' ?>"><i class="bi bi-file-earmark-text"></i> <span>Proforma Invoice</span></a></li>
-                        <li><a href="<?= BASE_URL ?>modules/invoicing/create.php?type=tax" class="<?= strpos($currentUri, '/modules/invoicing/create') !== false && isset($_GET['type']) && $_GET['type'] === 'tax' ? 'active' : '' ?>"><i class="bi bi-receipt-cutoff"></i> <span>Tax Invoice</span></a></li>
-                        <li><a href="<?= BASE_URL ?>modules/invoicing/create.php?type=quote" class="<?= strpos($currentUri, '/modules/invoicing/create') !== false && isset($_GET['type']) && $_GET['type'] === 'quote' ? 'active' : '' ?>"><i class="bi bi-file-earmark-check"></i> <span>Quote</span></a></li>
+                        <li><a href="<?= BASE_URL ?>modules/invoicing/create.php?type=proforma" class="<?= strpos($currentUri, '/modules/invoicing/create') !== false ? 'active' : '' ?>"><i class="bi bi-file-earmark-text"></i> <span>Proforma Invoice</span></a></li>
                         <?php endif; ?>
                         <?php if ($auth->hasPermission('invoicing.customize')): ?>
                         <li><a href="<?= BASE_URL ?>modules/invoicing/customize.php" class="<?= strpos($currentUri, '/modules/invoicing/customize') !== false ? 'active' : '' ?>"><i class="bi bi-sliders"></i> <span>Customize</span></a></li>

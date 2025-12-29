@@ -7,22 +7,40 @@ require_once APP_PATH . '/includes/settings_functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
-// This page matches sidebar invoice creation menu items
-$auth->requirePermission('invoicing.create');
+$auth->requirePermission('invoicing.edit');
 
-$invoiceType = 'proforma'; // Only Proforma invoices are allowed
-$invoiceTypeEnum = 'Proforma';
-
-$pageTitle = ucfirst($invoiceType) . ' Invoice';
+$invoiceId = intval($_GET['id'] ?? 0);
+if (!$invoiceId) {
+    redirectTo('modules/invoicing/index.php');
+}
 
 $db = Database::getInstance();
 $branchId = $_SESSION['branch_id'] ?? null;
+
+// Get invoice
+$invoice = $db->getRow("SELECT * FROM invoices WHERE id = :id AND invoice_type = 'Proforma'", [':id' => $invoiceId]);
+
+if (!$invoice) {
+    redirectTo('modules/invoicing/index.php');
+}
+
+// Only allow editing of PENDING and OVERDUE invoices
+if ($invoice['status'] === 'Paid') {
+    $_SESSION['error_message'] = 'Paid invoices cannot be edited.';
+    redirectTo('modules/invoicing/index.php');
+}
+
+// Get invoice items
+$invoiceItems = $db->getRows("SELECT * FROM invoice_items WHERE invoice_id = :id ORDER BY id", [':id' => $invoiceId]);
+if ($invoiceItems === false) {
+    $invoiceItems = [];
+}
 
 // Get data
 $customers = $db->getRows("SELECT * FROM customers WHERE status = 'Active' ORDER BY first_name, last_name");
 if ($customers === false) $customers = [];
 
-// Get products - handle both General category (product_name) and others (brand/model)
+// Get products
 $products = $db->getRows("SELECT p.*, 
                          COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
                          pc.name as category_name,
@@ -37,7 +55,7 @@ if ($products === false) $products = [];
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
 if ($branches === false) $branches = [];
 
-// Get applicable taxes from fiscal_config for tax per product
+// Get applicable taxes from fiscal_config
 $applicableTaxes = [];
 $primaryDb = Database::getPrimaryInstance();
 if ($branchId) {
@@ -95,6 +113,8 @@ foreach ($products as &$product) {
 }
 unset($product);
 
+$pageTitle = 'Edit Proforma Invoice';
+
 require_once APP_PATH . '/includes/header.php';
 ?>
 
@@ -145,13 +165,14 @@ require_once APP_PATH . '/includes/header.php';
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><?= ucfirst($invoiceType) ?> Invoice</h2>
+    <h2>Edit Proforma Invoice #<?= escapeHtml($invoice['invoice_number']) ?></h2>
     <a href="index.php" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
 </div>
 
 <div class="invoice-form-container">
     <form id="invoiceForm" method="POST">
-        <input type="hidden" name="invoice_type" value="<?= $invoiceTypeEnum ?>">
+        <input type="hidden" name="invoice_id" value="<?= $invoiceId ?>">
+        <input type="hidden" name="invoice_type" value="Proforma">
         
         <div class="row mb-4">
             <div class="col-md-6">
@@ -164,8 +185,9 @@ require_once APP_PATH . '/includes/header.php';
                                id="customerSearch" 
                                placeholder="Type to search customers..."
                                autocomplete="off"
+                               value="<?= $invoice['customer_id'] ? escapeHtml(trim(($invoice['first_name'] ?? '') . ' ' . ($invoice['last_name'] ?? ''))) : 'Walk-in Customer' ?>"
                                required>
-                        <input type="hidden" name="customer_id" id="customerId">
+                        <input type="hidden" name="customer_id" id="customerId" value="<?= $invoice['customer_id'] ?? '' ?>">
                         <div class="dropdown-menu position-absolute w-100 customer-search-dropdown" id="customerDropdown" style="display: none;">
                             <a class="dropdown-item customer-item" href="#" data-id="" data-text="Walk-in Customer">
                                 Walk-in Customer
@@ -187,7 +209,7 @@ require_once APP_PATH . '/includes/header.php';
                     <select name="branch_id" class="form-select">
                         <option value="">Select Branch</option>
                         <?php foreach ($branches as $branch): ?>
-                            <option value="<?= $branch['id'] ?>" <?= $branchId == $branch['id'] ? 'selected' : '' ?>>
+                            <option value="<?= $branch['id'] ?>" <?= $invoice['branch_id'] == $branch['id'] ? 'selected' : '' ?>>
                                 <?= escapeHtml($branch['branch_name']) ?>
                             </option>
                         <?php endforeach; ?>
@@ -199,7 +221,7 @@ require_once APP_PATH . '/includes/header.php';
                 <h5 class="mb-3">Invoice Details</h5>
                 <div class="mb-3">
                     <label class="form-label">Invoice Date *</label>
-                    <input type="date" name="invoice_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                    <input type="date" name="invoice_date" class="form-control" value="<?= date('Y-m-d', strtotime($invoice['invoice_date'])) ?>" required>
                 </div>
                 
                 <div class="mb-3">
@@ -208,7 +230,7 @@ require_once APP_PATH . '/includes/header.php';
                            name="due_date" 
                            id="dueDate" 
                            class="form-control" 
-                           value="<?= date('Y-m-d') ?>"
+                           value="<?= $invoice['due_date'] ? date('Y-m-d', strtotime($invoice['due_date'])) : date('Y-m-d', strtotime('+30 days')) ?>"
                            min="<?= date('Y-m-d') ?>"
                            required>
                     <small class="text-muted">Due date cannot be earlier than today</small>
@@ -216,7 +238,7 @@ require_once APP_PATH . '/includes/header.php';
                 
                 <div class="mb-3">
                     <label class="form-label">Notes</label>
-                    <textarea name="notes" class="form-control" rows="3" placeholder="Additional notes..."></textarea>
+                    <textarea name="notes" class="form-control" rows="3" placeholder="Additional notes..."><?= escapeHtml($invoice['notes'] ?? '') ?></textarea>
                 </div>
             </div>
         </div>
@@ -235,7 +257,6 @@ require_once APP_PATH . '/includes/header.php';
                            autocomplete="off">
                     <div class="dropdown-menu position-absolute w-100 product-search-dropdown" id="productDropdown" style="display: none;">
                         <?php foreach ($products as $product): 
-                            // Use display_name which handles both General (product_name) and others (brand + model)
                             $productDisplayName = $product['display_name'] ?? ($product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')));
                             if (empty($productDisplayName)) {
                                 $productDisplayName = 'Product #' . $product['id'];
@@ -278,7 +299,7 @@ require_once APP_PATH . '/includes/header.php';
                            min="0" 
                            max="100" 
                            placeholder="0.00"
-                           value="">
+                           value="<?= $invoice['subtotal'] > 0 ? number_format(($invoice['discount_amount'] / $invoice['subtotal']) * 100, 2) : '0' ?>">
                     <span class="input-group-text">%</span>
                     <button type="button" 
                             class="btn btn-sm btn-primary" 
@@ -312,7 +333,7 @@ require_once APP_PATH . '/includes/header.php';
             <div class="col-md-8">
                 <div class="mb-3">
                     <label class="form-label">Terms & Conditions</label>
-                    <textarea name="terms" class="form-control" rows="4" placeholder="Payment terms, delivery terms, etc..."><?= getSetting('invoice_default_terms', '') ?></textarea>
+                    <textarea name="terms" class="form-control" rows="4" placeholder="Payment terms, delivery terms, etc..."><?= escapeHtml($invoice['terms'] ?? getSetting('invoice_default_terms', '')) ?></textarea>
                 </div>
             </div>
             <div class="col-md-4">
@@ -339,8 +360,8 @@ require_once APP_PATH . '/includes/header.php';
         </div>
         
         <div class="mt-4 d-flex gap-2">
-            <button type="submit" id="saveInvoiceBtn" class="btn btn-primary btn-lg" disabled>
-                <i class="bi bi-save"></i> Save Invoice
+            <button type="submit" id="saveInvoiceBtn" class="btn btn-primary btn-lg">
+                <i class="bi bi-save"></i> Update Invoice
             </button>
             <button type="button" class="btn btn-secondary btn-lg" onclick="window.location.href='index.php'">
                 Cancel
@@ -353,11 +374,47 @@ require_once APP_PATH . '/includes/header.php';
 let invoiceItems = [];
 let itemCounter = 0;
 
-// Initialize: Disable save button on page load
+// Load existing invoice items
+<?php foreach ($invoiceItems as $item): 
+    $product = null;
+    if ($item['product_id']) {
+        foreach ($products as $p) {
+            if ($p['id'] == $item['product_id']) {
+                $product = $p;
+                break;
+            }
+        }
+    }
+    $productName = $product ? ($product['display_name'] ?? ($product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')))) : ($item['description'] ?? 'Manual Item');
+    $taxPercent = $product ? ($product['tax_percent'] ?? 0) : 0;
+    $taxId = $product ? ($product['tax_id'] ?? null) : null;
+?>
+invoiceItems.push({
+    id: itemCounter++,
+    product_id: <?= $item['product_id'] ?: 'null' ?>,
+    description: <?= json_encode($productName) ?>,
+    quantity: <?= floatval($item['quantity']) ?>,
+    unit_price: <?= floatval($item['unit_price']) ?>,
+    stock: <?= $product ? intval($product['quantity_in_stock']) : 0 ?>,
+    tax_percent: <?= $taxPercent ?>,
+    tax_id: <?= $taxId ? json_encode($taxId) : 'null' ?>
+});
+<?php endforeach; ?>
+
+// Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
-    const saveBtn = document.getElementById('saveInvoiceBtn');
-    if (saveBtn) {
-        saveBtn.disabled = true;
+    renderItems();
+    
+    const dueDateInput = document.getElementById('dueDate');
+    const serverToday = '<?= date('Y-m-d') ?>';
+    if (dueDateInput) {
+        dueDateInput.setAttribute('min', serverToday);
+        dueDateInput.addEventListener('change', function() {
+            if (this.value < serverToday) {
+                Swal.fire('Error', 'Due date cannot be earlier than today\'s date', 'error');
+                this.value = serverToday;
+            }
+        });
     }
 });
 
@@ -441,7 +498,6 @@ function addProductItem(product) {
         description: product.description || '',
         quantity: 1,
         unit_price: product.unit_price || 0,
-        discount_percentage: 0,
         stock: product.stock || 0,
         tax_percent: product.tax_percent || 0,
         tax_id: product.tax_id || null
@@ -512,11 +568,11 @@ function renderItems() {
     const tbody = document.getElementById('invoiceItemsBody');
     tbody.innerHTML = '';
     
-    // Get global discount percentage
-    const globalDiscountPercent = parseFloat(document.getElementById('applyDiscountAll').value) || 0;
-    
     // Check if prices include tax (same as POS)
     const pricesIncludeTax = <?= (getSetting('prices_include_tax', '1') == '1') ? 'true' : 'false' ?>;
+    
+    // Get global discount percentage
+    const globalDiscountPercent = parseFloat(document.getElementById('applyDiscountAll').value) || 0;
     
     invoiceItems.forEach(item => {
         const lineSubtotal = item.quantity * item.unit_price; // This is WITH tax if pricesIncludeTax (original price)
@@ -590,7 +646,6 @@ function renderItems() {
         tbody.innerHTML += row;
     });
     
-    // Enable/disable save button based on items
     const saveBtn = document.getElementById('saveInvoiceBtn');
     if (saveBtn) {
         saveBtn.disabled = invoiceItems.length === 0;
@@ -680,88 +735,6 @@ function calculateTotals() {
     document.getElementById('invoiceTotal').textContent = '$' + total.toFixed(2);
 }
 
-// Validate due date
-function validateDueDate() {
-    const dueDateInput = document.getElementById('dueDate') || document.getElementById('validUntilDate');
-    if (!dueDateInput) return true;
-    
-    const selectedDate = new Date(dueDateInput.value);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    selectedDate.setHours(0, 0, 0, 0);
-    
-    if (selectedDate < today) {
-        Swal.fire('Error', 'Due date cannot be earlier than today\'s date', 'error');
-        dueDateInput.focus();
-        return false;
-    }
-    
-    return true;
-}
-
-// Add validation on date change and prevent past date selection
-document.addEventListener('DOMContentLoaded', function() {
-    const dueDateInput = document.getElementById('dueDate');
-    const validUntilInput = document.getElementById('validUntilDate');
-    
-    // Use server timezone to match PHP (avoid UTC timezone issues)
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const today = `${year}-${month}-${day}`;
-    
-    // Set min attribute to today (enforces in date picker) - use server value from PHP
-    const serverToday = '<?= date('Y-m-d') ?>';
-    const minDate = serverToday; // Use PHP's date to match server timezone
-    
-    if (dueDateInput) {
-        // Ensure min is set to today
-        dueDateInput.setAttribute('min', minDate);
-        
-        // If current value is less than today, set it to today
-        if (dueDateInput.value && dueDateInput.value < minDate) {
-            dueDateInput.value = minDate;
-        }
-        
-        dueDateInput.addEventListener('change', function() {
-            if (this.value < minDate) {
-                Swal.fire('Error', 'Due date cannot be earlier than today\'s date', 'error');
-                this.value = minDate;
-            }
-        });
-        // Also prevent manual input of past dates
-        dueDateInput.addEventListener('input', function() {
-            if (this.value < minDate) {
-                this.value = minDate;
-            }
-        });
-    }
-    
-    if (validUntilInput) {
-        // Ensure min is set to today
-        validUntilInput.setAttribute('min', minDate);
-        
-        // If current value is less than today, set it to today
-        if (validUntilInput.value && validUntilInput.value < minDate) {
-            validUntilInput.value = minDate;
-        }
-        
-        validUntilInput.addEventListener('change', function() {
-            if (this.value < minDate) {
-                Swal.fire('Error', 'Valid until date cannot be earlier than today\'s date', 'error');
-                this.value = minDate;
-            }
-        });
-        // Also prevent manual input of past dates
-        validUntilInput.addEventListener('input', function() {
-            if (this.value < minDate) {
-                this.value = minDate;
-            }
-        });
-    }
-});
-
 // Form submission
 document.getElementById('invoiceForm').addEventListener('submit', function(e) {
     e.preventDefault();
@@ -771,19 +744,15 @@ document.getElementById('invoiceForm').addEventListener('submit', function(e) {
         return;
     }
     
-    // Validate due date
-    if (!validateDueDate()) {
-        return;
-    }
-    
-    // Double check button is enabled (shouldn't be needed but safety check)
-    const saveBtn = document.getElementById('saveInvoiceBtn');
-    if (saveBtn && saveBtn.disabled) {
+    const dueDateInput = document.getElementById('dueDate');
+    if (dueDateInput && dueDateInput.value < '<?= date('Y-m-d') ?>') {
+        Swal.fire('Error', 'Due date cannot be earlier than today\'s date', 'error');
         return;
     }
     
     const formData = new FormData(this);
     const data = {
+        invoice_id: parseInt(formData.get('invoice_id')),
         invoice_type: formData.get('invoice_type'),
         customer_id: formData.get('customer_id') || null,
         branch_id: formData.get('branch_id') || null,
@@ -906,12 +875,12 @@ document.getElementById('invoiceForm').addEventListener('submit', function(e) {
     data.total_amount = total;
     
     Swal.fire({
-        title: 'Saving Invoice...',
+        title: 'Updating Invoice...',
         allowOutsideClick: false,
         didOpen: () => Swal.showLoading()
     });
     
-    fetch('<?= BASE_URL ?>ajax/create_invoice.php', {
+    fetch('<?= BASE_URL ?>ajax/update_invoice.php', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(data),
@@ -928,16 +897,16 @@ document.getElementById('invoiceForm').addEventListener('submit', function(e) {
     })
     .then(result => {
         if (result.success) {
-            Swal.fire('Success', 'Invoice created successfully', 'success').then(() => {
-                window.location.href = 'print.php?id=' + result.invoice_id;
+            Swal.fire('Success', 'Invoice updated successfully', 'success').then(() => {
+                window.location.href = 'index.php';
             });
         } else {
-            Swal.fire('Error', result.message || 'Failed to create invoice', 'error');
+            Swal.fire('Error', result.message || 'Failed to update invoice', 'error');
         }
     })
     .catch(error => {
-        console.error('Invoice creation error:', error);
-        Swal.fire('Error', 'Failed to create invoice: ' + error.message, 'error');
+        console.error('Invoice update error:', error);
+        Swal.fire('Error', 'Failed to update invoice: ' + error.message, 'error');
     });
 });
 </script>

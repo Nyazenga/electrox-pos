@@ -26,8 +26,11 @@ $search = $_GET['search'] ?? '';
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
 if ($branches === false) $branches = [];
 
-// Build query
-$whereConditions = ["DATE(i.invoice_date) BETWEEN :start_date AND :end_date"];
+// Build query - Only show Proforma invoices
+$whereConditions = [
+    "DATE(i.invoice_date) BETWEEN :start_date AND :end_date",
+    "i.invoice_type = 'Proforma'"
+];
 $params = [':start_date' => $startDate, ':end_date' => $endDate];
 
 if ($selectedBranch !== 'all' && $selectedBranch) {
@@ -36,11 +39,6 @@ if ($selectedBranch !== 'all' && $selectedBranch) {
 } elseif ($branchId !== null) {
     $whereConditions[] = "i.branch_id = :branch_id";
     $params[':branch_id'] = $branchId;
-}
-
-if ($invoiceType !== 'all') {
-    $whereConditions[] = "i.invoice_type = :type";
-    $params[':type'] = $invoiceType;
 }
 
 if ($status !== 'all') {
@@ -59,7 +57,12 @@ if ($search) {
 
 $whereClause = implode(' AND ', $whereConditions);
 
-$invoices = $db->getRows("SELECT i.*, c.first_name, c.last_name, b.branch_name 
+$invoices = $db->getRows("SELECT i.*, c.first_name, c.last_name, b.branch_name,
+    CASE 
+        WHEN i.status = 'Paid' THEN 'Paid'
+        WHEN i.due_date IS NOT NULL AND DATE(i.due_date) < CURDATE() THEN 'Overdue'
+        ELSE 'Pending'
+    END as calculated_status
     FROM invoices i 
     LEFT JOIN customers c ON i.customer_id = c.id 
     LEFT JOIN branches b ON i.branch_id = b.id 
@@ -69,27 +72,54 @@ $invoices = $db->getRows("SELECT i.*, c.first_name, c.last_name, b.branch_name
 
 if ($invoices === false) $invoices = [];
 
+// Update status based on due_date for non-paid invoices
+foreach ($invoices as &$invoice) {
+    if ($invoice['status'] !== 'Paid' && !empty($invoice['due_date'])) {
+        $dueDate = new DateTime($invoice['due_date']);
+        $today = new DateTime();
+        $today->setTime(0, 0, 0);
+        $dueDate->setTime(0, 0, 0);
+        
+        if ($dueDate < $today) {
+            // Update status to Overdue in database if not already
+            if ($invoice['status'] !== 'Overdue') {
+                $db->update('invoices', ['status' => 'Overdue'], ['id' => $invoice['id']]);
+            }
+            $invoice['status'] = 'Overdue';
+        } else {
+            // Update status to Pending if not already
+            if ($invoice['status'] !== 'Pending' && $invoice['status'] !== 'Overdue') {
+                $db->update('invoices', ['status' => 'Pending'], ['id' => $invoice['id']]);
+            }
+            if ($invoice['status'] !== 'Overdue') {
+                $invoice['status'] = 'Pending';
+            }
+        }
+    } elseif ($invoice['status'] !== 'Paid' && empty($invoice['due_date'])) {
+        // No due date, set to Pending
+        if ($invoice['status'] !== 'Pending') {
+            $db->update('invoices', ['status' => 'Pending'], ['id' => $invoice['id']]);
+        }
+        $invoice['status'] = 'Pending';
+    }
+}
+unset($invoice);
+
 require_once APP_PATH . '/includes/header.php';
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Invoices</h2>
+    <h2>Proforma Invoices</h2>
     <div class="d-flex gap-2 align-items-center">
-        <select id="invoiceTypeSelect" class="form-select" style="width: auto;">
-            <option value="proforma">Proforma Invoice</option>
-            <option value="tax">Tax Invoice</option>
-            <option value="quote">Quote</option>
-        </select>
         <button type="button" class="btn btn-primary" onclick="createInvoice()">
-            <i class="bi bi-plus-circle"></i> Create Invoice
+            <i class="bi bi-plus-circle"></i> Create Proforma Invoice
         </button>
     </div>
 </div>
 
 <script>
 function createInvoice() {
-    const type = document.getElementById('invoiceTypeSelect').value;
-    window.location.href = 'create.php?type=' + type;
+    window.location.href = 'create.php?type=proforma';
 }
 </script>
 
@@ -119,20 +149,10 @@ function createInvoice() {
             </div>
             <?php endif; ?>
             <div class="col-md-2">
-                <label class="form-label">Type</label>
-                <select name="type" class="form-select">
-                    <option value="all" <?= $invoiceType === 'all' ? 'selected' : '' ?>>All Types</option>
-                    <option value="Proforma" <?= $invoiceType === 'Proforma' ? 'selected' : '' ?>>Proforma Invoice</option>
-                    <option value="TaxInvoice" <?= $invoiceType === 'TaxInvoice' ? 'selected' : '' ?>>Tax Invoice</option>
-                    <option value="Quote" <?= $invoiceType === 'Quote' ? 'selected' : '' ?>>Quote</option>
-                </select>
-            </div>
-            <div class="col-md-2">
                 <label class="form-label">Status</label>
                 <select name="status" class="form-select">
                     <option value="all" <?= $status === 'all' ? 'selected' : '' ?>>All Status</option>
-                    <option value="Draft" <?= $status === 'Draft' ? 'selected' : '' ?>>Draft</option>
-                    <option value="Sent" <?= $status === 'Sent' ? 'selected' : '' ?>>Sent</option>
+                    <option value="Pending" <?= $status === 'Pending' ? 'selected' : '' ?>>Pending</option>
                     <option value="Paid" <?= $status === 'Paid' ? 'selected' : '' ?>>Paid</option>
                     <option value="Overdue" <?= $status === 'Overdue' ? 'selected' : '' ?>>Overdue</option>
                 </select>
@@ -177,11 +197,8 @@ function createInvoice() {
                             <?php
                             $statusColors = [
                                 'Paid' => 'success',
-                                'Sent' => 'primary',
-                                'Draft' => 'secondary',
-                                'Overdue' => 'danger',
-                                'Void' => 'dark',
-                                'Viewed' => 'info'
+                                'Pending' => 'warning',
+                                'Overdue' => 'danger'
                             ];
                             $color = $statusColors[$invoice['status']] ?? 'secondary';
                             ?>
@@ -189,11 +206,16 @@ function createInvoice() {
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm">
-                                <a href="print.php?id=<?= $invoice['id'] ?>" class="btn btn-primary" title="View/Print"><i class="bi bi-printer"></i> View/Print</a>
-                                <?php if ($auth->hasPermission('invoicing.change_status')): ?>
-                                <button type="button" class="btn btn-warning" onclick='window.showStatusModal(<?= $invoice['id'] ?>, <?= json_encode($invoice['status'] ?? '') ?>, <?= json_encode($invoice['invoice_number'] ?? '') ?>)' title="Change Status">
-                                    <i class="bi bi-pencil"></i> Status
-                                </button>
+                                <a href="print.php?id=<?= $invoice['id'] ?>" class="btn btn-primary" title="View/Print"><i class="bi bi-printer"></i> View</a>
+                                <?php if ($invoice['status'] !== 'Paid'): ?>
+                                    <?php if ($auth->hasPermission('invoicing.edit')): ?>
+                                    <a href="edit.php?id=<?= $invoice['id'] ?>" class="btn btn-warning" title="Edit Invoice"><i class="bi bi-pencil"></i> Edit</a>
+                                    <?php endif; ?>
+                                    <?php if ($auth->hasPermission('invoicing.create') || $auth->hasPermission('pos.create_sale')): ?>
+                                    <button type="button" class="btn btn-success" onclick="convertToSale(<?= $invoice['id'] ?>)" title="Convert to Sale">
+                                        <i class="bi bi-cart-check"></i> Convert to Sale
+                                    </button>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             </div>
                         </td>
@@ -205,136 +227,22 @@ function createInvoice() {
 </div>
 
 
-<!-- Status Change Modal -->
-<div class="modal fade" id="statusModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Change Invoice Status</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p><strong>Invoice:</strong> <span id="statusInvoiceNumber"></span></p>
-                <p><strong>Current Status:</strong> <span id="statusCurrentStatus"></span></p>
-                <div class="mb-3">
-                    <label class="form-label">New Status</label>
-                    <select id="newStatusSelect" class="form-select">
-                        <option value="Draft">Draft</option>
-                        <option value="Sent">Sent</option>
-                        <option value="Viewed">Viewed</option>
-                        <option value="Paid">Paid</option>
-                        <option value="Overdue">Overdue</option>
-                        <option value="Void">Void</option>
-                    </select>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="window.updateInvoiceStatus()">Update Status</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <script>
-const BASE_URL_INVOICE = <?= json_encode(BASE_URL) ?>;
-let currentInvoiceId = null;
-
-window.showStatusModal = function(invoiceId, currentStatus, invoiceNumber) {
-    currentInvoiceId = invoiceId;
-    const invoiceNumberEl = document.getElementById('statusInvoiceNumber');
-    const currentStatusEl = document.getElementById('statusCurrentStatus');
-    const statusSelect = document.getElementById('newStatusSelect');
-    const modalEl = document.getElementById('statusModal');
-    
-    if (invoiceNumberEl) invoiceNumberEl.textContent = invoiceNumber;
-    if (currentStatusEl) currentStatusEl.textContent = currentStatus;
-    if (statusSelect) statusSelect.value = currentStatus;
-    
-    if (modalEl) {
-        const modal = new bootstrap.Modal(modalEl);
-        modal.show();
-    }
-};
-
-window.updateInvoiceStatus = function() {
-    if (!currentInvoiceId) return;
-    
-    const statusSelect = document.getElementById('newStatusSelect');
-    if (!statusSelect) return;
-    
-    const newStatus = statusSelect.value;
-    
-    fetch(BASE_URL_INVOICE + 'ajax/update_invoice_status.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            invoice_id: currentInvoiceId,
-            status: newStatus
-        })
-    })
-    .then(async response => {
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            const text = await response.text();
-            console.error('Non-JSON response:', text);
-            throw new Error('Server returned invalid response. Please check the console for details.');
+function convertToSale(invoiceId) {
+    Swal.fire({
+        title: 'Convert to Sale?',
+        html: 'This will convert the proforma invoice to a sale and redirect you to the payment page.<br><br>You will be able to process payment, deduct stock, and fiscalize the transaction.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Convert to Sale',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#28a745'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.location.href = '<?= BASE_URL ?>modules/invoicing/convert_to_sale.php?id=' + invoiceId;
         }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            let message = data.message || 'Invoice status updated successfully';
-            let showReceiptLink = false;
-            let receiptNumber = data.receipt_number || null;
-            let saleId = data.sale_id || null;
-            
-            // If status was changed to Paid and a receipt was created
-            if (newStatus === 'Paid' && receiptNumber && saleId) {
-                showReceiptLink = true;
-            }
-            
-            if (showReceiptLink) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Invoice Paid!',
-                    html: message + '<br><br><a href="<?= BASE_URL ?>modules/pos/manage.php?id=' + saleId + '" target="_blank" style="color: #1e3a8a; text-decoration: underline;">View Receipt #' + receiptNumber + ' in Manage Sales</a>',
-                    confirmButtonColor: '#1e3a8a',
-                    confirmButtonText: 'OK'
-                }).then(() => {
-                    location.reload();
-                });
-            } else {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: message,
-                    confirmButtonColor: '#1e3a8a'
-                }).then(() => {
-                    location.reload();
-                });
-            }
-        } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error!',
-                text: data.message || 'Failed to update invoice status',
-                confirmButtonColor: '#d33'
-            });
-        }
-    })
-    .catch(error => {
-        console.error('Status update error:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Error!',
-            text: error.message || 'An error occurred while updating the status',
-            confirmButtonColor: '#d33'
-        });
     });
-};
+}
 </script>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>

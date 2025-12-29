@@ -689,7 +689,11 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             
             // CRITICAL: Round to exactly 2 decimal places for ZIMRA decimal(21,2) requirement
             $unitPrice = round($unitPrice, 2);
-            $totalPrice = round($totalPrice, 2);
+            $quantity = floatval($item['quantity']);
+            
+            // CRITICAL: receiptLineTotal MUST equal receiptLinePrice * receiptLineQuantity
+            // Calculate total from rounded unit price and quantity to ensure exact match
+            $receiptLineTotal = round($unitPrice * $quantity, 2);
             
             // Build receipt line - for exempt taxes (taxCode='E'), don't include taxPercent field
             // Documentation: "In case of exempt, field will not be provided" (receiptLine)
@@ -698,12 +702,15 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
                 'receiptLineNo' => $lineNo++,
                 'receiptLineHSCode' => '00000000',
                 'receiptLineName' => $item['product_name'] ?? 'Item',
-                'receiptLinePrice' => round($unitPrice, 2), // Rounded to 2 decimal places for ZIMRA decimal(21,2)
-                'receiptLineQuantity' => floatval($item['quantity']),
-                'receiptLineTotal' => round($totalPrice, 2), // Rounded to 2 decimal places for ZIMRA decimal(21,2)
+                'receiptLinePrice' => $unitPrice, // Already rounded to 2 decimal places
+                'receiptLineQuantity' => $quantity,
+                'receiptLineTotal' => $receiptLineTotal, // Calculated as receiptLinePrice * receiptLineQuantity
                 'taxID' => $taxId, // Exact from ZIMRA
                 'taxCode' => $taxCode // Exact from ZIMRA
             ];
+            
+            // Log for debugging
+            writeFiscalLog("FISCALIZE SALE: Item '{$item['product_name']}' - unitPrice: $unitPrice, quantity: $quantity, total: $receiptLineTotal (unitPrice * quantity = " . ($unitPrice * $quantity) . ")");
             // Only include taxPercent if it's not exempt (taxCode='E' means exempt - must not include taxPercent)
             // Even if ZIMRA returns taxPercent=0 for exempt, we must NOT include it per documentation
             if ($taxCode !== 'E' && $taxPercent !== null) {
@@ -2081,20 +2088,23 @@ function fiscalizeCreditNote($refundId, $branchId, $db = null) {
             
             // CRITICAL: Round to exactly 2 decimal places for ZIMRA decimal(21,2) requirement
             $unitPrice = round($unitPrice, 2);
-            $totalPrice = round($totalPrice, 2);
+            $quantity = floatval($refundQuantity);
             
             // Credit note amounts are negative
             $unitPrice = -abs($unitPrice);
-            $totalPrice = -abs($totalPrice);
+            
+            // CRITICAL: receiptLineTotal MUST equal receiptLinePrice * receiptLineQuantity
+            // Calculate total from rounded unit price and quantity to ensure exact match
+            $receiptLineTotal = round($unitPrice * $quantity, 2);
             
             $receiptLine = [
                 'receiptLineType' => 'Sale',
                 'receiptLineNo' => $lineNo++,
                 'receiptLineHSCode' => '00000000',
                 'receiptLineName' => $item['product_name'] ?? 'Item',
-                'receiptLinePrice' => round($unitPrice, 2), // Rounded to 2 decimal places for ZIMRA decimal(21,2)
-                'receiptLineQuantity' => floatval($refundQuantity),
-                'receiptLineTotal' => round($totalPrice, 2), // Rounded to 2 decimal places for ZIMRA decimal(21,2)
+                'receiptLinePrice' => $unitPrice, // Already rounded to 2 decimal places
+                'receiptLineQuantity' => $quantity,
+                'receiptLineTotal' => $receiptLineTotal, // Calculated as receiptLinePrice * receiptLineQuantity
                 'taxID' => $taxId,
                 'taxCode' => $taxCode
             ];

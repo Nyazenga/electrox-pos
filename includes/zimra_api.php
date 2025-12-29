@@ -293,16 +293,25 @@ class ZimraApi {
     /**
      * 4.10. closeDay
      * Device endpoint: POST /Device/v1/{deviceID}/CloseDay
+     * Note: Tested - direct fields work (like Python), wrapper does NOT work
      */
     public function closeDay($deviceID, $fiscalDayNo, $fiscalDayCounters, $fiscalDayDeviceSignature, $receiptCounter) {
         $endpoint = '/Device/v1/' . intval($deviceID) . '/CloseDay';
         
-        return $this->makeRequest($endpoint, 'POST', [
+        // TESTED: Direct fields work (HTTP 200), wrapper fails (HTTP 400)
+        // Match Python implementation exactly - send fields directly
+        $requestBody = [
+            'deviceID' => intval($deviceID),  // Python includes this in payload
             'fiscalDayNo' => intval($fiscalDayNo),
             'fiscalDayCounters' => $fiscalDayCounters,
-            'fiscalDayDeviceSignature' => $fiscalDayDeviceSignature,
+            'fiscalDayDeviceSignature' => [
+                'hash' => $fiscalDayDeviceSignature['hash'] ?? '',
+                'signature' => $fiscalDayDeviceSignature['signature'] ?? ''
+            ],
             'receiptCounter' => intval($receiptCounter)
-        ], true);
+        ];
+        
+        return $this->makeRequest($endpoint, 'POST', $requestBody, true);
     }
     
     /**

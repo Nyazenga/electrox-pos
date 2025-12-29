@@ -32,6 +32,7 @@ $permissions = [
     
     // Stock Take
     ['products.stock_take', 'Perform stock take'],
+    ['products.stock_take_reports', 'View stock take reports'],
     
     // Barcode Management
     ['products.barcodes', 'Manage product barcodes'],

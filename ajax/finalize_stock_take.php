@@ -107,12 +107,89 @@ try {
         'completed_at' => date('Y-m-d H:i:s')
     ], ['id' => $stockTakeId]);
     
+    // Calculate summary statistics for report
+    $totalItems = count($items);
+    $itemsWithGains = 0;
+    $itemsWithLosses = 0;
+    $itemsNoChange = 0;
+    $totalGainQuantity = 0;
+    $totalLossQuantity = 0;
+    $netDifference = 0;
+    
+    $detailedBreakdown = [];
+    
+    foreach ($items as $item) {
+        $difference = floatval($item['difference'] ?? 0);
+        $netDifference += $difference;
+        
+        if ($difference > 0) {
+            $itemsWithGains++;
+            $totalGainQuantity += $difference;
+        } elseif ($difference < 0) {
+            $itemsWithLosses++;
+            $totalLossQuantity += abs($difference);
+        } else {
+            $itemsNoChange++;
+        }
+        
+        // Get product details for detailed breakdown
+        $product = $db->getRow("SELECT id, product_code, 
+                                COALESCE(product_name, CONCAT(COALESCE(brand, ''), ' ', COALESCE(model, ''))) as display_name
+                                FROM products WHERE id = :id", [':id' => intval($item['product_id'])]);
+        
+        if ($product) {
+            $detailedBreakdown[] = [
+                'product_id' => intval($item['product_id']),
+                'product_code' => $product['product_code'] ?? '',
+                'product_name' => $product['display_name'] ?? '',
+                'current_stock' => floatval($item['current_stock'] ?? 0),
+                'counted_stock' => floatval($item['counted_stock'] ?? 0),
+                'difference' => $difference,
+                'notes' => $item['notes'] ?? ''
+            ];
+        }
+    }
+    
+    // Create stock take report record
+    $reportData = [
+        'stock_take_id' => $stockTakeId,
+        'branch_id' => intval($stockTake['branch_id']),
+        'taken_by' => intval($stockTake['taken_by']),
+        'report_date' => date('Y-m-d H:i:s'),
+        'total_items' => $totalItems,
+        'items_with_gains' => $itemsWithGains,
+        'items_with_losses' => $itemsWithLosses,
+        'items_no_change' => $itemsNoChange,
+        'total_gain_quantity' => round($totalGainQuantity, 2),
+        'total_loss_quantity' => round($totalLossQuantity, 2),
+        'net_difference' => round($netDifference, 2),
+        'summary_data' => json_encode([
+            'detailed_breakdown' => $detailedBreakdown,
+            'summary' => [
+                'total_items' => $totalItems,
+                'items_with_gains' => $itemsWithGains,
+                'items_with_losses' => $itemsWithLosses,
+                'items_no_change' => $itemsNoChange,
+                'total_gain_quantity' => round($totalGainQuantity, 2),
+                'total_loss_quantity' => round($totalLossQuantity, 2),
+                'net_difference' => round($netDifference, 2)
+            ]
+        ])
+    ];
+    
+    $reportId = $primaryDb->insert('stock_take_reports', $reportData);
+    
+    if ($reportId === false) {
+        throw new Exception('Failed to create stock take report');
+    }
+    
     $db->commitTransaction();
     $primaryDb->commitTransaction();
     
     echo json_encode([
         'success' => true,
-        'message' => 'Stock take finalized successfully. Stock levels have been updated.'
+        'message' => 'Stock take finalized successfully. Stock levels have been updated.',
+        'report_id' => $reportId
     ]);
     
 } catch (Exception $e) {

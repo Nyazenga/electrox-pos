@@ -668,6 +668,35 @@ try {
     // Clear the global transaction db reference
     unset($GLOBALS['current_transaction_db']);
     
+    // Handle invoice conversion - update invoice status to Paid and link sale to invoice
+    if (isset($_SESSION['invoice_to_sale']) && !empty($_SESSION['invoice_to_sale']['invoice_id'])) {
+        $invoiceId = intval($_SESSION['invoice_to_sale']['invoice_id']);
+        try {
+            // Update invoice status to Paid
+            $db->update('invoices', [
+                'status' => 'Paid',
+                'amount_paid' => $total,
+                'balance_due' => 0
+            ], ['id' => $invoiceId]);
+            
+            // Link sale to invoice (if invoice_id column exists in sales table)
+            try {
+                $db->update('sales', ['invoice_id' => $invoiceId], ['id' => $saleId]);
+            } catch (Exception $e) {
+                // Column might not exist, that's okay
+                error_log("Could not link sale to invoice (column may not exist): " . $e->getMessage());
+            }
+            
+            error_log("PROCESS SALE: Invoice $invoiceId marked as Paid and linked to sale $saleId");
+            
+            // Clear invoice conversion session data
+            unset($_SESSION['invoice_to_sale']);
+        } catch (Exception $invoiceError) {
+            // Log error but don't fail the sale
+            error_log("Failed to update invoice status: " . $invoiceError->getMessage());
+        }
+    }
+    
     // Log activity outside of transaction (in case it fails, we don't want to rollback the sale)
     try {
         logActivity($userId, 'pos_sale', ['sale_id' => $saleId, 'receipt_number' => $receiptNumber, 'amount' => $total]);

@@ -16,6 +16,8 @@ initSession();
 $cart = $_SESSION['pos_cart'] ?? [];
 $customer = $_SESSION['pos_customer'] ?? null;
 $discount = $_SESSION['pos_discount'] ?? ['type' => null, 'amount' => 0];
+$fromInvoice = isset($_GET['from_invoice']) || isset($_SESSION['invoice_to_sale']);
+$invoiceData = $_SESSION['invoice_to_sale'] ?? null;
 
 if (empty($cart)) {
     redirectTo('modules/pos/index.php');
@@ -710,11 +712,23 @@ require_once APP_PATH . '/includes/header.php';
 }
 </style>
 
+<?php if ($fromInvoice && $invoiceData): ?>
+<div class="alert alert-info mb-3" style="margin: 20px; border-left: 4px solid #0d6efd;">
+    <div class="d-flex align-items-center">
+        <i class="bi bi-info-circle me-2" style="font-size: 24px;"></i>
+        <div>
+            <strong>Converting Proforma Invoice to Sale</strong><br>
+            <small>Invoice #<?= escapeHtml($invoiceData['invoice_number'] ?? '') ?>. After payment is processed, stock will be deducted, the sale will be fiscalized, and the invoice status will be updated to Paid.</small>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <div class="payment-container">
     <div class="payment-left">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h5>Order Summary</h5>
-            <button class="btn btn-sm btn-secondary" onclick="window.location.href='index.php'">
+            <button class="btn btn-sm btn-secondary" onclick="window.location.href='<?= $fromInvoice ? BASE_URL . 'modules/invoicing/index.php' : 'index.php' ?>'">
                 <i class="bi bi-arrow-left"></i> Back
             </button>
         </div>
@@ -763,8 +777,8 @@ require_once APP_PATH . '/includes/header.php';
     
     <div class="payment-right">
         <div class="payment-header">
-            <button class="btn btn-link" onclick="window.location.href='index.php'">
-                <i class="bi bi-arrow-left"></i> Payment
+            <button class="btn btn-link" onclick="window.location.href='<?= $fromInvoice ? BASE_URL . 'modules/invoicing/index.php' : 'index.php' ?>'">
+                <i class="bi bi-arrow-left"></i> <?= $fromInvoice ? 'Invoices' : 'Payment' ?>
             </button>
             <button class="btn btn-primary" id="splitBtn" onclick="toggleSplitPayment()">SPLIT</button>
         </div>
@@ -1845,10 +1859,25 @@ function processPayment(payments, creditSaleData = null) {
                         // Open receipt in new window for printing with print parameter
                         const receiptWindow = window.open('<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1', '_blank');
                         
-                        // Redirect to index.php
+                        // Redirect based on source
+                        <?php if ($fromInvoice): ?>
+                        Swal.fire({
+                            title: 'Invoice Converted!',
+                            html: 'The proforma invoice has been converted to a sale, stock deducted, and fiscalized successfully.<br><br>Invoice status updated to Paid.',
+                            icon: 'success',
+                            confirmButtonText: 'View Invoices'
+                        }).then(() => {
+                            window.location.href = '<?= BASE_URL ?>modules/invoicing/index.php';
+                        });
+                        <?php else: ?>
                         window.location.href = 'index.php';
+                        <?php endif; ?>
                     } else {
+                        <?php if ($fromInvoice): ?>
+                        window.location.href = '<?= BASE_URL ?>modules/invoicing/index.php';
+                        <?php else: ?>
                         window.location.href = 'index.php';
+                        <?php endif; ?>
                     }
                 });
             } else {
@@ -1884,7 +1913,11 @@ function processPayment(payments, creditSaleData = null) {
                             if (result.isConfirmed) {
                                 window.location.href = '<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1';
                             } else {
+                                <?php if ($fromInvoice): ?>
+                                window.location.href = '<?= BASE_URL ?>modules/invoicing/index.php';
+                                <?php else: ?>
                                 window.location.href = 'index.php';
+                                <?php endif; ?>
                             }
                         });
                     } else {
@@ -1900,14 +1933,29 @@ function processPayment(payments, creditSaleData = null) {
                             showConfirmButton: false,
                             allowOutsideClick: true
                         }).then(() => {
-                            // Redirect to index.php
+                            // Redirect based on source
+                            <?php if ($fromInvoice): ?>
+                            window.location.href = '<?= BASE_URL ?>modules/invoicing/index.php';
+                            <?php else: ?>
                             window.location.href = 'index.php';
+                            <?php endif; ?>
                         });
                     }
                 } else {
+                    <?php if ($fromInvoice): ?>
+                    Swal.fire({
+                        title: 'Invoice Converted!',
+                        html: 'The proforma invoice has been converted to a sale, stock deducted, and fiscalized successfully.<br><br>Invoice status updated to Paid.',
+                        icon: 'success',
+                        confirmButtonText: 'View Invoices'
+                    }).then(() => {
+                        window.location.href = '<?= BASE_URL ?>modules/invoicing/index.php';
+                    });
+                    <?php else: ?>
                     Swal.fire('Success', 'Payment processed successfully', 'success').then(() => {
                         window.location.href = 'index.php';
                     });
+                    <?php endif; ?>
                 }
             }
         } else {

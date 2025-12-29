@@ -257,684 +257,763 @@ if ($checkLowStockAtLogin && $isAdministrator && !isset($_SESSION['low_stock_che
 ?>
 
 <style>
-.stat-card {
-    background: white;
-    border-radius: 16px;
-    padding: 24px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    height: 180px;
-    max-height: 180px;
-    transition: all 0.3s ease;
+/* Modern Dashboard Styles */
+.dashboard-container {
+    padding: 0;
+    background: var(--light-gray);
+    min-height: 100vh;
+}
+
+/* Filter Section - Modern Design */
+.dashboard-filters {
+    background: var(--white);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--border-color);
+}
+
+.filter-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.filter-group {
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    position: relative;
-    border-left: 4px solid;
+    gap: 8px;
+    flex: 1;
+    min-width: 200px;
 }
 
-.stat-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
-}
-
-.stat-card.gross-sales { border-left-color: #3b82f6; }
-.stat-card.net-sales { border-left-color: #10b981; }
-.stat-card.cost-sales { border-left-color: #ef4444; }
-.stat-card.gross-profit { border-left-color: #f59e0b; }
-.stat-card.total-sales { border-left-color: #8b5cf6; }
-.stat-card.avg-transaction { border-left-color: #06b6d4; }
-.stat-card.total-customers { border-left-color: #ec4899; }
-.stat-card.total-products { border-left-color: #14b8a6; }
-.stat-card.total-invoices { border-left-color: #6366f1; }
-.stat-card.low-stock { border-left-color: #f97316; }
-.stat-card.inventory-value { border-left-color: #0ea5e9; }
-
-.stat-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-}
-
-.stat-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    color: white;
-    flex-shrink: 0;
-}
-
-.stat-icon.gross-sales { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
-.stat-icon.net-sales { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
-.stat-icon.cost-sales { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
-.stat-icon.gross-profit { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
-.stat-icon.total-sales { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
-.stat-icon.avg-transaction { background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); }
-.stat-icon.total-customers { background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); }
-.stat-icon.total-products { background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); }
-.stat-icon.total-invoices { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); }
-.stat-icon.low-stock { background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); }
-.stat-icon.inventory-value { background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); }
-
-.stat-label {
-    font-size: 10px;
+.filter-label {
+    font-size: 11px;
+    font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    font-weight: 600;
-    margin-bottom: 6px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
-.stat-value {
-    font-size: 20px;
+.filter-label i {
+    font-size: 13px;
+    color: var(--secondary-blue);
+}
+
+.filter-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.filter-input-wrapper .form-select,
+.filter-input-wrapper .form-control {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 13px;
+    height: 42px;
+    transition: all 0.2s ease;
+    background: var(--white);
+}
+
+.filter-input-wrapper .form-select:focus,
+.filter-input-wrapper .form-control:focus {
+    border-color: var(--secondary-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    outline: none;
+}
+
+.filter-btn-wrapper {
+    display: flex;
+    align-items: flex-end;
+    margin-top: 24px;
+}
+
+.filter-btn {
+    height: 42px;
+    padding: 0 28px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    border: none;
+    white-space: nowrap;
+}
+
+.filter-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+/* Modern Stat Cards */
+.stat-card-modern {
+    background: var(--white);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    border: 1px solid var(--border-color);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: fadeInUp 0.5s ease-out;
+}
+
+.stat-card-modern::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--secondary-blue);
+    transition: width 0.3s ease;
+}
+
+.stat-card-modern:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card-modern:hover::before {
+    width: 6px;
+}
+
+.stat-card-modern.gross-sales::before { background: #3b82f6; }
+.stat-card-modern.net-sales::before { background: #10b981; }
+.stat-card-modern.cost-sales::before { background: #ef4444; }
+.stat-card-modern.gross-profit::before { background: #f59e0b; }
+.stat-card-modern.total-sales::before { background: #8b5cf6; }
+.stat-card-modern.avg-transaction::before { background: #06b6d4; }
+.stat-card-modern.total-customers::before { background: #ec4899; }
+.stat-card-modern.total-products::before { background: #14b8a6; }
+.stat-card-modern.total-invoices::before { background: #6366f1; }
+.stat-card-modern.low-stock::before { background: #f97316; }
+.stat-card-modern.inventory-value::before { background: #0ea5e9; }
+.stat-card-modern.discount::before { background: #a855f7; }
+.stat-card-modern.cash-refund::before { background: #f43f5e; }
+
+.stat-card-header-modern {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.stat-icon-modern {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: var(--white);
+    flex-shrink: 0;
+    animation: iconPulse 2s ease-in-out infinite;
+    position: relative;
+}
+
+.stat-icon-modern::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    opacity: 0.3;
+    animation: iconRipple 2s ease-in-out infinite;
+}
+
+.stat-icon-modern.gross-sales { background: #3b82f6; }
+.stat-icon-modern.net-sales { background: #10b981; }
+.stat-icon-modern.cost-sales { background: #ef4444; }
+.stat-icon-modern.gross-profit { background: #f59e0b; }
+.stat-icon-modern.total-sales { background: #8b5cf6; }
+.stat-icon-modern.avg-transaction { background: #06b6d4; }
+.stat-icon-modern.total-customers { background: #ec4899; }
+.stat-icon-modern.total-products { background: #14b8a6; }
+.stat-icon-modern.total-invoices { background: #6366f1; }
+.stat-icon-modern.low-stock { background: #f97316; }
+.stat-icon-modern.inventory-value { background: #0ea5e9; }
+.stat-icon-modern.discount { background: #a855f7; }
+.stat-icon-modern.cash-refund { background: #f43f5e; }
+
+.stat-content-modern {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-label-modern {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stat-label-modern i {
+    font-size: 12px;
+}
+
+.stat-value-modern {
+    font-size: 28px;
     font-weight: 700;
     color: var(--text-dark);
     margin: 0;
-    flex-shrink: 0;
     line-height: 1.2;
+    animation: countUp 0.8s ease-out;
 }
 
-.mini-chart {
-    height: 50px;
-    max-height: 50px;
-    margin-top: auto;
-    flex-shrink: 0;
-    flex-grow: 0;
+.stat-trend-modern {
+    margin-top: 12px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-muted);
 }
 
-.chart-container {
+.stat-trend-modern i {
+    font-size: 14px;
+}
+
+.mini-chart-modern {
+    height: 60px;
+    margin-top: 16px;
+    position: relative;
+}
+
+/* Chart Cards */
+.chart-card-modern {
+    background: var(--white);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    border: 1px solid var(--border-color);
+    height: 100%;
+    animation: fadeInUp 0.6s ease-out;
+}
+
+.chart-card-header-modern {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.chart-title-modern {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-dark);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.chart-title-modern i {
+    font-size: 20px;
+    color: var(--secondary-blue);
+}
+
+.chart-container-modern {
     position: relative;
     height: 400px;
 }
 
-/* Card header and body responsive */
-.card-header {
-    padding: 12px 16px;
+/* Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
-.card-header h5,
-.card-header h6 {
-    font-size: 14px;
-    font-weight: 600;
-    margin: 0;
+@keyframes iconPulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
 }
 
-.card-body {
-    padding: 16px;
+@keyframes iconRipple {
+    0% {
+        transform: scale(1);
+        opacity: 0.3;
+    }
+    100% {
+        transform: scale(1.3);
+        opacity: 0;
+    }
 }
 
-/* Responsive adjustments for small laptops (1024px - 1366px) */
-@media (max-width: 1366px) and (min-width: 1024px) {
-    .stat-card {
-        padding: 16px;
-        height: 150px;
-        max-height: 150px;
+@keyframes countUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Stagger animation delays for cards */
+.stat-card-modern:nth-child(1) { animation-delay: 0.1s; }
+.stat-card-modern:nth-child(2) { animation-delay: 0.2s; }
+.stat-card-modern:nth-child(3) { animation-delay: 0.3s; }
+.stat-card-modern:nth-child(4) { animation-delay: 0.4s; }
+.stat-card-modern:nth-child(5) { animation-delay: 0.5s; }
+.stat-card-modern:nth-child(6) { animation-delay: 0.6s; }
+
+/* Responsive Design */
+@media (max-width: 1366px) {
+    .stat-value-modern {
+        font-size: 24px;
     }
     
-    .stat-value {
-        font-size: 16px;
+    .stat-icon-modern {
+        width: 48px;
+        height: 48px;
+        font-size: 20px;
     }
     
-    .stat-label {
-        font-size: 9px;
-        margin-bottom: 4px;
-    }
-    
-    .stat-icon {
-        width: 30px;
-        height: 30px;
-        font-size: 14px;
-    }
-    
-    .chart-container {
+    .chart-container-modern {
         height: 300px;
     }
-    
-    .card-header h5,
-    .card-header h6 {
-        font-size: 13px;
+}
+
+@media (max-width: 768px) {
+    .filter-row {
+        flex-direction: column;
+        align-items: stretch;
     }
     
-    .card-body {
-        padding: 12px;
+    .filter-group {
+        width: 100%;
+        min-width: 100%;
     }
     
-    .stat-value[style*="font-size: 18px"] {
-        font-size: 14px !important;
+    .filter-btn-wrapper {
+        margin-top: 0;
+        width: 100%;
     }
     
-    .stat-value[style*="font-size: 22px"] {
-        font-size: 16px !important;
+    .filter-btn {
+        width: 100%;
+        justify-content: center;
     }
     
-    .mini-chart {
-        height: 40px;
-        max-height: 40px;
+    .stat-value-modern {
+        font-size: 20px;
     }
     
-    .d-flex.justify-content-between h2 {
+    .stat-icon-modern {
+        width: 44px;
+        height: 44px;
         font-size: 18px;
     }
     
-    .form-select,
-    .form-control {
-        font-size: 11px;
-        padding: 5px 8px;
-    }
-    
-    .btn {
-        font-size: 11px;
-        padding: 5px 10px;
-    }
-}
-
-/* Tablet screens (769px - 1023px) */
-@media (max-width: 1023px) and (min-width: 769px) {
-    .stat-card {
-        padding: 14px;
-        height: 140px;
-        max-height: 140px;
-    }
-    
-    .stat-value {
-        font-size: 15px;
-    }
-    
-    .stat-label {
-        font-size: 8px;
-        margin-bottom: 3px;
-    }
-    
-    .stat-icon {
-        width: 28px;
-        height: 28px;
-        font-size: 13px;
-    }
-    
-    .chart-container {
-        height: 280px;
-    }
-    
-    .card-header h5,
-    .card-header h6 {
-        font-size: 12px;
-    }
-    
-    .card-body {
-        padding: 10px;
-    }
-    
-    .stat-value[style*="font-size: 18px"] {
-        font-size: 13px !important;
-    }
-    
-    .stat-value[style*="font-size: 22px"] {
-        font-size: 15px !important;
-    }
-    
-    .mini-chart {
-        height: 35px;
-        max-height: 35px;
-    }
-    
-    .d-flex.justify-content-between h2 {
-        font-size: 16px;
-    }
-    
-    .form-select,
-    .form-control {
-        font-size: 10px;
-        padding: 4px 6px;
-    }
-    
-    .btn {
-        font-size: 10px;
-        padding: 4px 8px;
-    }
-    
-    .row.g-3 {
-        --bs-gutter-y: 0.5rem;
-        --bs-gutter-x: 0.5rem;
-    }
-}
-
-/* Mobile screens (max-width: 768px) */
-@media (max-width: 768px) {
-    .stat-card {
-        padding: 12px;
-        height: 130px;
-        max-height: 130px;
-    }
-    
-    .stat-value {
-        font-size: 14px;
-    }
-    
-    .stat-label {
-        font-size: 8px;
-        margin-bottom: 3px;
-    }
-    
-    .stat-icon {
-        width: 26px;
-        height: 26px;
-        font-size: 12px;
-    }
-    
-    .chart-container {
+    .chart-container-modern {
         height: 250px;
-    }
-    
-    .card-header h5,
-    .card-header h6 {
-        font-size: 11px;
-    }
-    
-    .card-body {
-        padding: 10px;
-    }
-    
-    .stat-value[style*="font-size: 18px"] {
-        font-size: 12px !important;
-    }
-    
-    .stat-value[style*="font-size: 22px"] {
-        font-size: 14px !important;
-    }
-    
-    .mini-chart {
-        height: 30px;
-        max-height: 30px;
-    }
-    
-    .d-flex.justify-content-between {
-        flex-direction: column;
-        gap: 10px;
-        align-items: flex-start !important;
-    }
-    
-    .d-flex.justify-content-between h2 {
-        font-size: 15px;
-        margin-bottom: 0;
-    }
-    
-    .d-flex.gap-2 {
-        width: 100%;
-        flex-wrap: wrap;
-    }
-    
-    .form-select,
-    .form-control {
-        font-size: 11px;
-        padding: 6px 8px;
-        flex: 1;
-        min-width: 120px;
-    }
-    
-    .btn {
-        font-size: 11px;
-        padding: 6px 12px;
-    }
-    
-    .row.g-3 {
-        --bs-gutter-y: 0.5rem;
-        --bs-gutter-x: 0.5rem;
-    }
-    
-    /* Stack cards in single column on mobile */
-    .row.g-3 > [class*="col-"] {
-        margin-bottom: 0.5rem;
-    }
-}
-
-/* Small mobile screens (max-width: 480px) */
-@media (max-width: 480px) {
-    .stat-card {
-        padding: 10px;
-        height: 120px;
-        max-height: 120px;
-    }
-    
-    .stat-value {
-        font-size: 13px;
-    }
-    
-    .stat-label {
-        font-size: 7px;
-        margin-bottom: 2px;
-    }
-    
-    .stat-icon {
-        width: 24px;
-        height: 24px;
-        font-size: 11px;
-    }
-    
-    .chart-container {
-        height: 220px;
-    }
-    
-    .card-header h5,
-    .card-header h6 {
-        font-size: 10px;
-    }
-    
-    .card-body {
-        padding: 8px;
-    }
-    
-    .stat-value[style*="font-size: 18px"] {
-        font-size: 11px !important;
-    }
-    
-    .stat-value[style*="font-size: 22px"] {
-        font-size: 13px !important;
-    }
-    
-    .mini-chart {
-        height: 25px;
-        max-height: 25px;
-    }
-    
-    .d-flex.justify-content-between h2 {
-        font-size: 14px;
-    }
-    
-    .form-select,
-    .form-control {
-        font-size: 11px;
-        padding: 5px 6px;
-        width: 100%;
-        margin-bottom: 5px;
-    }
-    
-    .btn {
-        font-size: 11px;
-        padding: 5px 10px;
-        width: 100%;
-    }
-    
-    .d-flex.gap-2 {
-        flex-direction: column;
-        width: 100%;
-    }
-    
-    .row.g-3 {
-        --bs-gutter-y: 0.5rem;
-        --bs-gutter-x: 0.5rem;
-    }
-    
-    /* Make all columns full width on very small screens */
-    .row > [class*="col-"] {
-        flex: 0 0 100%;
-        max-width: 100%;
     }
 }
 </style>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div></div>
-    <div class="d-flex gap-2">
-        <select class="form-select" id="branchFilter" style="min-width: 150px;">
-            <option value="" <?= !isset($_GET['branch_id']) || $_GET['branch_id'] === '' ? 'selected' : '' ?>>All shops</option>
-            <?php foreach ($branches as $branch): ?>
-                <option value="<?= $branch['id'] ?>" <?= $branchId == $branch['id'] ? 'selected' : '' ?>>
-                    <?= escapeHtml($branch['branch_name']) ?>
-                </option>
-            <?php endforeach; ?>
-        </select>
-        <input type="date" class="form-control form-control-sm" id="startDate" value="<?= $startDate ?>" style="width: auto;">
-        <input type="date" class="form-control form-control-sm" id="endDate" value="<?= $endDate ?>" style="width: auto;">
-        <button class="btn btn-primary" onclick="applyFilters()">Filter</button>
+<div class="dashboard-container">
+    <!-- Modern Filter Section -->
+    <div class="dashboard-filters">
+        <div class="filter-row">
+            <div class="filter-group">
+                <label class="filter-label">
+                    <i class="bi bi-building"></i>
+                    <span>Branch</span>
+                </label>
+                <div class="filter-input-wrapper">
+                    <select class="form-select" id="branchFilter">
+                        <option value="" <?= !isset($_GET['branch_id']) || $_GET['branch_id'] === '' ? 'selected' : '' ?>>All Shops</option>
+                        <?php foreach ($branches as $branch): ?>
+                            <option value="<?= $branch['id'] ?>" <?= $branchId == $branch['id'] ? 'selected' : '' ?>>
+                                <?= escapeHtml($branch['branch_name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="filter-group">
+                <label class="filter-label">
+                    <i class="bi bi-calendar3"></i>
+                    <span>Start Date</span>
+                </label>
+                <div class="filter-input-wrapper">
+                    <input type="date" class="form-control" id="startDate" value="<?= $startDate ?>">
+                </div>
+            </div>
+            
+            <div class="filter-group">
+                <label class="filter-label">
+                    <i class="bi bi-calendar-check"></i>
+                    <span>End Date</span>
+                </label>
+                <div class="filter-input-wrapper">
+                    <input type="date" class="form-control" id="endDate" value="<?= $endDate ?>">
+                </div>
+            </div>
+            
+            <div class="filter-btn-wrapper">
+                <button class="btn btn-primary filter-btn" onclick="applyFilters()">
+                    <i class="bi bi-funnel"></i>
+                    <span>Apply Filters</span>
+                </button>
+            </div>
+        </div>
     </div>
-</div>
 
-<!-- Main Stats -->
-<div class="row g-3 mb-4">
-    <div class="col-md-3">
-        <div class="stat-card gross-sales">
-            <div class="stat-card-header">
-                <div>
-                    <div class="stat-label">Gross Sales</div>
-                    <div class="stat-value"><?= formatCurrency($grossSales) ?></div>
+    <!-- Primary Stats Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern gross-sales">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-cash-stack"></i>
+                            <span>Gross Sales</span>
+                        </div>
+                        <div class="stat-value-modern"><?= formatCurrency($grossSales) ?></div>
+                    </div>
+                    <div class="stat-icon-modern gross-sales">
+                        <i class="bi bi-cash-stack"></i>
+                    </div>
                 </div>
-                <div class="stat-icon gross-sales">
-                    <i class="bi bi-cash-stack"></i>
-                </div>
+                <canvas class="mini-chart-modern" id="grossSalesChart"></canvas>
             </div>
-            <canvas class="mini-chart" id="grossSalesChart"></canvas>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern net-sales">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-graph-up-arrow"></i>
+                            <span>Net Sales</span>
+                        </div>
+                        <div class="stat-value-modern"><?= formatCurrency($netSales) ?></div>
+                    </div>
+                    <div class="stat-icon-modern net-sales">
+                        <i class="bi bi-graph-up-arrow"></i>
+                    </div>
+                </div>
+                <canvas class="mini-chart-modern" id="netSalesChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern cost-sales">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-cart-dash"></i>
+                            <span>Cost of Sales</span>
+                        </div>
+                        <div class="stat-value-modern"><?= formatCurrency($costOfSales) ?></div>
+                    </div>
+                    <div class="stat-icon-modern cost-sales">
+                        <i class="bi bi-cart-dash"></i>
+                    </div>
+                </div>
+                <canvas class="mini-chart-modern" id="costSalesChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern gross-profit">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-trophy"></i>
+                            <span>Gross Profit</span>
+                        </div>
+                        <div class="stat-value-modern"><?= formatCurrency($grossProfit) ?></div>
+                    </div>
+                    <div class="stat-icon-modern gross-profit">
+                        <i class="bi bi-trophy"></i>
+                    </div>
+                </div>
+                <canvas class="mini-chart-modern" id="grossProfitChart"></canvas>
+            </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="stat-card net-sales">
-            <div class="stat-card-header">
-                <div>
-                    <div class="stat-label">Net Sales</div>
-                    <div class="stat-value"><?= formatCurrency($netSales) ?></div>
-                </div>
-                <div class="stat-icon net-sales">
-                    <i class="bi bi-graph-up-arrow"></i>
-                </div>
-            </div>
-            <canvas class="mini-chart" id="netSalesChart"></canvas>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-card cost-sales">
-            <div class="stat-card-header">
-                <div>
-                    <div class="stat-label">Cost Of Sales</div>
-                    <div class="stat-value"><?= formatCurrency($costOfSales) ?></div>
-                </div>
-                <div class="stat-icon cost-sales">
-                    <i class="bi bi-cart-dash"></i>
-                </div>
-            </div>
-            <canvas class="mini-chart" id="costSalesChart"></canvas>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-card gross-profit">
-            <div class="stat-card-header">
-                <div>
-                    <div class="stat-label">Gross Profit</div>
-                    <div class="stat-value"><?= formatCurrency($grossProfit) ?></div>
-                </div>
-                <div class="stat-icon gross-profit">
-                    <i class="bi bi-trophy"></i>
-                </div>
-            </div>
-            <canvas class="mini-chart" id="grossProfitChart"></canvas>
-        </div>
-    </div>
-</div>
 
-<!-- Additional Stats Row - 3 cards -->
-<div class="row g-3 mb-4">
-    <div class="col-md-4">
-        <div class="stat-card total-sales">
-            <div class="stat-card-header">
-                <div>
-                    <div class="stat-label">Total Sales</div>
-                    <div class="stat-value"><?= number_format($totalSalesCount['count']) ?></div>
+    <!-- Secondary Stats Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern total-sales">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-receipt-cutoff"></i>
+                            <span>Total Sales</span>
+                        </div>
+                        <div class="stat-value-modern"><?= number_format($totalSalesCount['count']) ?></div>
+                    </div>
+                    <div class="stat-icon-modern total-sales">
+                        <i class="bi bi-receipt-cutoff"></i>
+                    </div>
                 </div>
-                <div class="stat-icon total-sales">
-                    <i class="bi bi-receipt-cutoff"></i>
+            </div>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern avg-transaction">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-calculator"></i>
+                            <span>Avg Transaction</span>
+                        </div>
+                        <div class="stat-value-modern" style="font-size: 22px;"><?= formatCurrency($avgTransaction) ?></div>
+                    </div>
+                    <div class="stat-icon-modern avg-transaction">
+                        <i class="bi bi-calculator"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern total-customers">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-people"></i>
+                            <span>Total Customers</span>
+                        </div>
+                        <div class="stat-value-modern"><?= number_format($totalCustomers['count']) ?></div>
+                    </div>
+                    <div class="stat-icon-modern total-customers">
+                        <i class="bi bi-people"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern total-products">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-box-seam"></i>
+                            <span>Total Products</span>
+                        </div>
+                        <div class="stat-value-modern"><?= number_format($totalProducts['count']) ?></div>
+                    </div>
+                    <div class="stat-icon-modern total-products">
+                        <i class="bi bi-box-seam"></i>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="stat-card avg-transaction">
-            <div class="stat-card-header">
-                <div>
-                    <div class="stat-label">Avg Transaction</div>
-                    <div class="stat-value" style="font-size: 18px;"><?= formatCurrency($avgTransaction) ?></div>
-                </div>
-                <div class="stat-icon avg-transaction">
-                    <i class="bi bi-calculator"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="stat-card total-customers">
-            <div class="stat-card-header">
-                <div>
-                    <div class="stat-label">Total Customers</div>
-                    <div class="stat-value"><?= number_format($totalCustomers['count']) ?></div>
-                </div>
-                <div class="stat-icon total-customers">
-                    <i class="bi bi-people"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- Additional Stats Row - 4 cards -->
-<div class="row g-3 mb-4">
-    <div class="col-md-3">
-        <div class="stat-card total-products">
-            <div class="stat-card-header">
-                <div>
-                    <div class="stat-label">Total Products</div>
-                    <div class="stat-value"><?= number_format($totalProducts['count']) ?></div>
-                </div>
-                <div class="stat-icon total-products">
-                    <i class="bi bi-box-seam"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-card total-invoices">
-            <div class="stat-card-header">
-                <div>
-                    <div class="stat-label">Total Invoices</div>
-                    <div class="stat-value"><?= number_format($totalInvoices['count']) ?></div>
-                </div>
-                <div class="stat-icon total-invoices">
-                    <i class="bi bi-file-earmark-text"></i>
+    <!-- Tertiary Stats Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern total-invoices">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-file-earmark-text"></i>
+                            <span>Total Invoices</span>
+                        </div>
+                        <div class="stat-value-modern"><?= number_format($totalInvoices['count']) ?></div>
+                    </div>
+                    <div class="stat-icon-modern total-invoices">
+                        <i class="bi bi-file-earmark-text"></i>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-card low-stock">
-            <div class="stat-card-header">
-                <div>
-                    <div class="stat-label">Low Stock</div>
-                    <div class="stat-value" style="color: <?= $lowStockCount['count'] > 0 ? '#ef4444' : 'var(--text-dark)' ?>;"><?= number_format($lowStockCount['count']) ?></div>
-                </div>
-                <div class="stat-icon low-stock">
-                    <i class="bi bi-exclamation-triangle"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="stat-card inventory-value">
-            <div class="stat-card-header">
-                <div>
-                    <div class="stat-label">Total Inventory Value</div>
-                    <div class="stat-value" style="font-size: 18px;"><?= formatCurrency($inventoryValue['value']) ?></div>
-                </div>
-                <div class="stat-icon inventory-value">
-                    <i class="bi bi-archive"></i>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern low-stock">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <span>Low Stock</span>
+                        </div>
+                        <div class="stat-value-modern" style="color: <?= $lowStockCount['count'] > 0 ? '#ef4444' : 'var(--text-dark)' ?>;">
+                            <?= number_format($lowStockCount['count']) ?>
+                        </div>
+                    </div>
+                    <div class="stat-icon-modern low-stock">
+                        <i class="bi bi-exclamation-triangle"></i>
+                    </div>
                 </div>
             </div>
         </div>
+        
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern inventory-value">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-archive"></i>
+                            <span>Inventory Value</span>
+                        </div>
+                        <div class="stat-value-modern" style="font-size: 22px;"><?= formatCurrency($inventoryValue['value']) ?></div>
+                    </div>
+                    <div class="stat-icon-modern inventory-value">
+                        <i class="bi bi-archive"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <?php if ($creditSalesStats['total_outstanding'] > 0): ?>
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card-modern" style="border-left-color: #ec4899;">
+                <div class="stat-card-header-modern">
+                    <div class="stat-content-modern">
+                        <div class="stat-label-modern">
+                            <i class="bi bi-credit-card"></i>
+                            <span>Outstanding Credit</span>
+                        </div>
+                        <div class="stat-value-modern" style="font-size: 22px;"><?= formatCurrency($creditSalesStats['total_outstanding']) ?></div>
+                    </div>
+                    <div class="stat-icon-modern" style="background: #ec4899;">
+                        <i class="bi bi-credit-card"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
-</div>
 
-<!-- Today Sales Summary -->
-<?php if ($startDate === date('Y-m-d') && $endDate === date('Y-m-d')): ?>
-<div class="row mb-4">
-    <div class="col-md-8">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Today Sales Summary</h5>
-            </div>
-            <div class="card-body">
-                <div class="chart-container">
+    <!-- Today Sales Summary -->
+    <?php if ($startDate === date('Y-m-d') && $endDate === date('Y-m-d')): ?>
+    <div class="row g-3 mb-4">
+        <div class="col-lg-8">
+            <div class="chart-card-modern">
+                <div class="chart-card-header-modern">
+                    <h5 class="chart-title-modern">
+                        <i class="bi bi-bar-chart-fill"></i>
+                        <span>Today Sales Summary</span>
+                    </h5>
+                </div>
+                <div class="chart-container-modern">
                     <canvas id="todaySalesChart"></canvas>
                 </div>
             </div>
         </div>
-    </div>
-    <div class="col-md-4">
-        <div class="row">
-            <div class="col-12 mb-3">
-                <div class="stat-card" style="border-left-color: #a855f7;">
-                    <div class="stat-card-header">
-                        <div>
-                            <div class="stat-label">Discount</div>
-                            <div class="stat-value" style="font-size: 18px;"><?= formatCurrency($discount) ?></div>
+        
+        <div class="col-lg-4">
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="stat-card-modern discount">
+                        <div class="stat-card-header-modern">
+                            <div class="stat-content-modern">
+                                <div class="stat-label-modern">
+                                    <i class="bi bi-tag"></i>
+                                    <span>Discount</span>
+                                </div>
+                                <div class="stat-value-modern" style="font-size: 24px;"><?= formatCurrency($discount) ?></div>
+                            </div>
+                            <div class="stat-icon-modern discount">
+                                <i class="bi bi-tag"></i>
+                            </div>
                         </div>
-                        <div class="stat-icon" style="background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);">
-                            <i class="bi bi-tag"></i>
+                    </div>
+                </div>
+                
+                <div class="col-12">
+                    <div class="stat-card-modern cash-refund">
+                        <div class="stat-card-header-modern">
+                            <div class="stat-content-modern">
+                                <div class="stat-label-modern">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                    <span>Cash Refund</span>
+                                </div>
+                                <div class="stat-value-modern" style="font-size: 24px;"><?= formatCurrency($cashRefund) ?></div>
+                            </div>
+                            <div class="stat-icon-modern cash-refund">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="col-12 mb-3">
-                <div class="stat-card" style="border-left-color: #f43f5e;">
-                    <div class="stat-card-header">
-                        <div>
-                            <div class="stat-label">Cash Refund</div>
-                            <div class="stat-value" style="font-size: 18px;"><?= formatCurrency($cashRefund) ?></div>
-                        </div>
-                        <div class="stat-icon" style="background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);">
-                            <i class="bi bi-arrow-counterclockwise"></i>
-                        </div>
-                    </div>
+            
+            <div class="chart-card-modern mt-3">
+                <div class="chart-card-header-modern">
+                    <h6 class="chart-title-modern" style="font-size: 14px;">
+                        <i class="bi bi-pie-chart-fill"></i>
+                        <span>Today Deductions</span>
+                    </h6>
+                </div>
+                <div style="height: 200px;">
+                    <canvas id="deductionChart"></canvas>
                 </div>
             </div>
         </div>
-        <div class="card">
-            <div class="card-header">
-                <h6 class="mb-0">Today Sales Deduction</h6>
-            </div>
-            <div class="card-body">
-                <canvas id="deductionChart" height="150"></canvas>
-            </div>
-        </div>
     </div>
-</div>
-<?php endif; ?>
 
-<!-- Today Sales Deduction Chart (Full Width) -->
-<?php if ($startDate === date('Y-m-d') && $endDate === date('Y-m-d')): ?>
-<div class="row mb-4">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Today Sales Deduction</h5>
-            </div>
-            <div class="card-body">
-                <div class="chart-container">
+    <!-- Today Sales Deduction Chart (Full Width) -->
+    <div class="row g-3 mb-4">
+        <div class="col-12">
+            <div class="chart-card-modern">
+                <div class="chart-card-header-modern">
+                    <h5 class="chart-title-modern">
+                        <i class="bi bi-graph-down-arrow"></i>
+                        <span>Today Sales Deduction Breakdown</span>
+                    </h5>
+                </div>
+                <div class="chart-container-modern">
                     <canvas id="todayDeductionChart"></canvas>
                 </div>
             </div>
         </div>
     </div>
-</div>
-<?php endif; ?>
+    <?php endif; ?>
 
-<!-- Sales Trend -->
-<div class="row">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Sales Trend (Last 30 Days)</h5>
-            </div>
-            <div class="card-body">
-                <div class="chart-container">
+    <!-- Sales Trend -->
+    <div class="row g-3">
+        <div class="col-12">
+            <div class="chart-card-modern">
+                <div class="chart-card-header-modern">
+                    <h5 class="chart-title-modern">
+                        <i class="bi bi-graph-up"></i>
+                        <span>Sales Trend (Last 30 Days)</span>
+                    </h5>
+                </div>
+                <div class="chart-container-modern">
                     <canvas id="salesTrendChart"></canvas>
                 </div>
             </div>
@@ -998,7 +1077,8 @@ new Chart(document.getElementById('grossSalesChart'), {
             data: <?= json_encode(array_fill(0, 12, $grossSales / 12)) ?>,
             borderColor: '#3b82f6',
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            tension: 0.4
+            tension: 0.4,
+            borderWidth: 2
         }]
     },
     options: miniChartOptions
@@ -1012,7 +1092,8 @@ new Chart(document.getElementById('netSalesChart'), {
             data: <?= json_encode(array_fill(0, 12, $netSales / 12)) ?>,
             borderColor: '#10b981',
             backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            tension: 0.4
+            tension: 0.4,
+            borderWidth: 2
         }]
     },
     options: miniChartOptions
@@ -1026,7 +1107,8 @@ new Chart(document.getElementById('costSalesChart'), {
             data: <?= json_encode(array_fill(0, 12, $costOfSales / 12)) ?>,
             borderColor: '#ef4444',
             backgroundColor: 'rgba(239, 68, 68, 0.1)',
-            tension: 0.4
+            tension: 0.4,
+            borderWidth: 2
         }]
     },
     options: miniChartOptions
@@ -1040,7 +1122,8 @@ new Chart(document.getElementById('grossProfitChart'), {
             data: <?= json_encode(array_fill(0, 12, $grossProfit / 12)) ?>,
             borderColor: '#f59e0b',
             backgroundColor: 'rgba(245, 158, 11, 0.1)',
-            tension: 0.4
+            tension: 0.4,
+            borderWidth: 2
         }]
     },
     options: miniChartOptions
@@ -1067,7 +1150,8 @@ new Chart(todayCtx, {
                 type: 'line',
                 borderColor: '#10b981',
                 backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                tension: 0.4
+                tension: 0.4,
+                borderWidth: 2
             },
             {
                 label: 'Cost Of Sales',
@@ -1075,7 +1159,8 @@ new Chart(todayCtx, {
                 type: 'line',
                 borderColor: '#ef4444',
                 backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                tension: 0.4
+                tension: 0.4,
+                borderWidth: 2
             },
             {
                 label: 'Gross Profit',
@@ -1083,7 +1168,8 @@ new Chart(todayCtx, {
                 type: 'line',
                 borderColor: '#f59e0b',
                 backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                tension: 0.4
+                tension: 0.4,
+                borderWidth: 2
             }
         ]
     },
@@ -1279,7 +1365,10 @@ new Chart(trendCtx, {
             borderColor: '#3b82f6',
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
             tension: 0.4,
-            fill: true
+            fill: true,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5
         }]
     },
     options: {

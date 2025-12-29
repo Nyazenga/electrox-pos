@@ -342,9 +342,9 @@ require_once APP_PATH . '/includes/header.php';
     </div>
     
     <div class="text-center mt-4 no-print">
-        <button onclick="window.print()" class="btn btn-primary me-2">
-            <i class="bi bi-printer"></i> Print
-        </button>
+        <a href="<?= BASE_URL ?>modules/sales/print_credit_note.php?id=<?= $refundId ?>&format=A4" target="_blank" class="btn btn-primary me-2">
+            <i class="bi bi-file-pdf"></i> Save as PDF
+        </a>
         <a href="cancelled_sales.php" class="btn btn-secondary">
             <i class="bi bi-arrow-left"></i> Back to Cancelled Sales
         </a>

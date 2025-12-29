@@ -63,6 +63,7 @@ if ($dateTo) {
 $whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
 
 // Get all fiscal receipts
+// Note: We need to get refund_id for CreditNote receipts by querying tenant database
 $fiscalReceipts = $primaryDb->getRows("
     SELECT 
         fr.*,
@@ -71,6 +72,7 @@ $fiscalReceipts = $primaryDb->getRows("
         b.branch_name,
         b.branch_code,
         CASE 
+            WHEN fr.receipt_type = 'CreditNote' THEN 'Refund'
             WHEN fr.invoice_id IS NOT NULL THEN 'Invoice'
             WHEN fr.sale_id IS NOT NULL THEN 'Sale'
             ELSE 'Other'
@@ -81,6 +83,43 @@ $fiscalReceipts = $primaryDb->getRows("
     $whereClause
     ORDER BY fr.submitted_at DESC
 ", $params);
+
+// For CreditNote receipts, get refund_id from tenant database
+// Note: invoice_no for credit notes contains refund_number
+$db = Database::getInstance();
+foreach ($fiscalReceipts as &$receipt) {
+    if ($receipt['receipt_type'] === 'CreditNote' && !empty($receipt['invoice_no'])) {
+        $invoiceNo = trim($receipt['invoice_no']);
+        
+        // Try to find refund by refund_number first (exact match)
+        $refund = $db->getRow(
+            "SELECT id FROM refunds WHERE refund_number = :number LIMIT 1",
+            [':number' => $invoiceNo]
+        );
+        
+        // If not found, try LIKE match (in case of formatting differences)
+        if (!$refund || empty($refund['id'])) {
+            $refund = $db->getRow(
+                "SELECT id FROM refunds WHERE refund_number LIKE :pattern LIMIT 1",
+                [':pattern' => '%' . $invoiceNo . '%']
+            );
+        }
+        
+        // If still not found, try credit_note_number (fallback)
+        if (!$refund || empty($refund['id'])) {
+            $creditNote = $db->getRow(
+                "SELECT refund_id FROM credit_notes WHERE credit_note_number = :number OR credit_note_number LIKE :pattern LIMIT 1",
+                [':number' => $invoiceNo, ':pattern' => '%' . $invoiceNo . '%']
+            );
+            if ($creditNote && !empty($creditNote['refund_id'])) {
+                $receipt['refund_id'] = $creditNote['refund_id'];
+            }
+        } else {
+            $receipt['refund_id'] = $refund['id'];
+        }
+    }
+}
+unset($receipt); // Break reference
 
 // Get filter options
 $devices = $primaryDb->getRows("SELECT DISTINCT device_id FROM fiscal_devices ORDER BY device_id");
@@ -105,6 +144,7 @@ require_once APP_PATH . '/includes/header.php';
     }
     .badge-invoice { background: #10b981; color: white; }
     .badge-sale { background: #3b82f6; color: white; }
+    .badge-refund { background: #dc3545; color: white; }
     .badge-submitted { background: #10b981; color: white; }
     .badge-pending { background: #f59e0b; color: white; }
     .badge-failed { background: #ef4444; color: white; }
@@ -233,6 +273,10 @@ require_once APP_PATH . '/includes/header.php';
                                             <a href="<?= BASE_URL ?>modules/pos/receipt.php?id=<?= $receipt['sale_id'] ?>&print=1" target="_blank">
                                                 Sale #<?= $receipt['sale_id'] ?>
                                             </a>
+                                        <?php elseif ($receipt['receipt_type'] === 'CreditNote' && !empty($receipt['refund_id'])): ?>
+                                            <a href="<?= BASE_URL ?>modules/sales/view_credit_note.php?id=<?= $receipt['refund_id'] ?>" target="_blank">
+                                                <?= htmlspecialchars($receipt['invoice_no'] ?? 'Credit Note') ?>
+                                            </a>
                                         <?php else: ?>
                                             <?= htmlspecialchars($receipt['invoice_no'] ?? 'N/A') ?>
                                         <?php endif; ?>
@@ -277,6 +321,11 @@ require_once APP_PATH . '/includes/header.php';
                                             <a href="<?= BASE_URL ?>modules/pos/receipt.php?id=<?= $receipt['sale_id'] ?>&print=1" 
                                                class="btn btn-sm btn-outline-primary" target="_blank" title="View Receipt">
                                                 <i class="bi bi-receipt"></i>
+                                            </a>
+                                        <?php elseif ($receipt['receipt_type'] === 'CreditNote' && !empty($receipt['refund_id'])): ?>
+                                            <a href="<?= BASE_URL ?>modules/sales/view_credit_note.php?id=<?= $receipt['refund_id'] ?>" 
+                                               class="btn btn-sm btn-outline-primary" target="_blank" title="View Credit Note">
+                                                <i class="bi bi-receipt-cutoff"></i>
                                             </a>
                                         <?php endif; ?>
                                     </td>

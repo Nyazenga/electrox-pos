@@ -446,6 +446,15 @@ class FiscalService {
         // Use ISO 8601 format for date
         $fiscalDayOpened = date('Y-m-d\TH:i:s');
         
+        // CRITICAL: Reload certificate from CertificateStorage to ensure we use the latest certificate
+        // This ensures consistency with receipt submission which also uses CertificateStorage
+        require_once APP_PATH . '/includes/certificate_storage.php';
+        $certData = CertificateStorage::loadCertificate($this->deviceId);
+        if ($certData && $certData['certificate'] && $certData['privateKey']) {
+            $this->api->setCertificate($certData['certificate'], $certData['privateKey']);
+            error_log("OPEN FISCAL DAY: Certificate reloaded and API client updated");
+        }
+        
         // Call ZIMRA API
         try {
             $requestData = [
@@ -918,12 +927,76 @@ class FiscalService {
         @file_put_contents($logFile, $logMessage, FILE_APPEND);
         error_log("FISCAL_SERVICE: Logged receiptData to $logFile before signature generation");
         
+        // CRITICAL: Ensure we're using the same certificate as closeFiscalDay
+        // Reload from CertificateStorage to ensure consistency
+        require_once APP_PATH . '/includes/certificate_storage.php';
+        $certDataForReceipt = CertificateStorage::loadCertificate($this->deviceId);
+        $privateKeyForReceipt = null;
+        
+        $writeLog = function($message) {
+            $logFile = APP_PATH . '/logs/error.log';
+            $logDir = dirname($logFile);
+            if (!is_dir($logDir)) {
+                @mkdir($logDir, 0755, true);
+            }
+            $timestamp = date('Y-m-d H:i:s');
+            $logMessage = "[$timestamp] SUBMIT RECEIPT: $message" . PHP_EOL;
+            @file_put_contents($logFile, $logMessage, FILE_APPEND);
+            error_log("SUBMIT RECEIPT: $message");
+        };
+        
+        if ($certDataForReceipt && $certDataForReceipt['privateKey']) {
+            $privateKeyForReceipt = $certDataForReceipt['privateKey'];
+            $certificateForReceipt = $certDataForReceipt['certificate'];
+            
+            // Update API client to use the fresh certificate
+            $this->api->setCertificate($certificateForReceipt, $privateKeyForReceipt);
+            
+            // Log certificate details for comparison
+            $certFingerprintReceipt = null;
+            $certSubjectReceipt = null;
+            if ($certificateForReceipt) {
+                $cert = openssl_x509_read($certificateForReceipt);
+                if ($cert) {
+                    $certDetails = openssl_x509_parse($cert);
+                    $certFingerprintReceipt = openssl_x509_fingerprint($cert, 'sha256', false);
+                    $certSubjectReceipt = $certDetails['subject']['CN'] ?? 'N/A';
+                }
+            }
+            
+            $keyFingerprintReceipt = null;
+            $key = openssl_pkey_get_private($privateKeyForReceipt);
+            if ($key) {
+                $keyDetails = openssl_pkey_get_details($key);
+                if (isset($keyDetails['key'])) {
+                    $keyFingerprintReceipt = hash('sha256', $keyDetails['key']);
+                }
+            }
+            
+            $writeLog("========== CERTIFICATE LOADED FOR RECEIPT SUBMISSION ==========");
+            $writeLog("Certificate Subject: " . ($certSubjectReceipt ?? 'N/A'));
+            $writeLog("Certificate Fingerprint (SHA256): " . ($certFingerprintReceipt ?? 'N/A'));
+            $writeLog("Private Key Fingerprint (SHA256 of public key): " . ($keyFingerprintReceipt ?? 'N/A'));
+            $writeLog("Certificate Length: " . strlen($certificateForReceipt) . " bytes");
+            $writeLog("Private Key Length: " . strlen($privateKeyForReceipt) . " bytes");
+            $writeLog("Certificate First 50 chars: " . substr($certificateForReceipt, 0, 50));
+            $writeLog("Certificate Last 50 chars: " . substr($certificateForReceipt, -50));
+            $writeLog("Private Key First 50 chars: " . substr($privateKeyForReceipt, 0, 50));
+            $writeLog("Private Key Last 50 chars: " . substr($privateKeyForReceipt, -50));
+            $writeLog("API client certificate updated");
+            $writeLog("================================================");
+        } else {
+            // Fallback to device record
+            $privateKeyForReceipt = $this->device['private_key_pem'];
+            $writeLog("WARNING - Using certificate from device record (not CertificateStorage)");
+        }
+        
         // Generate receipt signature AFTER all fixes are applied
         // Signature must be generated on the FINAL payload structure that will be sent to ZIMRA
         $deviceSignature = ZimraSignature::generateReceiptDeviceSignature(
             $receiptData,
             $previousReceiptHash,
-            $this->device['private_key_pem']
+            $privateKeyForReceipt
         );
         
         // Add signature to receipt data
@@ -1431,10 +1504,117 @@ class FiscalService {
             'fiscalDayCounters' => $counters
         ];
         
+        // CRITICAL: Always reload certificate from CertificateStorage to ensure we have the latest
+        // This ensures we're using the same certificate that was used for receipt submission
+        require_once APP_PATH . '/includes/certificate_storage.php';
+        $certData = CertificateStorage::loadCertificate($this->deviceId);
+        
+        if (!$certData || !$certData['certificate'] || !$certData['privateKey']) {
+            error_log("CLOSE FISCAL DAY: ERROR - Could not load certificate from CertificateStorage");
+            throw new Exception("Certificate not found for device {$this->deviceId}. Please ensure the device is registered.");
+        }
+        
+        $certificatePem = $certData['certificate'];
+        $privateKeyPem = $certData['privateKey'];
+        
+        // Log certificate details for debugging
+        $certFingerprint = null;
+        $certSubject = null;
+        if ($certificatePem) {
+            $cert = openssl_x509_read($certificatePem);
+            if ($cert) {
+                $certDetails = openssl_x509_parse($cert);
+                $certFingerprint = openssl_x509_fingerprint($cert, 'sha256', false);
+                $certSubject = $certDetails['subject']['CN'] ?? 'N/A';
+            }
+        }
+        
+        $keyFingerprint = null;
+        if ($privateKeyPem) {
+            $key = openssl_pkey_get_private($privateKeyPem);
+            if ($key) {
+                $keyDetails = openssl_pkey_get_details($key);
+                if (isset($keyDetails['key'])) {
+                    $keyFingerprint = hash('sha256', $keyDetails['key']);
+                }
+            }
+        }
+        
+        $writeLog = function($message) {
+            $logFile = APP_PATH . '/logs/error.log';
+            $logDir = dirname($logFile);
+            if (!is_dir($logDir)) {
+                @mkdir($logDir, 0755, true);
+            }
+            $timestamp = date('Y-m-d H:i:s');
+            $logMessage = "[$timestamp] CLOSE FISCAL DAY: $message" . PHP_EOL;
+            @file_put_contents($logFile, $logMessage, FILE_APPEND);
+            error_log("CLOSE FISCAL DAY: $message");
+        };
+        
+        $writeLog("========== CERTIFICATE LOADED FOR FISCAL DAY CLOSE ==========");
+        $writeLog("Certificate Subject: " . ($certSubject ?? 'N/A'));
+        $writeLog("Certificate Fingerprint (SHA256): " . ($certFingerprint ?? 'N/A'));
+        $writeLog("Private Key Fingerprint (SHA256 of public key): " . ($keyFingerprint ?? 'N/A'));
+        $writeLog("Certificate Length: " . strlen($certificatePem) . " bytes");
+        $writeLog("Private Key Length: " . strlen($privateKeyPem) . " bytes");
+        $writeLog("Certificate First 50 chars: " . substr($certificatePem, 0, 50));
+        $writeLog("Certificate Last 50 chars: " . substr($certificatePem, -50));
+        $writeLog("Private Key First 50 chars: " . substr($privateKeyPem, 0, 50));
+        $writeLog("Private Key Last 50 chars: " . substr($privateKeyPem, -50));
+        $writeLog("================================================");
+        
+        // CRITICAL: Update the API client's certificate to ensure it uses the fresh certificate
+        // This is important because the certificate might have been updated after the constructor ran
+        $this->api->setCertificate($certificatePem, $privateKeyPem);
+        $writeLog("API client certificate updated");
+        
+        // Also update device record for consistency
+        $this->device['certificate_pem'] = $certificatePem;
+        $this->device['private_key_pem'] = $privateKeyPem;
+        
+        // Verify private key is valid before using it
+        $testKey = openssl_pkey_get_private($privateKeyPem);
+        if (!$testKey) {
+            $error = openssl_error_string();
+            error_log("CLOSE FISCAL DAY: ERROR - Private key is invalid: $error");
+            throw new Exception("Invalid private key for device {$this->deviceId}. Please verify the certificate and private key are correct. Error: $error");
+        }
+        
+        // Verify certificate matches private key (use the reloaded certificate)
+        $certPem = $certificatePem;
+        if ($certPem) {
+            $cert = openssl_x509_read($certPem);
+            if ($cert) {
+                $certPubKey = openssl_pkey_get_public($certPem);
+                $keyDetails = openssl_pkey_get_details($testKey);
+                $certDetails = openssl_pkey_get_details($certPubKey);
+                
+                // Compare public keys (they should match)
+                if ($keyDetails && $certDetails && isset($keyDetails['key']) && isset($certDetails['key'])) {
+                    if ($keyDetails['key'] !== $certDetails['key']) {
+                        error_log("CLOSE FISCAL DAY: WARNING - Certificate public key doesn't match private key!");
+                        throw new Exception("Certificate and private key do not match for device {$this->deviceId}. Please re-register the device.");
+                    } else {
+                        error_log("CLOSE FISCAL DAY: Certificate and private key verified - they match");
+                    }
+                }
+            }
+        }
+        
+        // Log signature generation details
+        $writeLog("========== GENERATING FISCAL DAY SIGNATURE ==========");
+        $writeLog("Fiscal Day Data: " . json_encode($fiscalDayData, JSON_PRETTY_PRINT));
+        $writeLog("Using Private Key Fingerprint: " . ($keyFingerprint ?? 'N/A'));
+        
         $deviceSignature = ZimraSignature::generateFiscalDayDeviceSignature(
             $fiscalDayData,
-            $this->device['private_key_pem']
+            $privateKeyPem
         );
+        
+        $writeLog("Generated Signature Hash: " . ($deviceSignature['hash'] ?? 'N/A'));
+        $writeLog("Generated Signature (first 100 chars): " . substr($deviceSignature['signature'] ?? '', 0, 100));
+        $writeLog("================================================");
         
         // Get last receipt counter
         $lastReceipt = $this->db->getRow(
@@ -1505,12 +1685,13 @@ class FiscalService {
         
         $fiscalDayNo = $fiscalDay['fiscal_day_no'];
         
-        // Get all receipts for this fiscal day (use fiscal_day_no, not fiscal_day_id)
+        // CRITICAL FIX: Get receipts WITHOUT JOIN to avoid duplicate counting
+        // We'll process each receipt once and get its taxes separately
         $receipts = $this->db->getRows(
-            "SELECT fr.*, frt.* FROM fiscal_receipts fr 
-             LEFT JOIN fiscal_receipt_taxes frt ON fr.id = frt.fiscal_receipt_id 
+            "SELECT fr.* FROM fiscal_receipts fr 
              WHERE fr.device_id = :device_id AND fr.fiscal_day_no = :fiscal_day_no
-             AND fr.submission_status = 'Submitted'",
+             AND fr.submission_status = 'Submitted'
+             ORDER BY fr.receipt_counter ASC",
             [':device_id' => $this->deviceId, ':fiscal_day_no' => $fiscalDayNo]
         );
         
@@ -1520,187 +1701,321 @@ class FiscalService {
         }
         
         $counters = [];
-        $salesByTax = []; // [currency][taxID][taxPercent] => total
-        $salesTaxByTax = []; // [currency][taxID][taxPercent] => tax amount
-        $balanceByMoneyType = []; // [currency][moneyType] => total
+        $salesByTax = []; // [currency][taxID][taxPercent] => total (FiscalInvoice only)
+        $salesTaxByTax = []; // [currency][taxID][taxPercent] => tax amount (FiscalInvoice only)
+        $creditNoteByTax = []; // [currency][taxID][taxPercent] => total (CreditNote only, negative)
+        $creditNoteTaxByTax = []; // [currency][taxID][taxPercent] => tax amount (CreditNote only, negative)
+        $debitNoteByTax = []; // [currency][taxID][taxPercent] => total (DebitNote only)
+        $debitNoteTaxByTax = []; // [currency][taxID][taxPercent] => tax amount (DebitNote only)
+        $balanceByMoneyType = []; // [currency][moneyType] => total (all receipt types)
         
         foreach ($receipts as $receipt) {
+            $receiptType = $receipt['receipt_type'] ?? 'FiscalInvoice';
             $currency = strtoupper($receipt['receipt_currency'] ?? 'ZWL');
             $receiptTotal = floatval($receipt['receipt_total'] ?? 0);
             
-            // Get payment method (default to Cash if not specified)
-            $moneyType = $receipt['payment_method'] ?? 'Cash';
-            if (!isset($balanceByMoneyType[$currency])) {
-                $balanceByMoneyType[$currency] = [];
-            }
-            if (!isset($balanceByMoneyType[$currency][$moneyType])) {
-                $balanceByMoneyType[$currency][$moneyType] = 0;
-            }
-            $balanceByMoneyType[$currency][$moneyType] += $receiptTotal;
+            // Get payment methods for this receipt (a receipt can have multiple payments)
+            $payments = $this->db->getRows(
+                "SELECT money_type_code, payment_amount FROM fiscal_receipt_payments 
+                 WHERE fiscal_receipt_id = :receipt_id",
+                [':receipt_id' => $receipt['id']]
+            );
             
-            // Process taxes if available
-            // CRITICAL: Distinguish between:
-            // - Exempt: tax_percent is null/not set (no tax record) → empty string in signature
-            // - Zero-rated: tax_percent is 0 (tax record exists with 0) → "0.00" in signature
-            // - Tax: tax_percent > 0 → formatted value in signature
-            $hasTaxRecord = isset($receipt['tax_id']) && $receipt['tax_id'] !== null;
-            $taxPercentValue = isset($receipt['tax_percent']) && $receipt['tax_percent'] !== null ? floatval($receipt['tax_percent']) : null;
+            // If no payments found, default to Cash with full receipt total
+            if (empty($payments)) {
+                $payments = [['money_type_code' => 'Cash', 'payment_amount' => $receiptTotal]];
+            }
             
-            if ($hasTaxRecord || $taxPercentValue !== null) {
-                // Receipt has tax information (including zero-rated with taxPercent = 0)
-                $taxID = intval($receipt['tax_id'] ?? 0);
-                $taxPercent = $taxPercentValue; // Can be 0 (zero-rated) or > 0 (tax) or null (shouldn't happen here)
-                $taxAmount = floatval($receipt['tax_amount'] ?? 0);
-                $salesAmountWithTax = floatval($receipt['sales_amount_with_tax'] ?? $receiptTotal);
+            // Process each payment for BalanceByMoneyType
+            foreach ($payments as $payment) {
+                // Map integer moneyTypeCode to enum string
+                $moneyTypeCodeInt = intval($payment['money_type_code'] ?? 0);
+                $moneyTypeMap = [
+                    0 => 'Cash',
+                    1 => 'Card',
+                    2 => 'MobileWallet',
+                    3 => 'Coupon',
+                    4 => 'Credit',
+                    5 => 'BankTransfer',
+                    6 => 'Other'
+                ];
+                $moneyType = $moneyTypeMap[$moneyTypeCodeInt] ?? 'Cash';
+                
+                $paymentAmount = floatval($payment['payment_amount'] ?? 0);
+                
+                // CRITICAL: Credit notes have negative payment amounts
+                // Documentation: "* - for credit note ... paymentAmount counters will be used with negative numbers"
+                if ($receiptType === 'CreditNote') {
+                    $paymentAmount = -abs($paymentAmount); // Ensure negative
+                }
+                
+                if (!isset($balanceByMoneyType[$currency])) {
+                    $balanceByMoneyType[$currency] = [];
+                }
+                if (!isset($balanceByMoneyType[$currency][$moneyType])) {
+                    $balanceByMoneyType[$currency][$moneyType] = 0;
+                }
+                $balanceByMoneyType[$currency][$moneyType] += $paymentAmount;
+            }
+            
+            // Get tax lines for this receipt (a receipt can have multiple tax lines)
+            $taxLines = $this->db->getRows(
+                "SELECT * FROM fiscal_receipt_taxes 
+                 WHERE fiscal_receipt_id = :receipt_id
+                 ORDER BY tax_id ASC, tax_percent ASC",
+                [':receipt_id' => $receipt['id']]
+            );
+            
+            // Process each tax line
+            foreach ($taxLines as $taxLine) {
+                $taxID = intval($taxLine['tax_id'] ?? 0);
+                $taxPercentValue = isset($taxLine['tax_percent']) && $taxLine['tax_percent'] !== null ? floatval($taxLine['tax_percent']) : null;
+                $taxAmount = floatval($taxLine['tax_amount'] ?? 0);
+                $salesAmountWithTax = floatval($taxLine['sales_amount_with_tax'] ?? 0);
                 
                 // Convert taxPercent to string for use as array key
-                // If taxPercent is 0 (zero-rated), use '0' as key (will become "0.00" in signature)
-                // If taxPercent > 0, use actual value as key
-                $taxPercentKey = $taxPercent !== null ? (string)$taxPercent : '0';
+                $taxPercentKey = $taxPercentValue !== null ? (string)$taxPercentValue : 'exempt';
                 
-                if (!isset($salesByTax[$currency])) {
-                    $salesByTax[$currency] = [];
-                }
-                if (!isset($salesByTax[$currency][$taxID])) {
-                    $salesByTax[$currency][$taxID] = [];
-                }
-                if (!isset($salesByTax[$currency][$taxID][$taxPercentKey])) {
-                    $salesByTax[$currency][$taxID][$taxPercentKey] = 0.0;
-                }
-                $salesByTax[$currency][$taxID][$taxPercentKey] += $salesAmountWithTax;
+                // CRITICAL: According to documentation section 6:
+                // - SaleByTax: Does NOT include credit notes and debit notes
+                // - CreditNoteByTax: Only for credit notes, with NEGATIVE values
+                // - DebitNoteByTax: Only for debit notes
+                // - Credit notes decrease counters (negative values)
                 
-                if (!isset($salesTaxByTax[$currency])) {
-                    $salesTaxByTax[$currency] = [];
+                if ($receiptType === 'FiscalInvoice') {
+                    // Fiscal Invoice: Add to SaleByTax and SaleTaxByTax
+                    if (!isset($salesByTax[$currency])) {
+                        $salesByTax[$currency] = [];
+                    }
+                    if (!isset($salesByTax[$currency][$taxID])) {
+                        $salesByTax[$currency][$taxID] = [];
+                    }
+                    if (!isset($salesByTax[$currency][$taxID][$taxPercentKey])) {
+                        $salesByTax[$currency][$taxID][$taxPercentKey] = 0.0;
+                    }
+                    $salesByTax[$currency][$taxID][$taxPercentKey] += $salesAmountWithTax;
+                    
+                    if (!isset($salesTaxByTax[$currency])) {
+                        $salesTaxByTax[$currency] = [];
+                    }
+                    if (!isset($salesTaxByTax[$currency][$taxID])) {
+                        $salesTaxByTax[$currency][$taxID] = [];
+                    }
+                    if (!isset($salesTaxByTax[$currency][$taxID][$taxPercentKey])) {
+                        $salesTaxByTax[$currency][$taxID][$taxPercentKey] = 0.0;
+                    }
+                    $salesTaxByTax[$currency][$taxID][$taxPercentKey] += $taxAmount;
+                    
+                } elseif ($receiptType === 'CreditNote') {
+                    // Credit Note: Add to CreditNoteByTax and CreditNoteTaxByTax with NEGATIVE values
+                    // Documentation: "* - for credit note salesAmountWithTax, taxAmount, paymentAmount counters will be used with negative numbers"
+                    if (!isset($creditNoteByTax[$currency])) {
+                        $creditNoteByTax[$currency] = [];
+                    }
+                    if (!isset($creditNoteByTax[$currency][$taxID])) {
+                        $creditNoteByTax[$currency][$taxID] = [];
+                    }
+                    if (!isset($creditNoteByTax[$currency][$taxID][$taxPercentKey])) {
+                        $creditNoteByTax[$currency][$taxID][$taxPercentKey] = 0.0;
+                    }
+                    // Use negative value for credit notes
+                    $creditNoteByTax[$currency][$taxID][$taxPercentKey] += -abs($salesAmountWithTax);
+                    
+                    if (!isset($creditNoteTaxByTax[$currency])) {
+                        $creditNoteTaxByTax[$currency] = [];
+                    }
+                    if (!isset($creditNoteTaxByTax[$currency][$taxID])) {
+                        $creditNoteTaxByTax[$currency][$taxID] = [];
+                    }
+                    if (!isset($creditNoteTaxByTax[$currency][$taxID][$taxPercentKey])) {
+                        $creditNoteTaxByTax[$currency][$taxID][$taxPercentKey] = 0.0;
+                    }
+                    // Use negative value for credit notes
+                    $creditNoteTaxByTax[$currency][$taxID][$taxPercentKey] += -abs($taxAmount);
+                    
+                } elseif ($receiptType === 'DebitNote') {
+                    // Debit Note: Add to DebitNoteByTax and DebitNoteTaxByTax
+                    if (!isset($debitNoteByTax[$currency])) {
+                        $debitNoteByTax[$currency] = [];
+                    }
+                    if (!isset($debitNoteByTax[$currency][$taxID])) {
+                        $debitNoteByTax[$currency][$taxID] = [];
+                    }
+                    if (!isset($debitNoteByTax[$currency][$taxID][$taxPercentKey])) {
+                        $debitNoteByTax[$currency][$taxID][$taxPercentKey] = 0.0;
+                    }
+                    $debitNoteByTax[$currency][$taxID][$taxPercentKey] += $salesAmountWithTax;
+                    
+                    if (!isset($debitNoteTaxByTax[$currency])) {
+                        $debitNoteTaxByTax[$currency] = [];
+                    }
+                    if (!isset($debitNoteTaxByTax[$currency][$taxID])) {
+                        $debitNoteTaxByTax[$currency][$taxID] = [];
+                    }
+                    if (!isset($debitNoteTaxByTax[$currency][$taxID][$taxPercentKey])) {
+                        $debitNoteTaxByTax[$currency][$taxID][$taxPercentKey] = 0.0;
+                    }
+                    $debitNoteTaxByTax[$currency][$taxID][$taxPercentKey] += $taxAmount;
                 }
-                if (!isset($salesTaxByTax[$currency][$taxID])) {
-                    $salesTaxByTax[$currency][$taxID] = [];
+            }
+            
+            // Handle exempt receipts (no tax lines)
+            if (empty($taxLines)) {
+                // Exempt receipt - no tax information
+                $taxID = 0;
+                $taxPercentKey = 'exempt';
+                
+                if ($receiptType === 'FiscalInvoice') {
+                    if (!isset($salesByTax[$currency])) {
+                        $salesByTax[$currency] = [];
+                    }
+                    if (!isset($salesByTax[$currency][$taxID])) {
+                        $salesByTax[$currency][$taxID] = [];
+                    }
+                    if (!isset($salesByTax[$currency][$taxID][$taxPercentKey])) {
+                        $salesByTax[$currency][$taxID][$taxPercentKey] = 0;
+                    }
+                    $salesByTax[$currency][$taxID][$taxPercentKey] += $receiptTotal;
+                } elseif ($receiptType === 'CreditNote') {
+                    if (!isset($creditNoteByTax[$currency])) {
+                        $creditNoteByTax[$currency] = [];
+                    }
+                    if (!isset($creditNoteByTax[$currency][$taxID])) {
+                        $creditNoteByTax[$currency][$taxID] = [];
+                    }
+                    if (!isset($creditNoteByTax[$currency][$taxID][$taxPercentKey])) {
+                        $creditNoteByTax[$currency][$taxID][$taxPercentKey] = 0;
+                    }
+                    $creditNoteByTax[$currency][$taxID][$taxPercentKey] += -abs($receiptTotal);
+                } elseif ($receiptType === 'DebitNote') {
+                    if (!isset($debitNoteByTax[$currency])) {
+                        $debitNoteByTax[$currency] = [];
+                    }
+                    if (!isset($debitNoteByTax[$currency][$taxID])) {
+                        $debitNoteByTax[$currency][$taxID] = [];
+                    }
+                    if (!isset($debitNoteByTax[$currency][$taxID][$taxPercentKey])) {
+                        $debitNoteByTax[$currency][$taxID][$taxPercentKey] = 0;
+                    }
+                    $debitNoteByTax[$currency][$taxID][$taxPercentKey] += $receiptTotal;
                 }
-                if (!isset($salesTaxByTax[$currency][$taxID][$taxPercentKey])) {
-                    $salesTaxByTax[$currency][$taxID][$taxPercentKey] = 0.0;
-                }
-                $salesTaxByTax[$currency][$taxID][$taxPercentKey] += $taxAmount;
-            } else {
-                // No tax (exempt - taxPercent is null/not set)
-                // CRITICAL: Use a special key to distinguish exempt from zero-rated
-                // Exempt: taxPercent is null → empty string in signature
-                // Zero-rated: taxPercent is 0 → "0.00" in signature
-                // We'll use 'exempt' as the key to indicate null taxPercent
-                if (!isset($salesByTax[$currency])) {
-                    $salesByTax[$currency] = [];
-                }
-                if (!isset($salesByTax[$currency][0])) {
-                    $salesByTax[$currency][0] = [];
-                }
-                // Use 'exempt' key to indicate null taxPercent (exempt, not zero-rated)
-                if (!isset($salesByTax[$currency][0]['exempt'])) {
-                    $salesByTax[$currency][0]['exempt'] = 0;
-                }
-                $salesByTax[$currency][0]['exempt'] += $receiptTotal;
             }
         }
         
-        // Build counters array in ZIMRA format
-        // SaleByTax counters
+        // Helper function to format counter value and add to counters array
+        $addCounter = function($counterType, $currency, $taxID, $taxPercent, $value, $moneyType = null) use (&$counters) {
+            // Documentation: "Zero value counters must not be submitted to FDMS"
+            if (abs($value) < 0.01) {
+                return; // Skip zero-value counters
+            }
+            
+            // Format value as decimal string with exactly 2 decimal places (required by ZIMRA decimal(19,2))
+            $formattedValue = number_format($value, 2, '.', '');
+            
+            // Map currency code for ZIMRA (ZWL -> ZWG)
+            $currencyForZimra = mapCurrencyCodeForZimra($currency);
+            
+            $counter = [
+                'fiscalCounterType' => $counterType,
+                'fiscalCounterCurrency' => $currencyForZimra,
+                'fiscalCounterValue' => $formattedValue
+            ];
+            
+            // Add tax-related fields for "byTax" counters
+            if (strpos($counterType, 'ByTax') !== false) {
+                $counter['fiscalCounterTaxID'] = $taxID > 0 ? $taxID : null;
+                // CRITICAL: For exempt (taxPercentKey === 'exempt'), taxPercent must be null
+                // Documentation: "In case of exempt, this field must not be provided"
+                if ($taxPercent !== null && $taxPercent !== 'exempt') {
+                    $counter['fiscalCounterTaxPercent'] = floatval($taxPercent);
+                }
+            }
+            
+            // Add money type for BalanceByMoneyType
+            if ($counterType === 'BalanceByMoneyType' && $moneyType) {
+                $counter['fiscalCounterMoneyType'] = $moneyType;
+            }
+            
+            $counters[] = $counter;
+        };
+        
+        // SaleByTax counters (FiscalInvoice only, does NOT include credit/debit notes)
         foreach ($salesByTax as $currency => $taxIDs) {
             foreach ($taxIDs as $taxID => $taxPercents) {
                 foreach ($taxPercents as $taxPercentKey => $value) {
-                    if ($value > 0) {
-                        // Convert taxPercentKey back to float for the API
-                        $taxPercent = floatval($taxPercentKey);
-                        
-                        // Format value as decimal string with exactly 2 decimal places (required by ZIMRA decimal(21,2))
-                        // ZIMRA API validation requires decimal(21,2) format - must have exactly 2 decimal places
-                        // Using string format ensures trailing zeros are preserved in JSON
-                        $formattedValue = number_format($value, 2, '.', '');
-                        
-                        // CRITICAL: Distinguish between exempt (null) and zero-rated (0)
-                        // - If taxPercentKey is 'exempt': taxPercent = null (exempt → empty string in signature)
-                        // - If taxPercentKey is '0' or 0: taxPercent = 0 (zero-rated → "0.00" in signature)
-                        // - Otherwise: taxPercent = actual value
-                        $taxPercentForCounter = null;
-                        if ($taxPercentKey === 'exempt') {
-                            // Exempt: taxPercent is null (will result in empty string in signature)
-                            $taxPercentForCounter = null;
-                        } elseif ($taxPercentKey !== '' && $taxPercentKey !== null) {
-                            // taxPercent was explicitly provided (including 0 for zero-rated)
-                            $taxPercentForCounter = $taxPercent;
-                        }
-                        // If taxPercentKey is empty/null (and not 'exempt'), leave as null (exempt)
-                        
-                        // Map currency code for ZIMRA (ZWL -> ZWG)
-                        $currencyForZimra = mapCurrencyCodeForZimra($currency);
-                        
-                        $counters[] = [
-                            'fiscalCounterType' => 'SaleByTax',
-                            'fiscalCounterCurrency' => $currencyForZimra,
-                            'fiscalCounterTaxID' => $taxID > 0 ? $taxID : null,
-                            'fiscalCounterTaxPercent' => $taxPercentForCounter, // null for exempt, 0 for zero-rated, value for others
-                            'fiscalCounterValue' => $formattedValue // String with exactly 2 decimal places
-                        ];
-                    }
+                    $taxPercent = ($taxPercentKey === 'exempt') ? null : floatval($taxPercentKey);
+                    $addCounter('SaleByTax', $currency, $taxID, $taxPercent, $value);
                 }
             }
         }
         
-        // SaleTaxByTax counters
+        // SaleTaxByTax counters (FiscalInvoice only)
         foreach ($salesTaxByTax as $currency => $taxIDs) {
             foreach ($taxIDs as $taxID => $taxPercents) {
                 foreach ($taxPercents as $taxPercentKey => $value) {
-                    if ($value > 0) {
-                        // Convert taxPercentKey back to float for the API
-                        $taxPercent = floatval($taxPercentKey);
-                        
-                        // Format value as decimal string with exactly 2 decimal places (required by ZIMRA decimal(21,2))
-                        // ZIMRA API validation requires decimal(21,2) format - must have exactly 2 decimal places
-                        // Using string format ensures trailing zeros are preserved in JSON
-                        $formattedValue = number_format($value, 2, '.', '');
-                        
-                        // CRITICAL: Distinguish between exempt (null) and zero-rated (0)
-                        // - If taxPercentKey is 'exempt': taxPercent = null (exempt → empty string in signature)
-                        // - If taxPercentKey is '0' or 0: taxPercent = 0 (zero-rated → "0.00" in signature)
-                        // - Otherwise: taxPercent = actual value
-                        $taxPercentForCounter = null;
-                        if ($taxPercentKey === 'exempt') {
-                            // Exempt: taxPercent is null (will result in empty string in signature)
-                            $taxPercentForCounter = null;
-                        } elseif ($taxPercentKey !== '' && $taxPercentKey !== null) {
-                            // taxPercent was explicitly provided (including 0 for zero-rated)
-                            $taxPercentForCounter = $taxPercent;
-                        }
-                        // If taxPercentKey is empty/null (and not 'exempt'), leave as null (exempt)
-                        
-                        // Map currency code for ZIMRA (ZWL -> ZWG)
-                        $currencyForZimra = mapCurrencyCodeForZimra($currency);
-                        
-                        $counters[] = [
-                            'fiscalCounterType' => 'SaleTaxByTax',
-                            'fiscalCounterCurrency' => $currencyForZimra,
-                            'fiscalCounterTaxID' => $taxID > 0 ? $taxID : null,
-                            'fiscalCounterTaxPercent' => $taxPercentForCounter, // null for exempt, 0 for zero-rated, value for others
-                            'fiscalCounterValue' => $formattedValue // String with exactly 2 decimal places
-                        ];
-                    }
+                    $taxPercent = ($taxPercentKey === 'exempt') ? null : floatval($taxPercentKey);
+                    $addCounter('SaleTaxByTax', $currency, $taxID, $taxPercent, $value);
                 }
             }
         }
         
-        // BalanceByMoneyType counters
+        // CreditNoteByTax counters (CreditNote only, with negative values)
+        foreach ($creditNoteByTax as $currency => $taxIDs) {
+            foreach ($taxIDs as $taxID => $taxPercents) {
+                foreach ($taxPercents as $taxPercentKey => $value) {
+                    // Value is already negative from processing above
+                    $taxPercent = ($taxPercentKey === 'exempt') ? null : floatval($taxPercentKey);
+                    $addCounter('CreditNoteByTax', $currency, $taxID, $taxPercent, $value);
+                }
+            }
+        }
+        
+        // CreditNoteTaxByTax counters (CreditNote only, with negative values)
+        foreach ($creditNoteTaxByTax as $currency => $taxIDs) {
+            foreach ($taxIDs as $taxID => $taxPercents) {
+                foreach ($taxPercents as $taxPercentKey => $value) {
+                    // Value is already negative from processing above
+                    $taxPercent = ($taxPercentKey === 'exempt') ? null : floatval($taxPercentKey);
+                    $addCounter('CreditNoteTaxByTax', $currency, $taxID, $taxPercent, $value);
+                }
+            }
+        }
+        
+        // DebitNoteByTax counters (DebitNote only)
+        foreach ($debitNoteByTax as $currency => $taxIDs) {
+            foreach ($taxIDs as $taxID => $taxPercents) {
+                foreach ($taxPercents as $taxPercentKey => $value) {
+                    $taxPercent = ($taxPercentKey === 'exempt') ? null : floatval($taxPercentKey);
+                    $addCounter('DebitNoteByTax', $currency, $taxID, $taxPercent, $value);
+                }
+            }
+        }
+        
+        // DebitNoteTaxByTax counters (DebitNote only)
+        foreach ($debitNoteTaxByTax as $currency => $taxIDs) {
+            foreach ($taxIDs as $taxID => $taxPercents) {
+                foreach ($taxPercents as $taxPercentKey => $value) {
+                    $taxPercent = ($taxPercentKey === 'exempt') ? null : floatval($taxPercentKey);
+                    $addCounter('DebitNoteTaxByTax', $currency, $taxID, $taxPercent, $value);
+                }
+            }
+        }
+        
+        // BalanceByMoneyType counters (all receipt types, credit notes have negative values)
         foreach ($balanceByMoneyType as $currency => $moneyTypes) {
             foreach ($moneyTypes as $moneyType => $value) {
-                if ($value > 0) {
-                    // Format value as decimal string with exactly 2 decimal places (required by ZIMRA decimal(21,2))
-                    // ZIMRA API validation requires decimal(21,2) format - must have exactly 2 decimal places
-                    // Using string format ensures trailing zeros are preserved in JSON
+                // Documentation: "Zero value counters must not be submitted to FDMS"
+                // But for BalanceByMoneyType, we might have negative values (credit notes)
+                // So we check for non-zero (not just > 0)
+                if (abs($value) >= 0.01) {
                     $formattedValue = number_format($value, 2, '.', '');
-                    
-                    // Map currency code for ZIMRA (ZWL -> ZWG)
                     $currencyForZimra = mapCurrencyCodeForZimra($currency);
                     
                     $counters[] = [
                         'fiscalCounterType' => 'BalanceByMoneyType',
                         'fiscalCounterCurrency' => $currencyForZimra,
                         'fiscalCounterMoneyType' => $moneyType,
-                        'fiscalCounterValue' => $formattedValue // String with exactly 2 decimal places
+                        'fiscalCounterValue' => $formattedValue
                     ];
                 }
             }

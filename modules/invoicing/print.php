@@ -21,7 +21,7 @@ if (!$invoice) {
     redirectTo('modules/invoicing/index.php');
 }
 
-$invoiceItems = $db->getRows("SELECT ii.*, p.brand, p.model FROM invoice_items ii LEFT JOIN products p ON ii.product_id = p.id WHERE ii.invoice_id = :id ORDER BY ii.id", [':id' => $id]);
+$invoiceItems = $db->getRows("SELECT ii.*, p.product_name, p.brand, p.model, p.tax_id as product_tax_id, pc.tax_id as category_tax_id FROM invoice_items ii LEFT JOIN products p ON ii.product_id = p.id LEFT JOIN product_categories pc ON p.category_id = pc.id WHERE ii.invoice_id = :id ORDER BY ii.id", [':id' => $id]);
 if ($invoiceItems === false) $invoiceItems = [];
 
 // Get company settings
@@ -36,6 +36,41 @@ $bankAccount = getSetting('company_bank_account', '');
 $bankBranch = getSetting('company_bank_branch', '');
 $taxRate = floatval(getSetting('default_tax_rate', 15));
 $companyTagline = getSetting('company_tagline', 'Transforming Your Tomorrow');
+
+// Get prices_include_tax setting (same as POS)
+$pricesIncludeTax = getSetting('prices_include_tax', '1') == '1';
+
+// Get applicable taxes from fiscal_config for product-specific tax rates
+$applicableTaxes = [];
+$primaryDb = Database::getPrimaryInstance();
+$branchId = $_SESSION['branch_id'] ?? null;
+if ($branchId) {
+    $fiscalConfig = $primaryDb->getRow(
+        "SELECT applicable_taxes FROM fiscal_config WHERE branch_id = :branch_id LIMIT 1",
+        [':branch_id' => $branchId]
+    );
+    if ($fiscalConfig && !empty($fiscalConfig['applicable_taxes'])) {
+        $applicableTaxes = json_decode($fiscalConfig['applicable_taxes'], true);
+        if (!is_array($applicableTaxes)) {
+            $applicableTaxes = [];
+        }
+    }
+}
+
+// Create tax lookup map
+$taxMap = [];
+foreach ($applicableTaxes as $tax) {
+    if (isset($tax['taxID'])) {
+        $taxId = intval($tax['taxID']);
+        $taxPercent = isset($tax['taxPercent']) ? floatval($tax['taxPercent']) : 0;
+        $taxMap[$taxId] = $taxPercent;
+        $taxMap[(string)$taxId] = $taxPercent;
+    }
+}
+
+// Get default tax rate function
+require_once APP_PATH . '/includes/settings_functions.php';
+$defaultTaxRate = getDefaultTaxRate();
 
 // Get invoice customizations
 $invoiceLogo = getSetting('invoice_logo', getSetting('company_logo', ''));
@@ -67,31 +102,128 @@ $clientName = $invoice['company_name'] ?? trim(($invoice['first_name'] ?? '') . 
 $salesRep = trim(($invoice['sales_rep_first'] ?? '') . ' ' . ($invoice['sales_rep_last'] ?? ''));
 $termsText = $invoice['terms'] ?: $defaultTerms;
 
+// Calculate global discount percentage from invoice discount_amount
+// Only apply discount if discount_amount > 0
+$globalDiscountPercent = 0;
+if ($invoice['subtotal'] > 0 && $invoice['discount_amount'] > 0 && $invoice['discount_amount'] > 0.01) {
+    $globalDiscountPercent = ($invoice['discount_amount'] / $invoice['subtotal']) * 100;
+}
+
 foreach ($invoiceItems as &$item) {
-    $unitPrice = floatval($item['unit_price'] ?? 0);
+    $unitPrice = floatval($item['unit_price'] ?? 0); // Original price WITH tax if pricesIncludeTax
     $quantity = intval($item['quantity'] ?? 1);
-    $discountPct = floatval($item['discount_percentage'] ?? 0);
     
-    // Calculate excluding VAT first
-    $lineSubtotal = $unitPrice * $quantity;
-    $lineDiscount = $lineSubtotal * ($discountPct / 100);
-    $lineNet = $lineSubtotal - $lineDiscount;
+    // Get product-specific tax rate
+    $productTaxId = $item['product_tax_id'] ?? null;
+    $categoryTaxId = $item['category_tax_id'] ?? null;
+    $finalTaxId = $productTaxId ?: $categoryTaxId;
+    $itemTaxRate = $defaultTaxRate; // Default to default tax rate
     
-    // Calculate VAT on the net amount
-    $lineVAT = $lineNet * ($taxRate / 100);
-    $lineTotalInclVAT = $lineNet + $lineVAT;
+    if ($finalTaxId) {
+        $taxIdInt = intval($finalTaxId);
+        if (isset($taxMap[$taxIdInt])) {
+            $itemTaxRate = $taxMap[$taxIdInt];
+        } elseif (isset($taxMap[(string)$taxIdInt])) {
+            $itemTaxRate = $taxMap[(string)$taxIdInt];
+        }
+    }
+    
+    // Use original unit_price * quantity as the base (this is the price WITH tax if pricesIncludeTax)
+    // This matches POS behavior - show original prices in item rows, discount in summary
+    $lineSubtotal = $unitPrice * $quantity; // Original subtotal WITH tax (no discount applied to item display)
+    
+    // The lineSubtotal is the total including VAT (matches what POS shows in item rows)
+    // Discount is shown separately in the summary section, not in item totals
+    $lineTotalInclVAT = $lineSubtotal;
+    
+    // Calculate VAT based on prices_include_tax setting
+    // Extract tax from the final total
+    if ($pricesIncludeTax) {
+        // Prices include tax - EXTRACT tax from the final total
+        if ($itemTaxRate > 0) {
+            $taxDecimal = $itemTaxRate / 100;
+            $priceWithoutTax = $lineTotalInclVAT / (1 + $taxDecimal);
+            $lineVAT = $lineTotalInclVAT - $priceWithoutTax;
+        } else {
+            $priceWithoutTax = $lineTotalInclVAT;
+            $lineVAT = 0;
+        }
+    } else {
+        // Prices do NOT include tax - ADD tax on top
+        $priceWithoutTax = $lineSubtotal;
+        if ($itemTaxRate > 0) {
+            $lineVAT = $lineSubtotal * ($itemTaxRate / 100);
+        } else {
+            $lineVAT = 0;
+        }
+        $lineTotalInclVAT = $lineSubtotal + $lineVAT;
+    }
     
     // Unit price excluding VAT
-    $item['unit_price_excl_vat'] = $lineNet / $quantity;
-    $item['line_total_excl_vat'] = $lineNet;
+    $item['unit_price_excl_vat'] = $priceWithoutTax / $quantity;
+    $item['line_total_excl_vat'] = $priceWithoutTax;
     $item['line_vat'] = $lineVAT;
     $item['line_total_incl_vat'] = $lineTotalInclVAT;
+    $item['tax_rate'] = $itemTaxRate; // Store tax rate for grouping
     
-    $totalExclVAT += $lineNet;
+    $totalExclVAT += $priceWithoutTax;
     $totalVAT += $lineVAT;
     $totalInclVAT += $lineTotalInclVAT;
 }
 unset($item);
+
+// Group taxes by tax rate for display (like POS receipt)
+// Use the tax amounts already calculated from items (which show original prices)
+// These are already rounded per item, so we just sum them
+$taxGroups = [];
+foreach ($invoiceItems as $item) {
+    $taxRate = $item['tax_rate'] ?? 0;
+    $taxAmount = $item['line_vat'] ?? 0; // This is already rounded per item
+    
+    if ($taxAmount > 0) {
+        $key = number_format($taxRate, 1);
+        if (!isset($taxGroups[$key])) {
+            $taxGroups[$key] = [
+                'rate' => $taxRate,
+                'amount' => 0
+            ];
+        }
+        $taxGroups[$key]['amount'] += $taxAmount;
+    }
+}
+
+// Sort tax groups by rate
+ksort($taxGroups);
+
+// Round tax group amounts to 2 decimal places (matching POS behavior)
+foreach ($taxGroups as &$group) {
+    $group['amount'] = round($group['amount'], 2);
+}
+unset($group);
+
+// Summary calculation (matching POS receipt):
+// 1. Subtotal (Excl VAT) = sum of item "Total (Excl VAT)" values
+// 2. Discount = invoice discount_amount
+// 3. Tax totals = sum of item VAT amounts (already grouped and rounded)
+// 4. Total (Incl VAT) = Subtotal - Discount + Sum of Taxes
+
+// Subtotal is already calculated as sum of item "Total (Excl VAT)" values
+// $totalExclVAT is correct
+
+// Discount amount
+$discountAmount = floatval($invoice['discount_amount'] ?? 0);
+
+// Sum of all taxes (from grouped tax amounts)
+$sumOfTaxes = 0;
+foreach ($taxGroups as $group) {
+    $sumOfTaxes += $group['amount'];
+}
+
+// Total (Incl VAT) = Subtotal - Discount + Sum of Taxes
+$totalInclVAT = $totalExclVAT - $discountAmount + $sumOfTaxes;
+
+// Total VAT for display (sum of all tax groups)
+$totalVAT = $sumOfTaxes;
 
 // Check if we should use TCPDF (for print) or HTML (for screen)
 $usePDF = isset($_GET['pdf']) || (isset($_GET['print']) && $_GET['print'] == '1');
@@ -292,9 +424,19 @@ if ($usePDF) {
     $pdf->SetFillColor(255, 255, 255);
     
     foreach ($invoiceItems as $item) {
-        $description = $item['product_id'] 
-            ? trim(($item['brand'] ?? '') . ' ' . ($item['model'] ?? ''))
-            : ($item['description'] ?? '');
+        // Handle product description: General category uses product_name, others use brand+model
+        if ($item['product_id']) {
+            // Product exists - check for product_name first (General category)
+            if (!empty($item['product_name'])) {
+                $description = trim($item['product_name']);
+            } else {
+                // Other categories use brand + model
+                $description = trim(($item['brand'] ?? '') . ' ' . ($item['model'] ?? ''));
+            }
+        } else {
+            // Manual item - use description from invoice_items
+            $description = $item['description'] ?? '';
+        }
         
         // Get starting position
         $startX = $pdf->GetX();
@@ -360,11 +502,15 @@ if ($usePDF) {
     $pdf->SetFont('helvetica', 'B', 9);
     $pdf->Cell(0, 8, 'USD ' . number_format($totalExclVAT, 2), 1, 1, 'R');
     
-    $pdf->SetFont('helvetica', '', 9);
-    $pdf->Cell(126, 0, '', 0, 0); // Spacer
-    $pdf->Cell(54, 8, 'VAT (' . $taxRate . '%):', 1, 0, 'L');
-    $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(0, 8, 'USD ' . number_format($totalVAT, 2), 1, 1, 'R');
+    // Display tax breakdown grouped by tax rate (like POS receipt)
+    foreach ($taxGroups as $group) {
+        $pdf->SetFont('helvetica', '', 9);
+        $pdf->Cell(126, 0, '', 0, 0); // Spacer
+        $label = 'Total ' . number_format($group['rate'], 1) . '% VAT:';
+        $pdf->Cell(54, 8, $label, 1, 0, 'L');
+        $pdf->SetFont('helvetica', 'B', 9);
+        $pdf->Cell(0, 8, 'USD ' . number_format($group['amount'], 2), 1, 1, 'R');
+    }
     
     $pdf->SetFont('helvetica', 'B', 10);
     $pdf->Cell(126, 0, '', 0, 0); // Spacer
@@ -433,17 +579,23 @@ if ($usePDF) {
         }
     }
     
-    // Add QR Code and Verification at TOP RIGHT (according to documentation)
+    // Add QR Code and Verification at BOTTOM CENTERED (before footer)
     if ($fiscalDetails && $fiscalReceipt) {
-        // Save current position
-        $headerY = $pdf->GetY();
-        $headerX = $pdf->GetX();
+        // Add spacing before QR code section
+        $pdf->Ln(15);
         
-        // Position for top right (QR code area)
-        $qrTopX = 195 - 30; // Right margin
-        $qrTopY = 20; // Top margin
+        // Draw horizontal line above QR code section
+        $lineY = $pdf->GetY();
+        $pdf->Line(15, $lineY, 195, $lineY);
+        $pdf->Ln(10);
         
-        // QR Code (TOP RIGHT)
+        // Calculate center position for QR code (page width is 180mm, QR code is 25mm)
+        $pageWidth = 180; // 195 - 15 (margins)
+        $qrSize = 25;
+        $qrX = 15 + ($pageWidth / 2) - ($qrSize / 2); // Center horizontally
+        $qrY = $pdf->GetY();
+        
+        // QR Code (BOTTOM CENTERED)
         $qrCodeDisplayed = false;
         
         // First, try to use stored QR code image if available
@@ -453,7 +605,7 @@ if ($usePDF) {
                 if ($qrImageData !== false && strlen($qrImageData) > 0) {
                     $tempQrFile = tempnam(sys_get_temp_dir(), 'qr_') . '.png';
                     file_put_contents($tempQrFile, $qrImageData);
-                    $pdf->Image($tempQrFile, $qrTopX, $qrTopY, 25, 25, 'PNG', '', '', false, 300, '', false, false, 0);
+                    $pdf->Image($tempQrFile, $qrX, $qrY, $qrSize, $qrSize, 'PNG', '', '', false, 300, '', false, false, 0);
                     @unlink($tempQrFile);
                     $qrCodeDisplayed = true;
                 }
@@ -486,7 +638,7 @@ if ($usePDF) {
                         'module_width' => 1,
                         'module_height' => 1
                     );
-                    $pdf->write2DBarcode($qrCodeString, 'QRCODE,L', $qrTopX, $qrTopY, 25, 25, $style, 'N');
+                    $pdf->write2DBarcode($qrCodeString, 'QRCODE,L', $qrX, $qrY, $qrSize, $qrSize, $style, 'N');
                     $qrCodeDisplayed = true;
                 }
             } catch (Exception $e) {
@@ -494,33 +646,26 @@ if ($usePDF) {
             }
         }
         
-        // Verification Code (below QR code)
+        // Verification Code (below QR code, centered)
         if (isset($fiscalDetails['verification_code'])) {
-            $pdf->SetXY($qrTopX, $qrTopY + 27);
+            $pdf->SetY($qrY + $qrSize + 5);
             $pdf->SetFont('helvetica', 'B', 8);
-            $pdf->Cell(30, 4, 'Verification code', 0, 1, 'L');
+            $pdf->Cell(0, 4, 'Verification code', 0, 1, 'C');
             $pdf->SetFont('helvetica', '', 8);
-            $pdf->SetXY($qrTopX, $pdf->GetY());
-            $pdf->Cell(30, 4, $fiscalDetails['verification_code'], 0, 1, 'L');
+            $pdf->Cell(0, 4, $fiscalDetails['verification_code'], 0, 1, 'C');
         }
         
-        // Verification URL
-        $pdf->SetXY($qrTopX, $pdf->GetY() + 2);
+        // Verification URL (centered)
+        $pdf->SetY($pdf->GetY() + 2);
         $pdf->SetFont('helvetica', '', 7);
-        $pdf->Cell(30, 3, 'You can verify this', 0, 1, 'L');
-        $pdf->SetXY($qrTopX, $pdf->GetY());
-        $pdf->Cell(30, 3, 'receipt manually at', 0, 1, 'L');
-        $pdf->SetXY($qrTopX, $pdf->GetY());
+        $pdf->Cell(0, 3, 'You can verify this receipt manually at', 0, 1, 'C');
         $pdf->SetFont('helvetica', 'U', 7);
         $pdf->SetTextColor(30, 58, 138);
-        $pdf->Cell(30, 3, 'https://receipt.zimra.org/', 0, 1, 'L', false, 'https://receipt.zimra.org/');
+        $pdf->Cell(0, 3, 'https://receipt.zimra.org/', 0, 1, 'C', false, 'https://receipt.zimra.org/');
         $pdf->SetTextColor(0, 0, 0);
         
-        // Restore position
-        $pdf->SetXY($headerX, $headerY);
+        $pdf->Ln(10);
     }
-    
-    // Fiscal section removed - QR code is now at top right per documentation
     
     // Footer - Position at bottom of page
     if ($invoiceFooterText) {
@@ -924,11 +1069,18 @@ if ($usePDF) {
                 <?php foreach ($invoiceItems as $item): ?>
                     <tr>
                         <td>
-                            <?php if ($item['product_id']): ?>
-                                <?= escapeHtml(trim(($item['brand'] ?? '') . ' ' . ($item['model'] ?? ''))) ?>
-                            <?php else: ?>
-                                <?= escapeHtml($item['description'] ?? '') ?>
-                            <?php endif; ?>
+                            <?php 
+                            // Handle product description: General category uses product_name, others use brand+model
+                            if ($item['product_id']) {
+                                if (!empty($item['product_name'])) {
+                                    echo escapeHtml(trim($item['product_name']));
+                                } else {
+                                    echo escapeHtml(trim(($item['brand'] ?? '') . ' ' . ($item['model'] ?? '')));
+                                }
+                            } else {
+                                echo escapeHtml($item['description'] ?? '');
+                            }
+                            ?>
                         </td>
                         <td class="text-center"><?= $item['quantity'] ?></td>
                         <td class="text-end"><?= number_format($item['unit_price_excl_vat'], 2) ?></td>
@@ -946,10 +1098,18 @@ if ($usePDF) {
                 <span><strong>Subtotal (Excl VAT):</strong></span>
                 <span><strong>USD <?= number_format($totalExclVAT, 2) ?></strong></span>
             </div>
+            <?php if ($discountAmount > 0.01): ?>
             <div class="summary-row">
-                <span><strong>VAT (<?= $taxRate ?>%):</strong></span>
-                <span><strong>USD <?= number_format($totalVAT, 2) ?></strong></span>
+                <span><strong>Discount:</strong></span>
+                <span><strong>USD -<?= number_format($discountAmount, 2) ?></strong></span>
             </div>
+            <?php endif; ?>
+            <?php foreach ($taxGroups as $group): ?>
+            <div class="summary-row">
+                <span><strong>Total <?= number_format($group['rate'], 1) ?>% VAT:</strong></span>
+                <span><strong>USD <?= number_format($group['amount'], 2) ?></strong></span>
+            </div>
+            <?php endforeach; ?>
             <div class="summary-row total">
                 <span><strong>Total (Incl VAT):</strong></span>
                 <span><strong>USD <?= number_format($totalInclVAT, 2) ?></strong></span>
