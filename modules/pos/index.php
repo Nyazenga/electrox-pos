@@ -2620,16 +2620,54 @@ function processTradeInFromPOS() {
             .then(processResult => {
                 console.log('Process trade-in response:', processResult);
                 if (processResult && processResult.success) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Success',
-                        text: 'Trade-in processed successfully. Device added to stock and product deducted.',
-                        allowOutsideClick: false,
-                        allowEscapeKey: false
-                    }).then(() => {
-                        bootstrap.Modal.getInstance(document.getElementById('tradeInModal')).hide();
-                        window.location.reload();
-                    });
+                    // Close modal first
+                    bootstrap.Modal.getInstance(document.getElementById('tradeInModal')).hide();
+                    
+                    // Open receipt in new window (same as normal sales)
+                    if (processResult.sale_id) {
+                        const receiptUrl = '<?= BASE_URL ?>modules/pos/receipt.php?id=' + processResult.sale_id + '&print=1';
+                        const receiptWindow = window.open(receiptUrl, '_blank');
+                        
+                        // Check if popup was blocked
+                        if (!receiptWindow || receiptWindow.closed || typeof receiptWindow.closed == 'undefined') {
+                            // Popup blocked, redirect to receipt page instead
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Success',
+                                text: 'Trade-in processed successfully. Opening receipt...',
+                                allowOutsideClick: false,
+                                allowEscapeKey: false,
+                                timer: 1500,
+                                showConfirmButton: false
+                            }).then(() => {
+                                window.location.href = receiptUrl;
+                            });
+                        } else {
+                            // Popup opened successfully, show success and reload
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Success',
+                                text: 'Trade-in processed successfully. Receipt opened in new window.',
+                                allowOutsideClick: false,
+                                allowEscapeKey: false,
+                                timer: 2000,
+                                showConfirmButton: false
+                            }).then(() => {
+                                window.location.reload();
+                            });
+                        }
+                    } else {
+                        // No sale_id returned, just show success and reload
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Success',
+                            text: 'Trade-in processed successfully. Device added to stock and product deducted.',
+                            allowOutsideClick: false,
+                            allowEscapeKey: false
+                        }).then(() => {
+                            window.location.reload();
+                        });
+                    }
                 } else {
                     console.error('Process trade-in error:', processResult);
                     const errorMsg = (processResult && processResult.message) ? processResult.message : 'Failed to process trade-in. Please check the console for details.';
