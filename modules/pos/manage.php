@@ -818,11 +818,14 @@ require_once APP_PATH . '/includes/header.php';
             <!-- Receipt Container - Below Buttons -->
             <div class="receipt-container">
                 <div class="receipt-header">
-                    <?php if ($receiptLogoUrl): ?>
-                        <div style="text-align: center; margin-bottom: 15px;">
-                            <img src="<?= htmlspecialchars($receiptLogoUrl) ?>" alt="Logo" style="max-width: 200px; max-height: 80px; object-fit: contain;" onerror="this.style.display='none';">
-                        </div>
-                    <?php endif; ?>
+                    <?php if ($receiptLogoPath && !empty($receiptLogoPath)): 
+                        $logoUrl = BASE_URL . ltrim($receiptLogoPath, '/');
+                        $logoFullPath = APP_PATH . '/' . ltrim($receiptLogoPath, '/');
+                        if (file_exists($logoFullPath)): ?>
+                            <div style="text-align: center; margin-bottom: 15px;">
+                                <img src="<?= htmlspecialchars($logoUrl) ?>" alt="Logo" style="max-width: 200px; max-height: 80px; object-fit: contain;" onerror="this.style.display='none';">
+                            </div>
+                    <?php endif; endif; ?>
                     <h2><?= escapeHtml($companyName) ?></h2>
                     <div class="company-info">
                         <?php if ($companyAddress): ?>
