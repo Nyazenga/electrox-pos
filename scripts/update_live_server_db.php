@@ -60,18 +60,30 @@ function executeMySQL($command, $database = null) {
     exec($cmd, $output, $returnCode);
     $fullOutput = implode("\n", $output);
     
-    // Check for actual errors (not warnings)
+    // Check for actual MySQL errors (not warnings or informational output)
+    // MySQL errors have format: "ERROR #### (SQLSTATE): message"
+    // Ignore table structure output from SHOW CREATE TABLE
+    $isError = false;
+    
     if ($returnCode !== 0) {
-        $error = $fullOutput;
-        if (stripos($error, 'ERROR') !== false && stripos($error, 'Warning') === false) {
-            $errors[] = $error;
-            logMessage("MySQL Error: $error", 'error');
-            return false;
+        // Check for actual MySQL error format: "ERROR #### (SQLSTATE): message"
+        if (preg_match('/ERROR\s+\d+\s*\([^)]+\):/i', $fullOutput)) {
+            $isError = true;
+        } elseif (stripos($fullOutput, 'ERROR') !== false && stripos($fullOutput, 'Warning') === false) {
+            // Only treat as error if it's not table structure output
+            // SHOW CREATE TABLE output contains "Create Table:" and table structure
+            if (!preg_match('/Create Table:|Table:\s+\w+|^\s*\*+\s*$|^\s*\d+\.\s+row\s+\*+/i', $fullOutput)) {
+                $isError = true;
+            }
         }
-    } elseif (stripos($fullOutput, 'ERROR') !== false && stripos($fullOutput, 'Warning') === false) {
-        // Even with exit code 0, check for ERROR in output
+    } elseif (preg_match('/ERROR\s+\d+\s*\([^)]+\):/i', $fullOutput)) {
+        // Even with exit code 0, check for actual MySQL error format
+        $isError = true;
+    }
+    
+    if ($isError) {
         $errors[] = $fullOutput;
-        logMessage("MySQL Error in output: $fullOutput", 'error');
+        logMessage("MySQL Error: $fullOutput", 'error');
         return false;
     }
     
