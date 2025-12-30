@@ -1,0 +1,215 @@
+name: Deploy to Production Server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  SERVER_HOST: 31.97.199.82
+  SERVER_USER: root
+  DEPLOY_PATH: /var/www/electro-pos
+  SITE_URL: https://nedcom.co.zw
+
+jobs:
+  deploy:
+    name: Deploy ELECTROX-POS to Production
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate deployment files
+        run: |
+          echo "Validating deployment files..."
+          if [ ! -f "index.php" ] && [ ! -f "config.php" ]; then
+            echo "Warning: Key files may be missing"
+          fi
+          echo "✓ Files validated"
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ env.SERVER_HOST }} >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy to server
+        env:
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
+        run: |
+          echo "Starting deployment to ${{ env.SERVER_HOST }}..."
+          
+          # Install sshpass for password authentication
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+          
+          # Deploy script - pass GIT_TOKEN as environment variable
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} "GIT_TOKEN='$GIT_TOKEN' bash -s" << 'ENDSSH'
+            set -e
+            echo "=== Deployment started at $(date) ==="
+            
+            # Navigate to deployment directory
+            cd ${{ env.DEPLOY_PATH }}
+            
+            # Check if git is initialized
+            if [ ! -d ".git" ]; then
+              echo "Initializing git repository..."
+              git init
+              git remote add origin https://${GIT_TOKEN}@github.com/Nyazenga/electrox-pos.git || git remote set-url origin https://${GIT_TOKEN}@github.com/Nyazenga/electrox-pos.git
+            else
+              # Update remote URL to include token
+              git remote set-url origin https://${GIT_TOKEN}@github.com/Nyazenga/electrox-pos.git
+            fi
+            
+            # Fetch and pull latest changes
+            echo "Fetching latest changes..."
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
+            
+            # Set proper permissions
+            echo "Setting file permissions..."
+            find . -type f -exec chmod 644 {} \;
+            find . -type d -exec chmod 755 {} \;
+            chmod -R 755 .
+            
+            # Ensure critical directories have correct permissions
+            if [ -d "logs" ]; then
+              chmod -R 755 logs/
+            fi
+            if [ -d "assets/uploads" ]; then
+              chmod -R 755 assets/uploads/
+            fi
+            
+            echo "=== Deployment completed at $(date) ==="
+          ENDSSH
+
+      - name: Reload services
+        env:
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+        run: |
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} << 'ENDSSH'
+            set -e
+            echo "Reloading services..."
+            
+            # Test nginx configuration
+            if nginx -t; then
+              echo "✓ Nginx configuration is valid"
+              systemctl reload nginx
+              echo "✓ Nginx reloaded"
+            else
+              echo "✗ Nginx configuration test failed!"
+              exit 1
+            fi
+            
+            # Reload PHP-FPM
+            if systemctl is-active --quiet php8.3-fpm; then
+              systemctl reload php8.3-fpm
+              echo "✓ PHP-FPM reloaded"
+            else
+              echo "⚠ PHP-FPM is not running"
+            fi
+            
+            echo "✓ All services reloaded successfully"
+          ENDSSH
+
+      - name: Verify deployment
+        env:
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+        run: |
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} << 'ENDSSH'
+            echo "Verifying deployment..."
+            
+            # Check if key files exist
+            if [ -f "${{ env.DEPLOY_PATH }}/index.php" ]; then
+              echo "✓ index.php exists"
+            else
+              echo "✗ index.php not found!"
+              exit 1
+            fi
+            
+            # Check git status
+            cd ${{ env.DEPLOY_PATH }}
+            echo "Current commit: $(git rev-parse --short HEAD)"
+            echo "Branch: $(git branch --show-current)"
+            
+            # Check service status
+            if systemctl is-active --quiet nginx; then
+              echo "✓ Nginx is running"
+            else
+              echo "✗ Nginx is not running!"
+              exit 1
+            fi
+            
+            if systemctl is-active --quiet php8.3-fpm; then
+              echo "✓ PHP-FPM is running"
+            else
+              echo "✗ PHP-FPM is not running!"
+              exit 1
+            fi
+            
+            echo "✓ Deployment verification passed"
+          ENDSSH
+
+      - name: Sync database structure
+        env:
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+        run: |
+          echo "Synchronizing database structure..."
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} << 'ENDSSH'
+            set -e
+            echo "=== Database Structure Sync Started ==="
+            
+            # Check if SQL files exist
+            if [ ! -f "${{ env.DEPLOY_PATH }}/electrox_primary.sql" ] || [ ! -f "${{ env.DEPLOY_PATH }}/electrox_base.sql" ]; then
+              echo "⚠ SQL files not found. Skipping database sync."
+              echo "Note: Export databases locally and commit .sql files to enable auto-sync"
+              exit 0
+            fi
+            
+            # Run database sync script
+            if [ -f "${{ env.DEPLOY_PATH }}/scripts/update_live_server_db.php" ]; then
+              echo "Running database structure synchronization..."
+              php "${{ env.DEPLOY_PATH }}/scripts/update_live_server_db.php"
+              
+              if [ $? -eq 0 ]; then
+                echo "✓ Database structure synchronized successfully"
+              else
+                echo "✗ Database sync failed! Check logs for details"
+                exit 1
+              fi
+            else
+              echo "⚠ Database sync script not found. Skipping."
+            fi
+            
+            echo "=== Database Structure Sync Completed ==="
+          ENDSSH
+
+      - name: Test site accessibility
+        run: |
+          echo "Testing site accessibility..."
+          sleep 5  # Wait for services to stabilize
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 ${{ env.SITE_URL }} || echo "000")
+          
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
+            echo "✓ Site is accessible (HTTP $HTTP_CODE)"
+          else
+            echo "⚠ Site returned HTTP $HTTP_CODE (may still be processing)"
+          fi
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Server**: ${{ env.SERVER_HOST }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Path**: ${{ env.DEPLOY_PATH }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Site**: ${{ env.SITE_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+

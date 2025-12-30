@@ -357,3 +357,4 @@ function printOriginalReceipt(saleId) {
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>
 
+

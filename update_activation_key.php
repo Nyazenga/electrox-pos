@@ -24,3 +24,4 @@ if ($result) {
     echo "✗ Failed to update activation key\n";
 }
 
+

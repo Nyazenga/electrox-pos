@@ -61,3 +61,4 @@ echo "  - DataTable with searchable, sortable data\n";
 echo "  - PDF export functionality\n";
 echo "  - Proper permissions check\n";
 
+

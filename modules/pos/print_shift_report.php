@@ -446,3 +446,4 @@ $filename = 'Shift_Report_' . date('Ymd_His', strtotime($shift['opened_at'])) . 
 $pdf->Output($filename, 'I');
 exit;
 
+

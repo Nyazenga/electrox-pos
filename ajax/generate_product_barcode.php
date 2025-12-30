@@ -77,3 +77,4 @@ if ($db->update('products', ['barcode' => $barcode], ['id' => $productId])) {
     echo json_encode(['success' => false, 'message' => 'Failed to save barcode']);
 }
 
+

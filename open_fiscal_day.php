@@ -126,3 +126,6 @@ echo "Fiscal day is now open. You can now process sales with fiscalization.\n";
 
 
 
+
+
+

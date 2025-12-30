@@ -6,3 +6,4 @@
 $_GET['branch_id'] = '3'; // RIDGEWAY branch
 require_once 're_register_device_after_reset.php';
 
+

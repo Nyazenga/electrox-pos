@@ -66,3 +66,4 @@ try {
     echo json_encode(['success' => false, 'message' => 'An error occurred: ' . $e->getMessage()]);
 }
 
+

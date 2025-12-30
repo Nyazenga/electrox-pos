@@ -252,3 +252,4 @@ $filename = 'Stock_Take_Report_' . date('Ymd_His', strtotime($report['report_dat
 $pdf->Output($filename, 'I');
 exit;
 
+

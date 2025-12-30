@@ -146,3 +146,4 @@ After the fixes, test by:
 - Section 6: Fiscal counters calculation rules
 - Section 4.5: getStatus endpoint (returns fiscalDayClosingErrorCode)
 
+

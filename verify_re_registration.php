@@ -125,3 +125,4 @@ if ($cert && $device && $device['is_registered']) {
     echo "✗ Some issues detected - please check above\n";
 }
 
+
