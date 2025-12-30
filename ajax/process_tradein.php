@@ -328,6 +328,11 @@ try {
         'status' => 'Processed'
     ], ['id' => $tradeInId]);
     
+    // CRITICAL: Product selection is REQUIRED - validate before processing
+    if (empty($tradeIn['new_product_id']) || $tradeIn['new_product_id'] === null) {
+        throw new Exception('Product selection is required. Please select the product the customer is getting.');
+    }
+    
     // If they're getting a new product, create that sale too
     if ($tradeIn['new_product_id']) {
         $newProduct = $db->getRow("SELECT * FROM products WHERE id = :id", [':id' => $tradeIn['new_product_id']]);

@@ -2574,6 +2574,12 @@ function processTradeInFromPOS() {
         return;
     }
     
+    // CRITICAL: Product selection is REQUIRED
+    if (!data.new_product_id || data.new_product_id === '' || data.new_product_id === null) {
+        Swal.fire('Error', 'Please select the product the customer is getting. This is required.', 'error');
+        return;
+    }
+    
     console.log('Submitting trade-in data:', data);
     
     Swal.fire({
@@ -3110,10 +3116,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const costPrice = parseFloat(formData.get('cost_price')) || 0;
         const sellingPrice = parseFloat(formData.get('selling_price')) || 0;
         const finalValuation = parseFloat(formData.get('final_valuation')) || 0;
+        const newProductId = document.getElementById('tradeInProduct')?.value || '';
         
-        // Required fields: category, brand, model, condition, cost_price, selling_price, final_valuation
+        // Required fields: category, brand, model, condition, cost_price, selling_price, final_valuation, AND new_product_id
         const isValid = deviceCategory && deviceBrand && deviceModel && deviceCondition && 
-                       costPrice > 0 && sellingPrice > 0 && finalValuation > 0;
+                       costPrice > 0 && sellingPrice > 0 && finalValuation > 0 &&
+                       newProductId !== '' && newProductId !== null;
         
         const processBtn = document.getElementById('processTradeInBtn');
         if (processBtn) {
