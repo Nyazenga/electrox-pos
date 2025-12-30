@@ -44,7 +44,12 @@ function checkTenantExists($tenant_name) {
         return $registration !== false;
         
     } catch (Exception $e) {
-        logError("Error checking tenant existence: " . $e->getMessage());
+        // Log error if function exists, otherwise use error_log
+        if (function_exists('logError')) {
+            logError("Error checking tenant existence: " . $e->getMessage());
+        } else {
+            error_log("Error checking tenant existence: " . $e->getMessage());
+        }
         return false;
     }
 }
