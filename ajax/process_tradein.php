@@ -417,6 +417,8 @@ try {
                 // Fiscalize the product sale (same as normal sale)
                 if ($branchId) {
                     try {
+                        // Load currency functions before fiscalization (required by fiscal_helper.php)
+                        require_once APP_PATH . '/includes/currency_functions.php';
                         require_once APP_PATH . '/includes/fiscal_helper.php';
                         $fiscalResult = fiscalizeSale($productSaleId, $branchId, $db);
                         if ($fiscalResult && is_array($fiscalResult)) {
