@@ -39,12 +39,16 @@ if (APP_MODE === 'production') {
     error_reporting(E_ALL);
 }
 
-// Base URLs
+// Base URLs - Auto-detect from current request
 if (APP_MODE === 'development') {
     define('BASE_URL', 'http://localhost/electrox-pos/');
     define('ASSETS_URL', BASE_URL . 'assets/');
 } else {
-    define('BASE_URL', 'https://app.electrox-pos.com/');
+    // Auto-detect base URL from current request
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'nedcom.co.zw';
+    $baseUrl = $protocol . '://' . $host . '/';
+    define('BASE_URL', $baseUrl);
     define('ASSETS_URL', BASE_URL . 'assets/');
 }
 
