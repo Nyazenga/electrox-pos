@@ -236,6 +236,13 @@ if (isset($_GET['id'])) {
     
     // Get receipt logo - use same fallback logic as invoice print
     $receiptLogoPath = getSetting('pos_receipt_logo', getSetting('company_logo', ''));
+    // If no logo setting found, try default logo path
+    if (empty($receiptLogoPath)) {
+        $defaultLogoPath = 'assets/images/logo.png';
+        if (file_exists(APP_PATH . '/' . $defaultLogoPath)) {
+            $receiptLogoPath = $defaultLogoPath;
+        }
+    }
     // Normalize logo path - ensure it's relative to APP_PATH
     if ($receiptLogoPath && !empty($receiptLogoPath)) {
         $logoFullPath = APP_PATH . '/' . ltrim($receiptLogoPath, '/');
