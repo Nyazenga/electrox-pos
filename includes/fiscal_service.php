@@ -42,6 +42,7 @@ class FiscalService {
     private $deviceId;
     private $api;
     private $device;
+    private $certificateFingerprint = null; // Store certificate fingerprint for consistency checking
     
     public function __construct($branchId) {
         // Use primary database for fiscal devices (they're branch-specific)
@@ -451,6 +452,8 @@ class FiscalService {
         require_once APP_PATH . '/includes/certificate_storage.php';
         $certData = CertificateStorage::loadCertificate($this->deviceId);
         if ($certData && $certData['certificate'] && $certData['privateKey']) {
+            // Validate certificate before using it
+            $this->validateCertificateForOperation($certData['certificate'], $certData['privateKey'], 'fiscal_day_open');
             $this->api->setCertificate($certData['certificate'], $certData['privateKey']);
             error_log("OPEN FISCAL DAY: Certificate reloaded and API client updated");
         }
@@ -948,6 +951,9 @@ class FiscalService {
         if ($certDataForReceipt && $certDataForReceipt['privateKey']) {
             $privateKeyForReceipt = $certDataForReceipt['privateKey'];
             $certificateForReceipt = $certDataForReceipt['certificate'];
+            
+            // CRITICAL: Validate certificate before using it for receipt submission
+            $this->validateCertificateForOperation($certificateForReceipt, $privateKeyForReceipt, 'receipt_submission');
             
             // Update API client to use the fresh certificate
             $this->api->setCertificate($certificateForReceipt, $privateKeyForReceipt);
@@ -1517,6 +1523,9 @@ class FiscalService {
         $certificatePem = $certData['certificate'];
         $privateKeyPem = $certData['privateKey'];
         
+        // CRITICAL: Validate certificate before using it
+        $this->validateCertificateForOperation($certificatePem, $privateKeyPem, 'fiscal_day_close');
+        
         // Log certificate details for debugging
         $certFingerprint = null;
         $certSubject = null;
@@ -2024,6 +2033,93 @@ class FiscalService {
         error_log("CALCULATED COUNTERS: " . count($counters) . " counters for fiscal day $fiscalDayNo");
         
         return $counters;
+    }
+    
+    /**
+     * Validate certificate for fiscal operation
+     * Ensures certificate and private key are valid and match
+     * 
+     * @param string $certificatePem Certificate in PEM format
+     * @param string $privateKeyPem Private key in PEM format
+     * @param string $operation Operation name for logging (e.g., 'receipt_submission', 'fiscal_day_close')
+     * @throws Exception If certificate validation fails
+     */
+    private function validateCertificateForOperation($certificatePem, $privateKeyPem, $operation) {
+        $logPrefix = strtoupper($operation);
+        
+        // Get certificate fingerprint for consistency checking
+        $certFingerprint = null;
+        $certSubject = null;
+        if ($certificatePem) {
+            $cert = openssl_x509_read($certificatePem);
+            if ($cert) {
+                $certDetails = openssl_x509_parse($cert);
+                $certFingerprint = openssl_x509_fingerprint($cert, 'sha256', false);
+                $certSubject = $certDetails['subject']['CN'] ?? 'N/A';
+            }
+        }
+        
+        // Verify private key is valid
+        $testKey = openssl_pkey_get_private($privateKeyPem);
+        if (!$testKey) {
+            $error = openssl_error_string();
+            error_log("$logPrefix: ERROR - Private key is invalid: $error");
+            throw new Exception("Invalid private key for device {$this->deviceId} during $operation. Please re-register the device.");
+        }
+        
+        // Verify certificate matches private key
+        if ($certificatePem) {
+            $cert = openssl_x509_read($certificatePem);
+            if ($cert) {
+                $certPubKey = openssl_pkey_get_public($certificatePem);
+                $keyDetails = openssl_pkey_get_details($testKey);
+                $certDetails = openssl_pkey_get_details($certPubKey);
+                
+                // Compare public keys (they should match)
+                if ($keyDetails && $certDetails && isset($keyDetails['key']) && isset($certDetails['key'])) {
+                    if ($keyDetails['key'] !== $certDetails['key']) {
+                        error_log("$logPrefix: ERROR - Certificate public key doesn't match private key!");
+                        error_log("$logPrefix: Certificate Subject: $certSubject");
+                        error_log("$logPrefix: Certificate Fingerprint: $certFingerprint");
+                        throw new Exception("Certificate and private key do not match for device {$this->deviceId} during $operation. Please re-register the device.");
+                    }
+                }
+            }
+        }
+        
+        // Check certificate expiration
+        if ($certificatePem) {
+            $cert = openssl_x509_read($certificatePem);
+            if ($cert) {
+                $certDetails = openssl_x509_parse($cert);
+                if (isset($certDetails['validTo_time_t'])) {
+                    $expiryTime = $certDetails['validTo_time_t'];
+                    $now = time();
+                    $daysUntilExpiry = floor(($expiryTime - $now) / 86400);
+                    
+                    if ($expiryTime < $now) {
+                        error_log("$logPrefix: ERROR - Certificate has expired!");
+                        throw new Exception("Certificate for device {$this->deviceId} has expired. Please re-register the device.");
+                    } elseif ($daysUntilExpiry < 30) {
+                        error_log("$logPrefix: WARNING - Certificate expires in $daysUntilExpiry days. Consider renewing soon.");
+                    }
+                }
+            }
+        }
+        
+        // Log successful validation
+        error_log("$logPrefix: Certificate validated successfully");
+        error_log("$logPrefix: Certificate Subject: $certSubject");
+        error_log("$logPrefix: Certificate Fingerprint: $certFingerprint");
+        
+        // Store fingerprint in class for consistency checking
+        if (!isset($this->certificateFingerprint)) {
+            $this->certificateFingerprint = $certFingerprint;
+        } elseif ($this->certificateFingerprint !== $certFingerprint) {
+            error_log("$logPrefix: WARNING - Certificate fingerprint changed! Previous: {$this->certificateFingerprint}, Current: $certFingerprint");
+            error_log("$logPrefix: This may indicate certificate was updated. Updating stored fingerprint.");
+            $this->certificateFingerprint = $certFingerprint;
+        }
     }
     
     /**
