@@ -72,6 +72,20 @@ jobs:
             git reset --hard origin/main
             git clean -fd
             
+            # Install Composer dependencies
+            echo "Installing Composer dependencies..."
+            if [ -f "composer.json" ]; then
+              if ! command -v composer &> /dev/null; then
+                echo "Composer not found, installing..."
+                curl -sS https://getcomposer.org/installer | php
+                php composer.phar install --no-dev --optimize-autoloader
+              else
+                composer install --no-dev --optimize-autoloader
+              fi
+            else
+              echo "No composer.json found, skipping Composer install"
+            fi
+            
             # Set proper permissions
             echo "Setting file permissions..."
             find . -type f -exec chmod 644 {} \;
