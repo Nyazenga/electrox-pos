@@ -333,6 +333,9 @@ try {
         throw new Exception('Product selection is required. Please select the product the customer is getting.');
     }
     
+    // Store product sale ID for receipt display
+    $productSaleId = null;
+    
     // If they're getting a new product, create that sale too
     if ($tradeIn['new_product_id']) {
         $newProduct = $db->getRow("SELECT * FROM products WHERE id = :id", [':id' => $tradeIn['new_product_id']]);
@@ -440,35 +443,11 @@ try {
     // Determine which sale_id to return for receipt display
     // If there's a product sale (customer getting a new product), return that sale_id
     // Otherwise, return the trade-in value sale_id
-    $receiptSaleId = $saleId; // Default to trade-in value sale
-    if ($tradeIn['new_product_id']) {
-        $newProduct = $db->getRow("SELECT * FROM products WHERE id = :id", [':id' => $tradeIn['new_product_id']]);
-        if ($newProduct) {
-            $productPrice = $newProduct['selling_price'];
-            $tradeInValue = $tradeIn['final_valuation'];
-            $balance = $productPrice - $tradeInValue;
-            
-            if ($balance > 0) {
-                // Get the product sale ID (the one we just created)
-                $productSale = $db->getRow(
-                    "SELECT id FROM sales WHERE customer_id = :customer_id AND branch_id = :branch_id AND user_id = :user_id AND receipt_number LIKE :pattern ORDER BY id DESC LIMIT 1",
-                    [
-                        ':customer_id' => $tradeIn['customer_id'],
-                        ':branch_id' => $branchId,
-                        ':user_id' => $userId,
-                        ':pattern' => '%' . date('ymd') . '%'
-                    ]
-                );
-                if ($productSale) {
-                    $receiptSaleId = $productSale['id'];
-                }
-            }
-        }
-    }
+    $receiptSaleId = $productSaleId ? $productSaleId : $saleId;
     
     // Log activity (wrap in try-catch to prevent errors from breaking response)
     try {
-        logActivity($userId, 'tradein_processed', ['trade_in_id' => $tradeInId, 'sale_id' => $saleId, 'product_sale_id' => $receiptSaleId]);
+        logActivity($userId, 'tradein_processed', ['trade_in_id' => $tradeInId, 'sale_id' => $saleId, 'product_sale_id' => $productSaleId]);
     } catch (Exception $logError) {
         error_log("Activity log error: " . $logError->getMessage());
         // Don't fail the response if logging fails
@@ -483,7 +462,7 @@ try {
     echo json_encode([
         'success' => true, 
         'message' => 'Trade-in processed successfully',
-        'sale_id' => $receiptSaleId, // Return the product sale ID for receipt display
+        'sale_id' => $receiptSaleId, // Return the product sale ID for receipt display (if exists)
         'trade_in_id' => $tradeInId
     ]);
     exit;
