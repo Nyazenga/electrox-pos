@@ -1173,16 +1173,16 @@ require_once APP_PATH . '/includes/header.php';
             
             <?php if (empty($products) && !empty($otherBranchCounts)): ?>
                 <!-- Show info about products in other branches when current branch has no products -->
-                <div class="product-card" style="grid-column: 1 / -1; text-align: center; padding: 40px; background: #f8f9fa; border: 2px dashed #dee2e6;">
-                    <div style="font-size: 48px; color: #6c757d; margin-bottom: 20px;">
+                <div class="no-products-container" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 300px); text-align: center; padding: 60px 40px; background: #f8f9fa; border: 2px dashed #dee2e6; border-radius: 12px; margin: 20px 0;">
+                    <div style="font-size: 64px; color: #6c757d; margin-bottom: 30px;">
                         <i class="bi bi-info-circle"></i>
                     </div>
-                    <h4 style="color: #495057; margin-bottom: 15px;">No Products in Current Branch</h4>
-                    <p style="color: #6c757d; margin-bottom: 20px;">Products are available in other branches:</p>
-                    <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center;">
+                    <h3 style="color: #495057; margin-bottom: 15px; font-weight: 600;">No Products in Current Branch</h3>
+                    <p style="color: #6c757d; margin-bottom: 30px; font-size: 16px;">Products are available in other branches:</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; max-width: 800px;">
                         <?php foreach ($otherBranchCounts as $branch): ?>
-                            <div style="background: white; padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                                <strong style="color: var(--primary-blue); display: block; margin-bottom: 5px;"><?= escapeHtml($branch['branch_name']) ?></strong>
+                            <div style="background: white; padding: 20px 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); min-width: 200px;">
+                                <strong style="color: var(--primary-blue); display: block; margin-bottom: 8px; font-size: 16px;"><?= escapeHtml($branch['branch_name']) ?></strong>
                                 <span style="color: #6c757d; font-size: 14px;"><?= $branch['product_count'] ?> product<?= $branch['product_count'] != 1 ? 's' : '' ?></span>
                             </div>
                         <?php endforeach; ?>
@@ -1190,12 +1190,12 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
             <?php elseif (empty($products)): ?>
                 <!-- No products at all -->
-                <div class="product-card" style="grid-column: 1 / -1; text-align: center; padding: 40px; background: #f8f9fa; border: 2px dashed #dee2e6;">
-                    <div style="font-size: 48px; color: #6c757d; margin-bottom: 20px;">
+                <div class="no-products-container" style="grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 300px); text-align: center; padding: 60px 40px; background: #f8f9fa; border: 2px dashed #dee2e6; border-radius: 12px; margin: 20px 0;">
+                    <div style="font-size: 64px; color: #6c757d; margin-bottom: 30px;">
                         <i class="bi bi-box-seam"></i>
                     </div>
-                    <h4 style="color: #495057; margin-bottom: 10px;">No Products Available</h4>
-                    <p style="color: #6c757d;">Add products to start making sales.</p>
+                    <h3 style="color: #495057; margin-bottom: 15px; font-weight: 600;">No Products Available</h3>
+                    <p style="color: #6c757d; font-size: 16px;">Add products to start making sales.</p>
                 </div>
             <?php endif; ?>
         </div>
