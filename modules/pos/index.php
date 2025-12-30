@@ -1523,7 +1523,7 @@ require_once APP_PATH . '/includes/header.php';
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="processTradeInFromPOS()">Process Trade-In</button>
+                <button type="button" class="btn btn-primary" id="processTradeInBtn" onclick="processTradeInFromPOS()" disabled>Process Trade-In</button>
             </div>
         </div>
     </div>
@@ -3092,9 +3092,62 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Update product details when final valuation changes in POS modal
+    // Validation function for trade-in form
+    function validateTradeInForm() {
+        const form = document.getElementById('tradeInForm');
+        if (!form) return false;
+        
+        const formData = new FormData(form);
+        const deviceCategory = formData.get('device_category');
+        const deviceBrand = formData.get('device_brand');
+        const deviceModel = formData.get('device_model');
+        const deviceCondition = formData.get('device_condition');
+        const costPrice = parseFloat(formData.get('cost_price')) || 0;
+        const sellingPrice = parseFloat(formData.get('selling_price')) || 0;
+        const finalValuation = parseFloat(formData.get('final_valuation')) || 0;
+        
+        // Required fields: category, brand, model, condition, cost_price, selling_price, final_valuation
+        const isValid = deviceCategory && deviceBrand && deviceModel && deviceCondition && 
+                       costPrice > 0 && sellingPrice > 0 && finalValuation > 0;
+        
+        const processBtn = document.getElementById('processTradeInBtn');
+        if (processBtn) {
+            processBtn.disabled = !isValid;
+            if (isValid) {
+                processBtn.classList.remove('btn-secondary');
+                processBtn.classList.add('btn-primary');
+            } else {
+                processBtn.classList.remove('btn-primary');
+                processBtn.classList.add('btn-secondary');
+            }
+        }
+        
+        return isValid;
+    }
+    
+    // Add validation listeners to all required fields
+    const requiredFields = ['device_category', 'device_brand', 'device_model', 'device_condition', 
+                           'cost_price', 'selling_price', 'final_valuation'];
+    requiredFields.forEach(fieldName => {
+        const field = document.querySelector(`[name="${fieldName}"]`);
+        if (field) {
+            field.addEventListener('input', validateTradeInForm);
+            field.addEventListener('change', validateTradeInForm);
+        }
+    });
+    
+    // Validate on modal open
+    const tradeInModal = document.getElementById('tradeInModal');
+    if (tradeInModal) {
+        tradeInModal.addEventListener('shown.bs.modal', function() {
+            validateTradeInForm();
+        });
+    }
+    
     const posFinalValuation = document.getElementById('posFinalValuation');
     if (posFinalValuation) {
         posFinalValuation.addEventListener('input', function() {
+            validateTradeInForm();
             const hiddenInput = document.getElementById('tradeInProduct');
             if (hiddenInput && hiddenInput.value) {
                 const selectedProduct = Array.from(document.querySelectorAll('.trade-in-product-item')).find(item => 

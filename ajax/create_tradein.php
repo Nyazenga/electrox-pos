@@ -94,7 +94,7 @@ try {
         'device_color' => $input['device_color'] ?? null,
         'device_storage' => $input['device_storage'] ?? null,
         'device_condition' => $input['device_condition'],
-        'battery_health' => $input['battery_health'] ?? null,
+        'battery_health' => (!empty($input['battery_health']) && $input['battery_health'] !== '') ? intval($input['battery_health']) : null,
         'cosmetic_issues' => $input['cosmetic_issues'] ?? null,
         'functional_issues' => $input['functional_issues'] ?? null,
         'accessories_included' => $input['accessories_included'] ?? null,

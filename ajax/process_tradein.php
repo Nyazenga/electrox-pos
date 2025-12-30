@@ -408,6 +408,22 @@ try {
                 ];
                 
                 $db->insert('sale_payments', $productPaymentData);
+                
+                // Fiscalize the product sale (same as normal sale)
+                if ($branchId) {
+                    try {
+                        require_once APP_PATH . '/includes/fiscal_helper.php';
+                        $fiscalResult = fiscalizeSale($productSaleId, $branchId, $db);
+                        if ($fiscalResult && is_array($fiscalResult)) {
+                            error_log("TRADE-IN: Successfully fiscalized product sale $productSaleId");
+                        } else {
+                            error_log("TRADE-IN: Fiscalization returned false for product sale $productSaleId (may be disabled)");
+                        }
+                    } catch (Exception $fiscalError) {
+                        error_log("TRADE-IN: Fiscalization error for product sale $productSaleId: " . $fiscalError->getMessage());
+                        // Don't fail the transaction if fiscalization fails
+                    }
+                }
             }
         }
     }
