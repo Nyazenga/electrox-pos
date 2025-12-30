@@ -16,8 +16,16 @@ require_once APP_PATH . '/includes/db.php';
 require_once APP_PATH . '/includes/certificate_storage.php';
 require_once APP_PATH . '/includes/fiscal_service.php';
 
-$branchParam = isset($_GET['branch_id']) ? trim($_GET['branch_id']) : null;
-$branchName = isset($_GET['branch_name']) ? trim($_GET['branch_name']) : null;
+// Support both CLI and web usage
+if (php_sapi_name() === 'cli') {
+    // CLI usage: php verify_certificate_consistency.php 1
+    $branchParam = isset($argv[1]) ? trim($argv[1]) : null;
+    $branchName = null;
+} else {
+    // Web usage
+    $branchParam = isset($_GET['branch_id']) ? trim($_GET['branch_id']) : null;
+    $branchName = isset($_GET['branch_name']) ? trim($_GET['branch_name']) : null;
+}
 
 echo "========================================\n";
 echo "CERTIFICATE CONSISTENCY VERIFICATION\n";
