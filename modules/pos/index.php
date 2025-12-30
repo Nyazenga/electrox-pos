@@ -3149,6 +3149,21 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
+    // Also validate when product search input changes (product might be cleared)
+    const tradeInProductSearch = document.getElementById('tradeInProductSearch');
+    const tradeInProductHidden = document.getElementById('tradeInProduct');
+    if (tradeInProductSearch) {
+        tradeInProductSearch.addEventListener('input', function() {
+            // If search is cleared, clear the hidden input too
+            if (this.value.trim() === '') {
+                if (tradeInProductHidden) {
+                    tradeInProductHidden.value = '';
+                }
+                validateTradeInForm();
+            }
+        });
+    }
+    
     // Validate on modal open
     const tradeInModal = document.getElementById('tradeInModal');
     if (tradeInModal) {
