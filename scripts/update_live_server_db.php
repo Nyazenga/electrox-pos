@@ -486,7 +486,22 @@ function main() {
         logMessage("Log saved to: $logFile");
     }
     
-    return empty($errors);
+    // Only exit with error if there are actual critical errors
+    // Filter out false positives from table structure output (SHOW CREATE TABLE)
+    $criticalErrors = array_filter($errors, function($error) {
+        // Ignore errors that are actually just table structure output
+        // SHOW CREATE TABLE output contains patterns like:
+        // "*************************** 1. row ***************************"
+        // "       Table: table_name"
+        // "Create Table: CREATE TABLE..."
+        if (preg_match('/Create Table:|Table:\s+\w+|^\s*\*+\s*$|^\s*\d+\.\s+row\s+\*+/i', $error)) {
+            return false; // This is not a real error
+        }
+        // Only real MySQL errors have format: "ERROR #### (SQLSTATE): message"
+        return preg_match('/ERROR\s+\d+\s*\([^)]+\):/i', $error);
+    });
+    
+    return empty($criticalErrors);
 }
 
 if (php_sapi_name() === 'cli') {
