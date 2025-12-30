@@ -25,9 +25,21 @@ require_once APP_PATH . '/includes/fiscal_service.php';
 // Support both CLI and web usage
 if (php_sapi_name() === 'cli') {
     // CLI usage: php re_register_and_validate_certificate.php branch_id=1
-    parse_str(implode('&', array_slice($argv, 1)), $cliParams);
-    $branchParam = isset($cliParams['branch_id']) ? trim($cliParams['branch_id']) : (isset($argv[1]) ? trim($argv[1]) : null);
-    $branchName = isset($cliParams['branch_name']) ? trim($cliParams['branch_name']) : null;
+    // or: php re_register_and_validate_certificate.php 1
+    if (isset($argv[1])) {
+        if (strpos($argv[1], '=') !== false) {
+            parse_str($argv[1], $cliParams);
+            $branchParam = isset($cliParams['branch_id']) ? trim($cliParams['branch_id']) : null;
+            $branchName = isset($cliParams['branch_name']) ? trim($cliParams['branch_name']) : null;
+        } else {
+            // Just a number
+            $branchParam = trim($argv[1]);
+            $branchName = null;
+        }
+    } else {
+        $branchParam = null;
+        $branchName = null;
+    }
 } else {
     // Web usage
     $branchParam = isset($_GET['branch_id']) ? trim($_GET['branch_id']) : null;
