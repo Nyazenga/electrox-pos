@@ -20,15 +20,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrfToken = $_POST['csrf_token'] ?? '';
     $remember_me = isset($_POST['remember_me']) ? 1 : 0;
     
+    // Debug logging
+    error_log("Login attempt - Tenant: '$tenant_name', Email: '$email'");
+    
     if (!verifyCsrfToken($csrfToken)) {
         $error = 'Invalid form submission. Please try again.';
+        error_log("Login failed: CSRF token invalid");
     } elseif (empty($tenant_name)) {
         $error = 'Tenant name is required.';
-    } elseif (!checkTenantExists($tenant_name)) {
-        $error = 'Tenant does not exist. Please check your tenant name.';
-    } elseif (!isTenantActive($tenant_name)) {
-        $error = 'This tenant account is not active. Please contact support.';
+        error_log("Login failed: Tenant name empty");
     } else {
+        // Check tenant with detailed logging
+        $tenantExists = checkTenantExists($tenant_name);
+        error_log("checkTenantExists('$tenant_name') returned: " . ($tenantExists ? 'TRUE' : 'FALSE'));
+        
+        if (!$tenantExists) {
+            $error = 'Tenant does not exist. Please check your tenant name.';
+            error_log("Login failed: Tenant '$tenant_name' does not exist");
+        } elseif (!isTenantActive($tenant_name)) {
+            $error = 'This tenant account is not active. Please contact support.';
+            error_log("Login failed: Tenant '$tenant_name' is not active");
+        } else {
         setCurrentTenant($tenant_name);
         $auth = Auth::getInstance();
         $result = $auth->login($email, $password, $tenant_name);
