@@ -74,6 +74,19 @@ $defaultTaxRate = getDefaultTaxRate();
 
 // Get invoice customizations
 $invoiceLogo = getSetting('invoice_logo', getSetting('company_logo', ''));
+// If no logo setting found, try to find the most recent invoice_logo file
+if (empty($invoiceLogo)) {
+    $logoDir = APP_PATH . '/assets/images/';
+    $logoFiles = glob($logoDir . 'invoice_logo_*.png');
+    if (!empty($logoFiles)) {
+        // Sort by modification time, most recent first
+        usort($logoFiles, function($a, $b) {
+            return filemtime($b) - filemtime($a);
+        });
+        $mostRecent = $logoFiles[0];
+        $invoiceLogo = 'assets/images/' . basename($mostRecent);
+    }
+}
 $invoicePrimaryColor = getSetting('invoice_primary_color', '#1e3a8a');
 // Normalize logo path - ensure it's relative to APP_PATH
 if ($invoiceLogo && !empty($invoiceLogo)) {

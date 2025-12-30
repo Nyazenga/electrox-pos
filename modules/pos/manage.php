@@ -236,6 +236,19 @@ if (isset($_GET['id'])) {
     
     // Get receipt logo - use EXACT same logic as invoice print
     $receiptLogoPath = getSetting('pos_receipt_logo', getSetting('invoice_logo', getSetting('company_logo', '')));
+    // If no logo setting found, try to find the most recent invoice_logo file (same as invoice)
+    if (empty($receiptLogoPath)) {
+        $logoDir = APP_PATH . '/assets/images/';
+        $logoFiles = glob($logoDir . 'invoice_logo_*.png');
+        if (!empty($logoFiles)) {
+            // Sort by modification time, most recent first
+            usort($logoFiles, function($a, $b) {
+                return filemtime($b) - filemtime($a);
+            });
+            $mostRecent = $logoFiles[0];
+            $receiptLogoPath = 'assets/images/' . basename($mostRecent);
+        }
+    }
     // Normalize logo path - ensure it's relative to APP_PATH
     if ($receiptLogoPath && !empty($receiptLogoPath)) {
         $logoFullPath = APP_PATH . '/' . ltrim($receiptLogoPath, '/');
