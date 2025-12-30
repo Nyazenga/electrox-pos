@@ -103,15 +103,8 @@ $companyAddress = getSetting('company_address', '');
 $companyPhone = getSetting('company_phone', '');
 $companyEmail = getSetting('company_email', '');
 
-// Get receipt logo - use same fallback logic as invoice print
-$receiptLogoPath = getSetting('pos_receipt_logo', getSetting('company_logo', ''));
-// If no logo setting found, try default logo path
-if (empty($receiptLogoPath)) {
-    $defaultLogoPath = 'assets/images/logo.png';
-    if (file_exists(APP_PATH . '/' . $defaultLogoPath)) {
-        $receiptLogoPath = $defaultLogoPath;
-    }
-}
+// Get receipt logo - use EXACT same logic as invoice print
+$receiptLogoPath = getSetting('pos_receipt_logo', getSetting('invoice_logo', getSetting('company_logo', '')));
 // Normalize logo path - ensure it's relative to APP_PATH
 if ($receiptLogoPath && !empty($receiptLogoPath)) {
     $logoFullPath = APP_PATH . '/' . ltrim($receiptLogoPath, '/');
