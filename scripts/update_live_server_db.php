@@ -47,11 +47,13 @@ function logMessage($message, $type = 'info') {
 function executeMySQL($command, $database = null) {
     global $errors;
     $dbPart = $database ? " -D " . escapeshellarg($database) : "";
+    // Handle empty password - use -p without value or skip it
+    $passwordPart = !empty(DB_PASS) ? "-p'" . escapeshellarg(DB_PASS) . "'" : "";
     $cmd = sprintf(
-        "mysql -h %s -u %s -p'%s'%s -e %s 2>&1",
+        "mysql -h %s -u %s %s%s -e %s 2>&1",
         escapeshellarg(DB_HOST),
         escapeshellarg(DB_USER),
-        escapeshellarg(DB_PASS),
+        $passwordPart,
         $dbPart,
         escapeshellarg($command)
     );
@@ -78,11 +80,13 @@ function executeMySQL($command, $database = null) {
 
 function executeMySQLFile($file, $database) {
     global $errors;
+    // Handle empty password - use -p without value or skip it
+    $passwordPart = !empty(DB_PASS) ? "-p'" . escapeshellarg(DB_PASS) . "'" : "";
     $cmd = sprintf(
-        "mysql -h %s -u %s -p'%s' %s < %s 2>&1",
+        "mysql -h %s -u %s %s %s < %s 2>&1",
         escapeshellarg(DB_HOST),
         escapeshellarg(DB_USER),
-        escapeshellarg(DB_PASS),
+        $passwordPart,
         escapeshellarg($database),
         escapeshellarg($file)
     );
@@ -105,11 +109,13 @@ function backupDatabase($database) {
         mkdir(BACKUP_DIR, 0755, true);
     }
     $backupFile = BACKUP_DIR . '/' . $database . '_backup_' . date('Y-m-d_H-i-s') . '.sql';
+    // Handle empty password - use -p without value or skip it
+    $passwordPart = !empty(DB_PASS) ? "-p'" . escapeshellarg(DB_PASS) . "'" : "";
     $cmd = sprintf(
-        "mysqldump -h %s -u %s -p'%s' --single-transaction --routines --triggers %s > %s 2>&1",
+        "mysqldump -h %s -u %s %s --single-transaction --routines --triggers %s > %s 2>&1",
         escapeshellarg(DB_HOST),
         escapeshellarg(DB_USER),
-        escapeshellarg(DB_PASS),
+        $passwordPart,
         escapeshellarg($database),
         escapeshellarg($backupFile)
     );
