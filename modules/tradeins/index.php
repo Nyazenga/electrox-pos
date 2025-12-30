@@ -11,11 +11,22 @@ $auth->requirePermission('tradeins.view');
 $pageTitle = 'Trade-Ins';
 
 $db = Database::getInstance();
-$tradeins = $db->getRows("SELECT t.*, c.first_name, c.last_name, p.brand as new_product_brand, p.model as new_product_model 
-                          FROM trade_ins t 
-                          LEFT JOIN customers c ON t.customer_id = c.id 
-                          LEFT JOIN products p ON t.new_product_id = p.id 
-                          ORDER BY t.created_at DESC");
+$branchId = $_SESSION['branch_id'] ?? null;
+
+// Build query with branch filtering
+$tradeinsQuery = "SELECT t.*, c.first_name, c.last_name, p.brand as new_product_brand, p.model as new_product_model, p.product_name as new_product_name
+                  FROM trade_ins t 
+                  LEFT JOIN customers c ON t.customer_id = c.id 
+                  LEFT JOIN products p ON t.new_product_id = p.id";
+$tradeinsParams = [];
+
+if ($branchId !== null) {
+    $tradeinsQuery .= " WHERE t.branch_id = :branch_id";
+    $tradeinsParams[':branch_id'] = $branchId;
+}
+
+$tradeinsQuery .= " ORDER BY t.created_at DESC";
+$tradeins = $db->getRows($tradeinsQuery, $tradeinsParams);
 
 require_once APP_PATH . '/includes/header.php';
 ?>
@@ -50,7 +61,15 @@ require_once APP_PATH . '/includes/header.php';
                         <td><?= formatDate($tradein['created_at']) ?></td>
                         <td><?= escapeHtml(($tradein['first_name'] ?? '') . ' ' . ($tradein['last_name'] ?? 'N/A')) ?></td>
                         <td><?= escapeHtml($tradein['device_brand'] . ' ' . $tradein['device_model']) ?></td>
-                        <td><?= $tradein['new_product_brand'] ? escapeHtml($tradein['new_product_brand'] . ' ' . $tradein['new_product_model']) : '<span class="text-muted">N/A</span>' ?></td>
+                        <td><?php 
+                            if ($tradein['new_product_name']) {
+                                echo escapeHtml($tradein['new_product_name']);
+                            } elseif ($tradein['new_product_brand'] && $tradein['new_product_model']) {
+                                echo escapeHtml($tradein['new_product_brand'] . ' ' . $tradein['new_product_model']);
+                            } else {
+                                echo '<span class="text-muted">N/A</span>';
+                            }
+                        ?></td>
                         <td><span class="badge bg-info"><?= escapeHtml($tradein['device_condition']) ?></span></td>
                         <td><?= formatCurrency($tradein['final_valuation'] ?? 0) ?></td>
                         <td><span class="badge bg-<?= $tradein['status'] == 'Processed' ? 'success' : ($tradein['status'] == 'Accepted' ? 'primary' : ($tradein['status'] == 'Assessed' ? 'warning' : 'secondary')) ?>"><?= escapeHtml($tradein['status']) ?></span></td>
