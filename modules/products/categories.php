@@ -42,13 +42,14 @@ function getAllApplicableTaxes($primaryDb) {
 $allTaxes = getAllApplicableTaxes($primaryDb);
 
 // Build categories query with branch filtering (same as products index)
+// Use LEFT JOIN with branch filter in JOIN condition to show all categories but only count products from current branch
 $categoryQuery = "SELECT pc.*, COUNT(p.id) as product_count 
                   FROM product_categories pc 
                   LEFT JOIN products p ON pc.id = p.category_id";
 $categoryParams = [];
 
 if ($branchId !== null) {
-    $categoryQuery .= " AND p.branch_id = :branch_id";
+    $categoryQuery .= " AND (p.branch_id = :branch_id OR p.branch_id IS NULL)";
     $categoryParams[':branch_id'] = $branchId;
 }
 
