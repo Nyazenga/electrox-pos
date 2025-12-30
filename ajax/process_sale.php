@@ -843,13 +843,34 @@ try {
     // Clear the global transaction db reference
     unset($GLOBALS['current_transaction_db']);
     
-    logError("POS sale error: " . $e->getMessage());
+    // Log error with full details
+    $errorMsg = "POS sale error: " . $e->getMessage();
+    $errorMsg .= " | File: " . $e->getFile() . " | Line: " . $e->getLine();
+    $errorMsg .= " | Trace: " . $e->getTraceAsString();
+    error_log($errorMsg);
+    if (function_exists('logError')) {
+        logError($errorMsg);
+    }
     
     // Clear any output and send JSON error
     ob_clean();
     $response = json_encode(['success' => false, 'message' => 'Failed to process sale: ' . $e->getMessage()]);
     
     // End output buffering and send response
+    ob_end_clean();
+    echo $response;
+    exit;
+} catch (Error $e) {
+    // Catch fatal errors too
+    $errorMsg = "POS sale FATAL error: " . $e->getMessage();
+    $errorMsg .= " | File: " . $e->getFile() . " | Line: " . $e->getLine();
+    error_log($errorMsg);
+    if (function_exists('logError')) {
+        logError($errorMsg);
+    }
+    
+    ob_clean();
+    $response = json_encode(['success' => false, 'message' => 'Fatal error: ' . $e->getMessage()]);
     ob_end_clean();
     echo $response;
     exit;
