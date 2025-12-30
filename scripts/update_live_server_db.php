@@ -23,7 +23,6 @@ ini_set('max_execution_time', 300);
 define('DB_HOST', 'localhost');
 define('DB_USER', 'grcadmin'); // Use grcadmin user (same as grcpro)
 define('DB_PASS', 'GRCAdmin123/'); // Use grcadmin password (same as grcpro)
-define('DB_PASS', '');
 define('BACKUP_DIR', '/var/www/db_backups');
 define('SQL_DIR', '/var/www/electro-pos');
 
