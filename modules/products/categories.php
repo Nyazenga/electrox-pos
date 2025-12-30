@@ -12,6 +12,7 @@ $pageTitle = 'Product Categories';
 
 $db = Database::getInstance();
 $primaryDb = Database::getPrimaryInstance();
+$branchId = $_SESSION['branch_id'] ?? null;
 
 // Function to get applicable taxes for all branches (for category tax assignment)
 function getAllApplicableTaxes($primaryDb) {
@@ -39,7 +40,20 @@ function getAllApplicableTaxes($primaryDb) {
 }
 
 $allTaxes = getAllApplicableTaxes($primaryDb);
-$categories = $db->getRows("SELECT pc.*, COUNT(p.id) as product_count FROM product_categories pc LEFT JOIN products p ON pc.id = p.category_id GROUP BY pc.id ORDER BY pc.name");
+
+// Build categories query with branch filtering (same as products index)
+$categoryQuery = "SELECT pc.*, COUNT(p.id) as product_count 
+                  FROM product_categories pc 
+                  LEFT JOIN products p ON pc.id = p.category_id";
+$categoryParams = [];
+
+if ($branchId !== null) {
+    $categoryQuery .= " AND p.branch_id = :branch_id";
+    $categoryParams[':branch_id'] = $branchId;
+}
+
+$categoryQuery .= " GROUP BY pc.id ORDER BY pc.name";
+$categories = $db->getRows($categoryQuery, $categoryParams);
 
 require_once APP_PATH . '/includes/header.php';
 ?>
