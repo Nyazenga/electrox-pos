@@ -46,18 +46,27 @@ try {
     $active = isTenantActive($tenant_name);
     echo "<p>" . ($active ? "✅" : "❌") . " isTenantActive('$tenant_name') returned: " . ($active ? 'TRUE' : 'FALSE') . "</p>";
     
-    // Test 5: Check user exists
+    // Test 5: Check user exists (Auth class uses 'users' table, not 'admin_users')
     if ($result && $active) {
         setCurrentTenant($tenant_name);
         $tenantDb = Database::getInstance();
-        $user = $tenantDb->getRow("SELECT * FROM admin_users WHERE email = :email", [':email' => $email]);
+        $user = $tenantDb->getRow("SELECT * FROM users WHERE email = :email", [':email' => $email]);
         if ($user) {
-            echo "<p>✅ User found:</p>";
+            echo "<p>✅ User found in users table:</p>";
             echo "<pre>";
-            print_r(['id' => $user['id'], 'email' => $user['email'], 'name' => $user['name'] ?? 'N/A']);
+            print_r(['id' => $user['id'], 'email' => $user['email'], 'username' => $user['username'] ?? 'N/A', 'status' => $user['status'] ?? 'N/A']);
             echo "</pre>";
         } else {
-            echo "<p>❌ User '$email' not found in admin_users table</p>";
+            echo "<p>❌ User '$email' not found in users table</p>";
+            echo "<p>Checking all users in database:</p>";
+            $allUsers = $tenantDb->getRows("SELECT id, email, username FROM users LIMIT 10");
+            if ($allUsers) {
+                echo "<pre>";
+                print_r($allUsers);
+                echo "</pre>";
+            } else {
+                echo "<p>No users found in database</p>";
+            }
         }
     }
     
