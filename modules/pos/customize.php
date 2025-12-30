@@ -17,30 +17,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $updated = false;
     $errors = [];
     
-    // Handle receipt logo upload
+    // Handle receipt logo upload - use same logic as invoice customize
     if (isset($_FILES['receipt_logo']) && $_FILES['receipt_logo']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = APP_PATH . '/assets/uploads/receipts/';
+        $uploadDir = APP_PATH . '/assets/images/';
         if (!is_dir($uploadDir)) {
             mkdir($uploadDir, 0755, true);
         }
         
-        $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-        $fileType = $_FILES['receipt_logo']['type'];
+        $ext = pathinfo($_FILES['receipt_logo']['name'], PATHINFO_EXTENSION);
+        $filename = 'receipt_logo_' . time() . '.' . $ext;
+        $targetPath = $uploadDir . $filename;
         
-        if (in_array($fileType, $allowedTypes)) {
-            $extension = pathinfo($_FILES['receipt_logo']['name'], PATHINFO_EXTENSION);
-            $fileName = 'receipt_logo_' . time() . '.' . $extension;
-            $filePath = $uploadDir . $fileName;
-            
-            if (move_uploaded_file($_FILES['receipt_logo']['tmp_name'], $filePath)) {
-                $logoPath = '/assets/uploads/receipts/' . $fileName;
-                setSetting('pos_receipt_logo', $logoPath);
-                $updated = true;
-            } else {
-                $errors[] = "Failed to upload receipt logo.";
-            }
+        if (move_uploaded_file($_FILES['receipt_logo']['tmp_name'], $targetPath)) {
+            setSetting('pos_receipt_logo', 'assets/images/' . $filename);
+            $updated = true;
         } else {
-            $errors[] = "Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.";
+            $errors[] = "Failed to upload receipt logo. Please check directory permissions.";
         }
     }
     
@@ -497,6 +489,25 @@ require_once APP_PATH . '/includes/header.php';
                     <label class="form-label fw-bold">Receipt Logo</label>
                     <?php 
                     $receiptLogoPath = $settings['pos_receipt_logo'];
+                    // If no logo setting, try to find most recent receipt_logo or invoice_logo file
+                    if (empty($receiptLogoPath)) {
+                        $logoDir = APP_PATH . '/assets/images/';
+                        $logoFiles = array_merge(
+                            glob($logoDir . 'receipt_logo_*.png'),
+                            glob($logoDir . 'receipt_logo_*.jpg'),
+                            glob($logoDir . 'receipt_logo_*.jpeg'),
+                            glob($logoDir . 'invoice_logo_*.png'),
+                            glob($logoDir . 'invoice_logo_*.jpg'),
+                            glob($logoDir . 'invoice_logo_*.jpeg')
+                        );
+                        if (!empty($logoFiles)) {
+                            usort($logoFiles, function($a, $b) {
+                                return filemtime($b) - filemtime($a);
+                            });
+                            $mostRecent = $logoFiles[0];
+                            $receiptLogoPath = 'assets/images/' . basename($mostRecent);
+                        }
+                    }
                     $receiptLogoUrl = '';
                     $receiptLogoFullPath = '';
                     if ($receiptLogoPath) {
@@ -508,6 +519,9 @@ require_once APP_PATH . '/includes/header.php';
                         <div class="mb-3">
                             <p class="text-muted mb-2">Current Logo:</p>
                             <img src="<?= htmlspecialchars($receiptLogoUrl) ?>" alt="Receipt Logo" style="max-width: 200px; max-height: 100px; border: 1px solid #ddd; padding: 5px; border-radius: 4px;" onerror="this.style.display='none';">
+                            <div class="mt-2">
+                                <small class="text-muted">Logo file: <?= htmlspecialchars($receiptLogoPath) ?></small>
+                            </div>
                         </div>
                     <?php else: ?>
                         <p class="text-muted mb-2">No logo uploaded</p>
