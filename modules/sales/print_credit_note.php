@@ -72,8 +72,20 @@ $companyTIN = getSetting('company_tin', '');
 $companyVAT = getSetting('company_vat_number', '');
 $companyTagline = getSetting('company_tagline', 'Transforming Your Tomorrow');
 
-// Get receipt logo
-$receiptLogoPath = getSetting('pos_receipt_logo', '');
+// Get receipt logo - use same fallback logic as invoice print
+$receiptLogoPath = getSetting('pos_receipt_logo', getSetting('company_logo', ''));
+// Normalize logo path - ensure it's relative to APP_PATH
+if ($receiptLogoPath && !empty($receiptLogoPath)) {
+    $logoFullPath = APP_PATH . '/' . ltrim($receiptLogoPath, '/');
+    // If file doesn't exist at the stored path, try without leading slash
+    if (!file_exists($logoFullPath) && strpos($receiptLogoPath, '/') !== 0) {
+        $logoFullPath = APP_PATH . '/' . $receiptLogoPath;
+    }
+    // Only use logo if file actually exists
+    if (!file_exists($logoFullPath)) {
+        $receiptLogoPath = '';
+    }
+}
 $showLogo = !empty($receiptLogoPath);
 
 // Use TCPDF for PDF generation
