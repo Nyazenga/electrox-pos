@@ -1078,7 +1078,38 @@ require_once APP_PATH . '/includes/header.php';
         
         <div class="product-grid" id="productGrid">
             <?php 
-            $products = $db->getRows("SELECT p.*, pc.name as category_name, COALESCE(p.is_trade_in, 0) as is_trade_in FROM products p LEFT JOIN product_categories pc ON p.category_id = pc.id WHERE p.status = 'Active' AND p.quantity_in_stock > 0 ORDER BY COALESCE(p.product_name, p.brand), p.model");
+            // Only show products from current branch
+            $productsQuery = "SELECT p.*, pc.name as category_name, COALESCE(p.is_trade_in, 0) as is_trade_in 
+                             FROM products p 
+                             LEFT JOIN product_categories pc ON p.category_id = pc.id 
+                             WHERE p.status = 'Active' AND p.quantity_in_stock > 0";
+            $productsParams = [];
+            
+            if ($branchId !== null) {
+                $productsQuery .= " AND p.branch_id = :branch_id";
+                $productsParams[':branch_id'] = $branchId;
+            }
+            
+            $productsQuery .= " ORDER BY COALESCE(p.product_name, p.brand), p.model";
+            
+            $products = $db->getRows($productsQuery, $productsParams);
+            
+            // Get product counts from other branches for info display
+            $otherBranchCounts = [];
+            if ($branchId !== null && empty($products)) {
+                // Current branch has no products, get counts from other branches
+                $otherBranchCounts = $db->getRows(
+                    "SELECT b.id, b.branch_name, COUNT(p.id) as product_count
+                     FROM branches b
+                     LEFT JOIN products p ON p.branch_id = b.id AND p.status = 'Active' AND p.quantity_in_stock > 0
+                     WHERE b.status = 'Active' AND b.id != :branch_id
+                     GROUP BY b.id, b.branch_name
+                     HAVING product_count > 0
+                     ORDER BY b.branch_name",
+                    [':branch_id' => $branchId]
+                ) ?: [];
+            }
+            
             $favoriteIds = array_column($favorites, 'id');
             foreach ($products as $product): 
                 $isFavorite = in_array($product['id'], $favoriteIds);
@@ -1139,6 +1170,34 @@ require_once APP_PATH . '/includes/header.php';
                     <div class="product-price"><?= formatCurrency($displayPrice) ?><?= $pricesIncludeTax ? ' <small style="color: rgba(255, 255, 255, 0.8);">(incl. tax)</small>' : '' ?></div>
                 </div>
             <?php endforeach; ?>
+            
+            <?php if (empty($products) && !empty($otherBranchCounts)): ?>
+                <!-- Show info about products in other branches when current branch has no products -->
+                <div class="product-card" style="grid-column: 1 / -1; text-align: center; padding: 40px; background: #f8f9fa; border: 2px dashed #dee2e6;">
+                    <div style="font-size: 48px; color: #6c757d; margin-bottom: 20px;">
+                        <i class="bi bi-info-circle"></i>
+                    </div>
+                    <h4 style="color: #495057; margin-bottom: 15px;">No Products in Current Branch</h4>
+                    <p style="color: #6c757d; margin-bottom: 20px;">Products are available in other branches:</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center;">
+                        <?php foreach ($otherBranchCounts as $branch): ?>
+                            <div style="background: white; padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                <strong style="color: var(--primary-blue); display: block; margin-bottom: 5px;"><?= escapeHtml($branch['branch_name']) ?></strong>
+                                <span style="color: #6c757d; font-size: 14px;"><?= $branch['product_count'] ?> product<?= $branch['product_count'] != 1 ? 's' : '' ?></span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php elseif (empty($products)): ?>
+                <!-- No products at all -->
+                <div class="product-card" style="grid-column: 1 / -1; text-align: center; padding: 40px; background: #f8f9fa; border: 2px dashed #dee2e6;">
+                    <div style="font-size: 48px; color: #6c757d; margin-bottom: 20px;">
+                        <i class="bi bi-box-seam"></i>
+                    </div>
+                    <h4 style="color: #495057; margin-bottom: 10px;">No Products Available</h4>
+                    <p style="color: #6c757d;">Add products to start making sales.</p>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
     
@@ -1434,13 +1493,18 @@ require_once APP_PATH . '/includes/header.php';
                                            autocomplete="off">
                                     <input type="hidden" name="new_product_id" id="tradeInProduct">
                                     <div class="dropdown-menu position-absolute w-100" id="tradeInProductDropdown" style="max-height: 300px; overflow-y: auto; z-index: 1050; display: none;">
-                                        <?php foreach ($products as $product): ?>
+                                        <?php foreach ($products as $product): 
+                                            $productDisplayName = !empty($product['product_name']) ? $product['product_name'] : (trim($product['brand'] . ' ' . $product['model']));
+                                            if (empty($productDisplayName) || $productDisplayName === ' ') {
+                                                $productDisplayName = 'Product #' . $product['id'];
+                                            }
+                                        ?>
                                             <a class="dropdown-item trade-in-product-item" 
                                                href="#" 
                                                data-id="<?= $product['id'] ?>"
                                                data-price="<?= $product['selling_price'] ?>"
-                                               data-text="<?= escapeHtml($product['brand'] . ' ' . $product['model'] . ' - ' . formatCurrency($product['selling_price'])) ?>">
-                                                <?= escapeHtml($product['brand'] . ' ' . $product['model'] . ' - ' . formatCurrency($product['selling_price'])) ?>
+                                               data-text="<?= escapeHtml($productDisplayName . ' - ' . formatCurrency($product['selling_price'])) ?>">
+                                                <?= escapeHtml($productDisplayName . ' - ' . formatCurrency($product['selling_price'])) ?>
                                             </a>
                                         <?php endforeach; ?>
                                     </div>
@@ -2598,8 +2662,11 @@ function showProductInfo(productId) {
                     stockInOtherBranchesHtml += '</ul>';
                 }
                 
+                // Use product_name if available, otherwise use brand + model
+                const productTitle = p.product_name || (p.brand && p.model ? (p.brand + ' ' + p.model) : (p.brand || p.model || 'Product'));
+                
                 Swal.fire({
-                    title: p.brand + ' ' + p.model,
+                    title: productTitle,
                     html: `
                         <div class="text-start">
                             ${imageHtml}
