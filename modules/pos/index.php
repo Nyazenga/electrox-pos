@@ -2970,6 +2970,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Hide dropdown
                 hideTradeInProductDropdown();
                 
+                // Validate form after product selection
+                if (typeof validateTradeInForm === 'function') {
+                    validateTradeInForm();
+                }
+                
                 // Update balance calculation in POS modal
                 const posFinalValuation = document.getElementById('posFinalValuation');
                 const posProductDetails = document.getElementById('posProductDetails');
