@@ -234,8 +234,20 @@ if (isset($_GET['id'])) {
     $companyPhone = getSetting('company_phone', '');
     $companyEmail = getSetting('company_email', '');
     
-    // Get receipt logo
-    $receiptLogoPath = getSetting('pos_receipt_logo', '');
+    // Get receipt logo - use same fallback logic as invoice print
+    $receiptLogoPath = getSetting('pos_receipt_logo', getSetting('company_logo', ''));
+    // Normalize logo path - ensure it's relative to APP_PATH
+    if ($receiptLogoPath && !empty($receiptLogoPath)) {
+        $logoFullPath = APP_PATH . '/' . ltrim($receiptLogoPath, '/');
+        // If file doesn't exist at the stored path, try without leading slash
+        if (!file_exists($logoFullPath) && strpos($receiptLogoPath, '/') !== 0) {
+            $logoFullPath = APP_PATH . '/' . $receiptLogoPath;
+        }
+        // Only use logo if file actually exists
+        if (!file_exists($logoFullPath)) {
+            $receiptLogoPath = '';
+        }
+    }
     $receiptLogoUrl = '';
     if ($receiptLogoPath) {
         $receiptLogoUrl = BASE_URL . ltrim($receiptLogoPath, '/');
