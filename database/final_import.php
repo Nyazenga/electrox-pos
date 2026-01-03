@@ -39,6 +39,11 @@ try {
     
     echo "Reading file...\n";
     $content = file_get_contents($sqlFile);
+    // Remove BOM if present
+    if (substr($content, 0, 3) === "\xEF\xBB\xBF") {
+        $content = substr($content, 3);
+        echo "Removed BOM from file\n";
+    }
     echo "File size: " . strlen($content) . " bytes\n";
     
     // Try to find INSERT - use multiple methods
