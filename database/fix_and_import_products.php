@@ -27,11 +27,23 @@ try {
     $sql = file_get_contents($sqlFile);
     echo "SQL file size: " . strlen($sql) . " bytes\n";
     
-    // Check if INSERT statement exists
-    if (strpos($sql, 'INSERT INTO `products` VALUES') === false) {
-        die("❌ INSERT statement not found in SQL file. Searching for 'INSERT INTO'...\n");
+    // Check if INSERT statement exists - try different variations
+    $hasInsert = false;
+    if (strpos($sql, 'INSERT INTO `products` VALUES') !== false) {
+        $hasInsert = true;
+        echo "Found 'INSERT INTO `products` VALUES' in file\n";
+    } elseif (strpos($sql, 'INSERT INTO') !== false) {
+        echo "Found 'INSERT INTO' but not 'INSERT INTO `products` VALUES'\n";
+        // Try to find the actual pattern
+        if (preg_match('/INSERT INTO[^`]*`products`[^V]*VALUES/s', $sql)) {
+            $hasInsert = true;
+            echo "Found INSERT INTO products VALUES with different spacing\n";
+        }
     }
-    echo "Found 'INSERT INTO `products` VALUES' in file\n";
+    
+    if (!$hasInsert) {
+        die("❌ INSERT statement not found in SQL file.\n");
+    }
     
     // Extract the INSERT statement - it's on a single very long line ending with ); followed by /*!40000
     $insertLine = null;
