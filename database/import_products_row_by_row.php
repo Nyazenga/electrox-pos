@@ -25,9 +25,18 @@ $lines = file($sqlFile);
 
 // Get INSERT line to extract column names
 $insertLine = trim($lines[78]);
-preg_match_all('/`([^`]+)`/', $insertLine, $colMatches);
-$columns = array_slice($colMatches[1], 1); // Skip 'products' table name
-$columnList = '`' . implode('`, `', $columns) . '`';
+// Extract column list directly from the INSERT statement
+if (preg_match('/INSERT INTO `products` \((.+?)\) VALUES/i', $insertLine, $matches)) {
+    $columnList = $matches[1]; // Use the column list as-is from the SQL file
+    // Count columns
+    preg_match_all('/`([^`]+)`/', $columnList, $colMatches);
+    $columns = $colMatches[1];
+} else {
+    // Fallback
+    preg_match_all('/`([^`]+)`/', $insertLine, $colMatches);
+    $columns = array_slice($colMatches[1], 1); // Skip 'products' table name
+    $columnList = '`' . implode('`, `', $columns) . '`';
+}
 
 echo "Columns: " . count($columns) . "\n";
 
