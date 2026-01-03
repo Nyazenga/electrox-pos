@@ -4,9 +4,14 @@
  */
 
 require_once dirname(dirname(__FILE__)) . '/config.php';
-require_once APP_PATH . '/includes/db.php';
 
-$db = Database::getPrimaryInstance();
+// Use PDO directly for better error handling
+$pdo = new PDO(
+    "mysql:host=" . DB_HOST . ";dbname=" . PRIMARY_DB_NAME . ";charset=utf8mb4",
+    DB_USER,
+    DB_PASS,
+    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+);
 
 echo "Connected to " . PRIMARY_DB_NAME . "\n";
 
@@ -27,12 +32,13 @@ $columnList = '`' . implode('`, `', $columns) . '`';
 echo "Columns: " . count($columns) . "\n";
 
 // Truncate table
-$count = $db->getOne("SELECT COUNT(*) FROM products");
+$stmt = $pdo->query("SELECT COUNT(*) FROM products");
+$count = $stmt->fetchColumn();
 echo "Current products count: $count\n";
 
 if ($count > 0) {
     echo "⚠️  Truncating table...\n";
-    $db->query("TRUNCATE TABLE products");
+    $pdo->exec("TRUNCATE TABLE products");
     echo "✓ Table truncated\n";
 }
 
@@ -53,19 +59,17 @@ for ($i = 79; $i <= 131; $i++) {
     $sql = "INSERT INTO `products` ($columnList) VALUES $line";
     
     try {
-        $result = $db->query($sql);
-        if ($result === false) {
-            throw new Exception($db->getLastError());
-        }
+        $pdo->exec($sql);
         $inserted++;
         if ($inserted % 10 == 0) {
             echo "  Inserted $inserted rows...\n";
         }
-    } catch (Exception $e) {
+    } catch (PDOException $e) {
         $errors++;
         $rowNum = $i - 78;
         echo "❌ Error on row $rowNum: " . $e->getMessage() . "\n";
-        echo "  SQL: " . substr($sql, 0, 100) . "...\n";
+        echo "  SQL: " . substr($sql, 0, 150) . "...\n";
+        break; // Stop on first error to see what's wrong
     }
 }
 
@@ -73,12 +77,14 @@ echo "\n✅ Import complete!\n";
 echo "  Inserted: $inserted\n";
 echo "  Errors: $errors\n";
 
-$newCount = $db->getOne("SELECT COUNT(*) FROM products");
+$stmt = $pdo->query("SELECT COUNT(*) FROM products");
+$newCount = $stmt->fetchColumn();
 echo "\nTotal products in database: $newCount\n";
 
 // Show source distribution
 echo "\nSource distribution:\n";
-$sourceCounts = $db->getRows("SELECT source, COUNT(*) as count FROM products GROUP BY source");
+$stmt = $pdo->query("SELECT source, COUNT(*) as count FROM products GROUP BY source");
+$sourceCounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 foreach ($sourceCounts as $row) {
     echo "  - " . ($row['source'] ?: 'NULL/Empty') . ": " . $row['count'] . "\n";
 }
