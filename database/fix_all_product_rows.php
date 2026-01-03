@@ -28,8 +28,8 @@ for ($i = 79; $i <= 131; $i++) {
     // Fix pattern: created_by (NULL or number), then 5 NULLs, then 'manual', then 5 NULLs
     // Should be: created_by (NULL or number), then 'manual', then updated_by (NULL or number), then 5 NULLs
     
+    // Pattern 1: created_by is NULL, then 5 NULLs, then 'manual', then 5 NULLs
     if (preg_match("/(, NULL, NULL, NULL, NULL, NULL, 'manual', NULL, NULL, NULL, NULL, NULL\),?)$/", $line)) {
-        // Pattern 1: NULL, NULL, NULL, NULL, NULL, 'manual', NULL, NULL, NULL, NULL, NULL
         $newLine = preg_replace(
             "/(, NULL, NULL, NULL, NULL, NULL, 'manual', NULL, NULL, NULL, NULL, NULL\),?)$/",
             ", NULL, 'manual', NULL, NULL, NULL, NULL, NULL, NULL$1",
@@ -40,17 +40,31 @@ for ($i = 79; $i <= 131; $i++) {
             $fixed++;
             echo "Fixed row " . ($i - 78) . "\n";
         }
-    } elseif (preg_match("/(, NULL, \d+, NULL, NULL, NULL, 'manual', NULL, NULL, NULL, NULL, NULL\),?)$/", $line)) {
-        // Pattern 2: NULL, number, NULL, NULL, NULL, 'manual', NULL, NULL, NULL, NULL, NULL
+    }
+    // Pattern 2: created_by is a number, then NULL, NULL, NULL, NULL, 'manual', then 5 NULLs
+    elseif (preg_match("/(, \d+, NULL, NULL, NULL, NULL, 'manual', NULL, NULL, NULL, NULL, NULL\),?)$/", $line)) {
         $newLine = preg_replace(
-            "/(, NULL, )(\d+)(, NULL, NULL, NULL, 'manual', NULL, NULL, NULL, NULL, NULL\),?)$/",
-            "$1'manual', $2$3",
+            "/(, )(\d+)(, NULL, NULL, NULL, NULL, 'manual', NULL, NULL, NULL, NULL, NULL\),?)$/",
+            "$1$2, 'manual', NULL, NULL, NULL, NULL, NULL, NULL$3",
             $line
         );
         if ($newLine !== $line) {
             $lines[$i] = $newLine;
             $fixed++;
-            echo "Fixed row " . ($i - 78) . " (with updated_by)\n";
+            echo "Fixed row " . ($i - 78) . " (created_by is number)\n";
+        }
+    }
+    // Pattern 3: created_by is NULL, then number, then NULL, NULL, NULL, 'manual', then 5 NULLs
+    elseif (preg_match("/(, NULL, \d+, NULL, NULL, NULL, 'manual', NULL, NULL, NULL, NULL, NULL\),?)$/", $line)) {
+        $newLine = preg_replace(
+            "/(, NULL, )(\d+)(, NULL, NULL, NULL, 'manual', NULL, NULL, NULL, NULL, NULL\),?)$/",
+            "$1'manual', $2, NULL, NULL, NULL, NULL, NULL$3",
+            $line
+        );
+        if ($newLine !== $line) {
+            $lines[$i] = $newLine;
+            $fixed++;
+            echo "Fixed row " . ($i - 78) . " (updated_by is number)\n";
         }
     }
 }
