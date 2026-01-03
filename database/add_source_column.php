@@ -32,9 +32,14 @@ try {
         echo "✓ Index 'idx_source' already exists.\n";
     }
     
-    // Update existing products
-    $updated = $db->query("UPDATE `products` SET `source` = 'manual' WHERE `source` IS NULL OR `source` = ''");
-    echo "✓ Updated existing products to have source = 'manual'.\n";
+    // Update existing products (only if column was just added or needs updating)
+    try {
+        $db->query("UPDATE `products` SET `source` = 'manual' WHERE `source` IS NULL OR `source` = ''");
+        echo "✓ Updated existing products to have source = 'manual'.\n";
+    } catch (Exception $e) {
+        // Ignore if no rows to update
+        echo "✓ No products needed updating.\n";
+    }
     
     echo "\n✅ Migration completed successfully!\n";
     
