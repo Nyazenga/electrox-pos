@@ -1421,10 +1421,30 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
         $finalDifference = abs($receiptTotal - $finalPaymentSum);
         if ($finalDifference > 0.01) {
             error_log("FISCALIZE SALE: WARNING - After adjustment, payment sum ($finalPaymentSum) still doesn't match receiptTotal ($receiptTotal), difference: $finalDifference");
-            // Force match by adjusting receiptTotal to match payments (last resort)
-            // This should rarely happen, but ensures RCPT039 compliance
-            $receiptData['receiptTotal'] = round($finalPaymentSum, 2);
-            error_log("FISCALIZE SALE: Adjusted receiptTotal to match payment sum: " . $receiptData['receiptTotal']);
+            // CRITICAL: receiptTotal is the source of truth (sum of receipt lines)
+            // NEVER adjust receiptTotal to match payments - always adjust payments to match receiptTotal
+            // If payments still don't match after adjustments, force all payments to sum to receiptTotal
+            if (!empty($receiptData['receiptPayments'])) {
+                // Proportionally adjust all payments to sum to receiptTotal
+                if ($finalPaymentSum > 0) {
+                    $adjustmentFactor = $receiptTotal / $finalPaymentSum;
+                    foreach ($receiptData['receiptPayments'] as &$payment) {
+                        $payment['paymentAmount'] = round(floatval($payment['paymentAmount']) * $adjustmentFactor, 2);
+                    }
+                    unset($payment);
+                    
+                    // Recalculate to verify
+                    $finalPaymentSum = 0;
+                    foreach ($receiptData['receiptPayments'] as $payment) {
+                        $finalPaymentSum += floatval($payment['paymentAmount']);
+                    }
+                    error_log("FISCALIZE SALE: Proportionally adjusted all payments to match receiptTotal. New sum: $finalPaymentSum, receiptTotal: $receiptTotal");
+                } else {
+                    // All payments are zero - set first payment to receiptTotal
+                    $receiptData['receiptPayments'][0]['paymentAmount'] = round($receiptTotal, 2);
+                    error_log("FISCALIZE SALE: All payments were zero, set first payment to receiptTotal: " . $receiptData['receiptPayments'][0]['paymentAmount']);
+                }
+            }
         } else {
             error_log("FISCALIZE SALE: Payment validation passed - receiptTotal: $receiptTotal, payment sum: $finalPaymentSum");
         }
