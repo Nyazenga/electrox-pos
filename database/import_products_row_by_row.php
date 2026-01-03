@@ -67,6 +67,33 @@ for ($i = 79; $i <= 131; $i++) {
     // Build INSERT statement
     $sql = "INSERT INTO `products` ($columnList) VALUES $line";
     
+    // Debug first row
+    if ($i == 79) {
+        // Count values in the row
+        $inQuotes = false;
+        $escapeNext = false;
+        $commaCount = 0;
+        for ($j = 0; $j < strlen($line); $j++) {
+            $char = $line[$j];
+            if ($escapeNext) {
+                $escapeNext = false;
+                continue;
+            }
+            if ($char === '\\') {
+                $escapeNext = true;
+                continue;
+            }
+            if ($char === "'" && !$escapeNext) {
+                $inQuotes = !$inQuotes;
+            } elseif ($char === ',' && !$inQuotes) {
+                $commaCount++;
+            }
+        }
+        $valueCount = $commaCount + 1;
+        echo "DEBUG Row 1: Column count: " . count($columns) . ", Value count: $valueCount\n";
+        echo "DEBUG First 200 chars of SQL: " . substr($sql, 0, 200) . "...\n";
+    }
+    
     try {
         $pdo->exec($sql);
         $inserted++;
@@ -77,7 +104,7 @@ for ($i = 79; $i <= 131; $i++) {
         $errors++;
         $rowNum = $i - 78;
         echo "❌ Error on row $rowNum: " . $e->getMessage() . "\n";
-        echo "  SQL: " . substr($sql, 0, 150) . "...\n";
+        echo "  SQL: " . substr($sql, 0, 300) . "...\n";
         break; // Stop on first error to see what's wrong
     }
 }
