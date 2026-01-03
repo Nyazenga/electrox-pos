@@ -44,24 +44,13 @@ try {
     echo "Length: " . strlen($insertLine) . " chars\n";
     echo "First 100 chars: " . substr($insertLine, 0, 100) . "...\n\n";
     
-    // Extract VALUES part - find "VALUES" and get everything after it
-    $valuesStart = stripos($insertLine, 'VALUES');
-    if ($valuesStart === false) {
-        // Try different variations
-        $valuesStart = strpos($insertLine, 'VALUES');
-        if ($valuesStart === false) {
-            $valuesStart = strpos($insertLine, 'values');
-        }
-    }
-    if ($valuesStart === false) {
-        // Check if VALUES is actually there
-        $hasValues = (stripos($insertLine, 'VALUES') !== false);
-        die("❌ Could not find VALUES. Has VALUES: " . ($hasValues ? 'YES' : 'NO') . ". Line preview: " . substr($insertLine, 0, 150) . "...\n");
+    // Extract VALUES part - split on "VALUES" (case-insensitive)
+    $parts = preg_split('/VALUES\s+/i', $insertLine, 2);
+    if (count($parts) < 2) {
+        die("❌ Could not split on VALUES. Line preview: " . substr($insertLine, 0, 150) . "...\n");
     }
     
-    echo "Found VALUES at position: $valuesStart\n";
-    
-    $valuesStr = substr($insertLine, $valuesStart + 6); // Skip "VALUES " (6 chars including space)
+    $valuesStr = $parts[1]; // Everything after "VALUES "
     $valuesStr = trim($valuesStr);
     // Remove trailing ); or comment
     $valuesStr = preg_replace('/\)\s*;?\s*\/\*.*$/', '', $valuesStr);
