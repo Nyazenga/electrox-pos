@@ -708,7 +708,7 @@ function populateBulkUploadModal(data) {
                         <ul class="mb-0 small">
                             ${fields.map(f => `<li>${escapeHtml(f)}</li>`).join('')}
                         </ul>
-                        ${isUnique ? '<div class="alert alert-warning mt-2 mb-0 py-1 small"><strong>Note:</strong> Quantity will be forced to 1 and Reorder Level to 0 for unique products.</div>' : ''}
+                        ${isUnique ? '<div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 3px; padding: 8px; margin-top: 10px; font-size: 0.875em; color: #856404;"><strong>Note:</strong> Quantity will be forced to 1 and Reorder Level to 0 for unique products.</div>' : ''}
                     </div>
                 </div>
             </div>
@@ -854,25 +854,25 @@ function handleBulkUpload() {
                     <div id="bulkUploadResultsContent" style="max-height: 300px; overflow-y: auto;"></div>
                 </div>
                 
-                <div class="alert alert-info">
-                    <h6><i class="bi bi-info-circle"></i> How to Use Bulk Upload</h6>
-                    <ol class="mb-0">
-                        <li><strong>Download the template:</strong> Click the "Download CSV Template" button below to get a pre-formatted CSV file with example data.</li>
-                        <li><strong>Fill in your data:</strong> Use the examples in the template as a guide. Make sure to match category names and branch names exactly as they appear in the system.</li>
-                        <li><strong>Upload your file:</strong> Select your completed CSV file and click "Upload & Process".</li>
-                        <li><strong>Review results:</strong> The system will show you how many products were created and any errors that occurred.</li>
+                <div style="background: #d1ecf1; border: 2px solid #17a2b8; border-radius: 5px; padding: 15px; margin-bottom: 20px;">
+                    <h6 style="color: #0c5460; margin-bottom: 10px; font-weight: bold;"><i class="bi bi-info-circle"></i> How to Use Bulk Upload</h6>
+                    <ol style="margin-bottom: 0; padding-left: 20px; color: #0c5460;">
+                        <li style="margin-bottom: 8px;"><strong>Download the template:</strong> Click the "Download CSV Template" button below to get a pre-formatted CSV file with example data.</li>
+                        <li style="margin-bottom: 8px;"><strong>Fill in your data:</strong> Use the examples in the template as a guide. Make sure to match category names and branch names exactly as they appear in the system.</li>
+                        <li style="margin-bottom: 8px;"><strong>Upload your file:</strong> Select your completed CSV file and click "Upload & Process".</li>
+                        <li style="margin-bottom: 8px;"><strong>Review results:</strong> The system will show you how many products were created and any errors that occurred.</li>
                     </ol>
                 </div>
                 
-                <div class="alert alert-warning">
-                    <h6><i class="bi bi-exclamation-triangle"></i> Important Notes</h6>
-                    <ul class="mb-0">
-                        <li><strong>Category Names:</strong> Must match exactly (case-sensitive). Available categories are listed below.</li>
-                        <li><strong>Branch Names:</strong> Must match exactly (case-sensitive). Available branches: <span id="branchesList">Loading...</span></li>
-                        <li><strong>Unique Products:</strong> Smartphones, Laptops, and Tablets will automatically have Quantity = 1 and Reorder Level = 0, regardless of what you enter.</li>
-                        <li><strong>General Category:</strong> Requires "Product Name" field. Leave Brand and Model empty.</li>
-                        <li><strong>Other Categories:</strong> Require "Brand" and "Model" fields. Leave Product Name empty.</li>
-                        <li><strong>Tax ID:</strong> Optional. Available tax IDs: <span id="taxesList">Loading...</span></li>
+                <div style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 5px; padding: 15px; margin-bottom: 20px;">
+                    <h6 style="color: #856404; margin-bottom: 10px; font-weight: bold;"><i class="bi bi-exclamation-triangle"></i> Important Notes</h6>
+                    <ul style="margin-bottom: 0; padding-left: 20px; color: #856404;">
+                        <li style="margin-bottom: 8px;"><strong>Category Names:</strong> Must match exactly (case-sensitive). Available categories are listed below.</li>
+                        <li style="margin-bottom: 8px;"><strong>Branch Names:</strong> Must match exactly (case-sensitive). Available branches: <span id="branchesList">Loading...</span></li>
+                        <li style="margin-bottom: 8px;"><strong>Unique Products:</strong> Smartphones, Laptops, and Tablets will automatically have Quantity = 1 and Reorder Level = 0, regardless of what you enter.</li>
+                        <li style="margin-bottom: 8px;"><strong>General Category:</strong> Requires "Product Name" field. Leave Brand and Model empty.</li>
+                        <li style="margin-bottom: 8px;"><strong>Other Categories:</strong> Require "Brand" and "Model" fields. Leave Product Name empty.</li>
+                        <li style="margin-bottom: 8px;"><strong>Tax ID:</strong> Optional. Available tax IDs: <span id="taxesList">Loading...</span></li>
                     </ul>
                 </div>
                 
