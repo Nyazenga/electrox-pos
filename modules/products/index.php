@@ -72,6 +72,8 @@ function getAllApplicableTaxes($primaryDb) {
 $allTaxes = getAllApplicableTaxes($primaryDb);
 
 // Filters
+// Check if branch_id is explicitly set in URL (including 'all')
+$branchIdInUrl = isset($_GET['branch_id']);
 $selectedBranch = $_GET['branch_id'] ?? ($branchId ?: 'all');
 $categoryId = $_GET['category_id'] ?? 'all';
 $status = $_GET['status'] ?? 'all';
@@ -91,10 +93,12 @@ if ($categories === false) $categories = [];
 $whereConditions = ["1=1"];
 $params = [];
 
+// Only filter by branch if explicitly selected (not auto-filter by session)
 if ($selectedBranch !== 'all' && $selectedBranch) {
     $whereConditions[] = "p.branch_id = :branch_id";
     $params[':branch_id'] = $selectedBranch;
-} elseif ($branchId !== null) {
+} elseif (!$branchIdInUrl && $branchId !== null) {
+    // Only auto-filter by session branch_id if no branch filter was set in URL
     $whereConditions[] = "p.branch_id = :branch_id";
     $params[':branch_id'] = $branchId;
 }
