@@ -41,17 +41,25 @@ try {
     $insertLine = trim($insertLine);
     
     echo "✅ Found INSERT statement\n";
-    echo "Length: " . strlen($insertLine) . " chars\n\n";
+    echo "Length: " . strlen($insertLine) . " chars\n";
+    echo "First 100 chars: " . substr($insertLine, 0, 100) . "...\n\n";
     
     // Extract VALUES part - find "VALUES" and get everything after it
     $valuesStart = stripos($insertLine, 'VALUES');
     if ($valuesStart === false) {
-        // Try uppercase
+        // Try different variations
         $valuesStart = strpos($insertLine, 'VALUES');
+        if ($valuesStart === false) {
+            $valuesStart = strpos($insertLine, 'values');
+        }
     }
     if ($valuesStart === false) {
-        die("❌ Could not find VALUES. Line starts with: " . substr($insertLine, 0, 50) . "...\n");
+        // Check if VALUES is actually there
+        $hasValues = (stripos($insertLine, 'VALUES') !== false);
+        die("❌ Could not find VALUES. Has VALUES: " . ($hasValues ? 'YES' : 'NO') . ". Line preview: " . substr($insertLine, 0, 150) . "...\n");
     }
+    
+    echo "Found VALUES at position: $valuesStart\n";
     
     $valuesStr = substr($insertLine, $valuesStart + 6); // Skip "VALUES " (6 chars including space)
     $valuesStr = trim($valuesStr);
