@@ -22,21 +22,21 @@ function initSession() {
 }
 
 function checkSessionActivity() {
-    if (isset($_SESSION['last_activity'])) {
-        $inactiveTime = time() - $_SESSION['last_activity'];
-        
-        if ($inactiveTime > SESSION_LIFETIME) {
-            session_unset();
-            session_destroy();
-            redirectTo('login.php');
-        }
-        
-        if ($inactiveTime > 1800) {
-            session_regenerate_id(true);
-        }
-    }
-    
+    // Update last activity timestamp (for logging/auditing purposes only)
+    // Sessions no longer expire based on inactivity - they persist until explicit logout
     $_SESSION['last_activity'] = time();
+    
+    // Regenerate session ID periodically for security (every 30 minutes of activity)
+    // This helps prevent session fixation attacks without logging the user out
+    if (isset($_SESSION['last_regeneration'])) {
+        $timeSinceRegeneration = time() - $_SESSION['last_regeneration'];
+        if ($timeSinceRegeneration > 1800) { // 30 minutes
+            session_regenerate_id(true);
+            $_SESSION['last_regeneration'] = time();
+        }
+    } else {
+        $_SESSION['last_regeneration'] = time();
+    }
 }
 
 function redirectTo($url) {

@@ -88,22 +88,11 @@ class Auth {
             $disallowDuplicateLogins = getSetting('disallow_duplicate_logins', '0') == '1';
             if ($disallowDuplicateLogins) {
                 $primaryDb = Database::getPrimaryInstance();
-                $existingSession = $primaryDb->getRow(
-                    "SELECT * FROM user_sessions WHERE user_id = :user_id AND last_activity > DATE_SUB(NOW(), INTERVAL 30 MINUTE) ORDER BY last_activity DESC LIMIT 1",
+                // Remove ALL existing sessions for this user (no time limit - sessions persist until logout)
+                $primaryDb->executeQuery(
+                    "DELETE FROM user_sessions WHERE user_id = :user_id",
                     [':user_id' => $user['id']]
                 );
-                
-                if ($existingSession) {
-                    // Check if session is still active (not expired)
-                    $sessionAge = time() - strtotime($existingSession['last_activity']);
-                    if ($sessionAge < 1800) { // 30 minutes
-                        // Logout the existing session
-                        $primaryDb->executeQuery(
-                            "DELETE FROM user_sessions WHERE session_id = :session_id",
-                            [':session_id' => $existingSession['session_id']]
-                        );
-                    }
-                }
             }
             
             // Create new session record

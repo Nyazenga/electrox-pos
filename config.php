@@ -103,7 +103,7 @@ date_default_timezone_set('Africa/Harare');
 
 // Session configuration
 define('SESSION_NAME', 'ELECTROX_SESSION');
-define('SESSION_LIFETIME', 1800); // 30 minutes
+define('SESSION_LIFETIME', 0); // 0 = No timeout - sessions persist until explicit logout
 
 // Encryption settings
 define('HASH_COST', 10);
