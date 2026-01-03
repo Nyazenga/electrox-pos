@@ -256,8 +256,10 @@ require_once APP_PATH . '/includes/header.php';
     </div>
 </div>
 
+<?php require_once APP_PATH . '/includes/footer.php'; ?>
+
 <style>
-/* Ensure Select2 dropdowns match form-select styling */
+/* Ensure Select2 dropdowns match form-select styling - Load after Select2 CSS */
 .select2-container--bootstrap-5 .select2-selection--single {
     font-size: 1rem !important;
     height: calc(1.5em + 0.75rem + 2px) !important;
@@ -275,8 +277,6 @@ require_once APP_PATH . '/includes/header.php';
     height: calc(1.5em + 0.75rem + 2px) !important;
 }
 </style>
-
-<?php require_once APP_PATH . '/includes/footer.php'; ?>
 
 <script>
 (function() {
