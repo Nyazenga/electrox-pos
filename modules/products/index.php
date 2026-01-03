@@ -169,7 +169,12 @@ require_once APP_PATH . '/includes/header.php';
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Products</h2>
     <?php if ($auth->hasPermission('products.create')): ?>
-        <a href="add.php" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Add Product</a>
+        <div>
+            <button type="button" class="btn btn-success me-2" onclick="showBulkUploadModal()">
+                <i class="bi bi-upload"></i> Bulk Upload Products
+            </button>
+            <a href="add.php" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Add Product</a>
+        </div>
     <?php endif; ?>
 </div>
 
@@ -580,4 +585,340 @@ function applyBulkTax() {
 document.addEventListener('DOMContentLoaded', function() {
     updateBulkTaxButton();
 });
+
+// Bulk Upload Functions
+function showBulkUploadModal() {
+    // Fetch dynamic category information
+    fetch('<?= BASE_URL ?>ajax/get_bulk_upload_info.php')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                populateBulkUploadModal(data);
+                new bootstrap.Modal(document.getElementById('bulkUploadModal')).show();
+            } else {
+                Swal.fire('Error', data.message || 'Failed to load upload information', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            Swal.fire('Error', 'Failed to load upload information', 'error');
+        });
+}
+
+function populateBulkUploadModal(data) {
+    const categories = data.categories || [];
+    const branches = data.branches || [];
+    const taxes = data.taxes || [];
+    
+    // Build category list HTML
+    let categoryListHtml = '<div class="row">';
+    categories.forEach(cat => {
+        const isGeneral = cat.is_general;
+        const isUnique = cat.is_unique;
+        let fields = [];
+        
+        if (isGeneral) {
+            fields.push('Product Name (required)');
+            fields.push('Batch Number (optional)');
+            fields.push('Expiry Date (optional)');
+            fields.push('Weight (optional)');
+            fields.push('Unit of Measure (optional)');
+            fields.push('Manufacturer (optional)');
+        } else {
+            fields.push('Brand (required)');
+            fields.push('Model (required)');
+            
+            if (isUnique) {
+                fields.push('Serial Number (required for unique products)');
+                if (cat.name.toLowerCase().includes('smartphone') || cat.name.toLowerCase().includes('phone')) {
+                    fields.push('IMEI (required for smartphones)');
+                    fields.push('Storage (e.g., 128GB, 256GB)');
+                    fields.push('Battery Health (0-100)');
+                    fields.push('SIM Configuration (e.g., Dual SIM)');
+                } else if (cat.name.toLowerCase().includes('laptop')) {
+                    fields.push('Storage (e.g., 512GB SSD)');
+                } else if (cat.name.toLowerCase().includes('tablet')) {
+                    fields.push('Storage');
+                    fields.push('Battery Health');
+                }
+            }
+        }
+        
+        categoryListHtml += `
+            <div class="col-md-6 mb-3">
+                <div class="card border-primary">
+                    <div class="card-header bg-primary text-white">
+                        <strong>${escapeHtml(cat.name)}</strong>
+                        ${isUnique ? '<span class="badge bg-warning ms-2">Unique Product</span>' : ''}
+                        ${isGeneral ? '<span class="badge bg-info ms-2">General Category</span>' : ''}
+                    </div>
+                    <div class="card-body">
+                        <small class="text-muted">Required Fields:</small>
+                        <ul class="mb-0 small">
+                            ${fields.map(f => `<li>${escapeHtml(f)}</li>`).join('')}
+                        </ul>
+                        ${isUnique ? '<div class="alert alert-warning mt-2 mb-0 py-1 small"><strong>Note:</strong> Quantity will be forced to 1 and Reorder Level to 0 for unique products.</div>' : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    categoryListHtml += '</div>';
+    
+    document.getElementById('categoryInfo').innerHTML = categoryListHtml;
+    
+    // Build branches list
+    let branchesList = branches.map(b => escapeHtml(b.branch_name)).join(', ');
+    document.getElementById('branchesList').textContent = branchesList || 'No branches available';
+    
+    // Build taxes list
+    let taxesList = taxes.map(t => `${escapeHtml(t.taxName || 'Tax')} (${t.taxPercent || 0}%) - ID: ${t.taxID}`).join(', ');
+    document.getElementById('taxesList').textContent = taxesList || 'No taxes configured';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function downloadTemplate() {
+    window.location.href = '<?= BASE_URL ?>ajax/download_product_template.php';
+}
+
+function handleBulkUpload() {
+    const fileInput = document.getElementById('bulkUploadFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        Swal.fire('Error', 'Please select a CSV file to upload', 'error');
+        return;
+    }
+    
+    // Validate file type
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.csv') && !fileName.endsWith('.txt')) {
+        Swal.fire('Error', 'Please upload a CSV file (.csv or .txt)', 'error');
+        return;
+    }
+    
+    // Show loading
+    Swal.fire({
+        title: 'Processing...',
+        text: 'Please wait while we process your bulk upload',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
+    
+    // Create form data
+    const formData = new FormData();
+    formData.append('csv_file', file);
+    
+    // Upload file
+    fetch('<?= BASE_URL ?>ajax/process_bulk_upload.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const summary = data.summary || {};
+            let message = `<strong>Bulk Upload Complete!</strong><br><br>`;
+            message += `✅ Successfully created: <strong>${summary.successful || 0}</strong> products<br>`;
+            if (summary.errors > 0) {
+                message += `❌ Errors: <strong>${summary.errors}</strong> rows<br>`;
+            }
+            message += `<br>Total rows processed: <strong>${summary.total_rows || 0}</strong>`;
+            
+            if (summary.errors > 0 && data.results && data.results.errors) {
+                message += `<br><br><details><summary>View Error Details</summary><ul style="text-align: left; max-height: 200px; overflow-y: auto;">`;
+                data.results.errors.slice(0, 10).forEach(err => {
+                    message += `<li><strong>Row ${err.row}:</strong> ${err.errors.join(', ')}</li>`;
+                });
+                if (data.results.errors.length > 10) {
+                    message += `<li>... and ${data.results.errors.length - 10} more errors</li>`;
+                }
+                message += `</ul></details>`;
+            }
+            
+            Swal.fire({
+                icon: 'success',
+                title: 'Upload Successful',
+                html: message,
+                confirmButtonText: 'OK',
+                width: '600px'
+            }).then(() => {
+                window.location.reload();
+            });
+        } else {
+            Swal.fire('Error', data.message || 'Failed to process bulk upload', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        Swal.fire('Error', 'An error occurred while processing the upload', 'error');
+    });
+}
 </script>
+
+<!-- Bulk Upload Modal -->
+<div class="modal fade" id="bulkUploadModal" tabindex="-1" aria-labelledby="bulkUploadModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="bulkUploadModalLabel">
+                    <i class="bi bi-upload"></i> Bulk Upload Products
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div class="alert alert-info">
+                    <h6><i class="bi bi-info-circle"></i> How to Use Bulk Upload</h6>
+                    <ol class="mb-0">
+                        <li><strong>Download the template:</strong> Click the "Download CSV Template" button below to get a pre-formatted CSV file with example data.</li>
+                        <li><strong>Fill in your data:</strong> Use the examples in the template as a guide. Make sure to match category names and branch names exactly as they appear in the system.</li>
+                        <li><strong>Upload your file:</strong> Select your completed CSV file and click "Upload & Process".</li>
+                        <li><strong>Review results:</strong> The system will show you how many products were created and any errors that occurred.</li>
+                    </ol>
+                </div>
+                
+                <div class="alert alert-warning">
+                    <h6><i class="bi bi-exclamation-triangle"></i> Important Notes</h6>
+                    <ul class="mb-0">
+                        <li><strong>Category Names:</strong> Must match exactly (case-sensitive). Available categories are listed below.</li>
+                        <li><strong>Branch Names:</strong> Must match exactly (case-sensitive). Available branches: <span id="branchesList">Loading...</span></li>
+                        <li><strong>Unique Products:</strong> Smartphones, Laptops, and Tablets will automatically have Quantity = 1 and Reorder Level = 0, regardless of what you enter.</li>
+                        <li><strong>General Category:</strong> Requires "Product Name" field. Leave Brand and Model empty.</li>
+                        <li><strong>Other Categories:</strong> Require "Brand" and "Model" fields. Leave Product Name empty.</li>
+                        <li><strong>Tax ID:</strong> Optional. Available tax IDs: <span id="taxesList">Loading...</span></li>
+                    </ul>
+                </div>
+                
+                <div class="mb-4">
+                    <h6><i class="bi bi-list-ul"></i> Category Information</h6>
+                    <p class="text-muted">Each category has different required fields. See details below:</p>
+                    <div id="categoryInfo">
+                        <div class="text-center py-3">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card border-primary">
+                    <div class="card-header bg-primary text-white">
+                        <h6 class="mb-0"><i class="bi bi-file-earmark-spreadsheet"></i> CSV Template Columns</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>Column Name</th>
+                                        <th>Required</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Category Name</strong></td>
+                                        <td><span class="badge bg-danger">Yes</span></td>
+                                        <td>Must match exactly with category name in system</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Branch Name</strong></td>
+                                        <td><span class="badge bg-danger">Yes</span></td>
+                                        <td>Must match exactly with branch name in system</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Product Name</strong></td>
+                                        <td><span class="badge bg-warning">Conditional</span></td>
+                                        <td>Required for General category, leave empty for others</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Brand</strong></td>
+                                        <td><span class="badge bg-warning">Conditional</span></td>
+                                        <td>Required for non-General categories, leave empty for General</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Model</strong></td>
+                                        <td><span class="badge bg-warning">Conditional</span></td>
+                                        <td>Required for non-General categories, leave empty for General</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Color</strong></td>
+                                        <td><span class="badge bg-secondary">Optional</span></td>
+                                        <td>Color name or hex code (e.g., #FF0000)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Storage</strong></td>
+                                        <td><span class="badge bg-secondary">Optional</span></td>
+                                        <td>For smartphones/laptops/tablets (e.g., "128GB", "512GB SSD")</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Serial Number</strong></td>
+                                        <td><span class="badge bg-warning">Conditional</span></td>
+                                        <td>Required for unique products (smartphones/laptops/tablets)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>IMEI</strong></td>
+                                        <td><span class="badge bg-warning">Conditional</span></td>
+                                        <td>Required for smartphones</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Cost Price</strong></td>
+                                        <td><span class="badge bg-danger">Yes</span></td>
+                                        <td>Numeric value (e.g., 10.50)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Selling Price</strong></td>
+                                        <td><span class="badge bg-danger">Yes</span></td>
+                                        <td>Numeric value (e.g., 15.00)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Quantity in Stock</strong></td>
+                                        <td><span class="badge bg-danger">Yes</span></td>
+                                        <td>Numeric value (will be forced to 1 for unique products)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Reorder Level</strong></td>
+                                        <td><span class="badge bg-danger">Yes</span></td>
+                                        <td>Numeric value (will be forced to 0 for unique products)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Status</strong></td>
+                                        <td><span class="badge bg-secondary">Optional</span></td>
+                                        <td>Active or Inactive (default: Active)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-4">
+                    <h6><i class="bi bi-cloud-download"></i> Step 1: Download Template</h6>
+                    <button type="button" class="btn btn-primary btn-lg" onclick="downloadTemplate()">
+                        <i class="bi bi-download"></i> Download CSV Template
+                    </button>
+                    <small class="text-muted d-block mt-2">The template includes example rows for different category types and instructions.</small>
+                </div>
+                
+                <div class="mt-4">
+                    <h6><i class="bi bi-cloud-upload"></i> Step 2: Upload Your File</h6>
+                    <div class="input-group">
+                        <input type="file" class="form-control" id="bulkUploadFile" accept=".csv,.txt">
+                        <button type="button" class="btn btn-success" onclick="handleBulkUpload()">
+                            <i class="bi bi-upload"></i> Upload & Process
+                        </button>
+                    </div>
+                    <small class="text-muted d-block mt-2">Select your completed CSV file and click Upload to process.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
