@@ -57,24 +57,37 @@ try {
     // Try to find INSERT - use multiple methods
     $insertLine = null;
     
-    // Method 1: Line by line - handle both Unix and Windows line endings
-    $lines = preg_split('/\r?\n/', $content);
-    foreach ($lines as $i => $line) {
-        $line = trim($line);
-        if (stripos($line, 'INSERT INTO') !== false && 
-            stripos($line, 'products') !== false && 
-            stripos($line, 'VALUES') !== false) {
-            $insertLine = $line;
-            echo "✅ Found INSERT on line " . ($i + 1) . " (method: line-by-line)\n";
-            echo "Line preview: " . substr($line, 0, 150) . "...\n";
-            break;
+    // Method 1: Direct search in content (case-insensitive)
+    if (preg_match('/INSERT\s+INTO\s+[`\']?products[`\']?\s+VALUES\s+.+?\)\s*;?\s*(?:\/\*!40000|$)/is', $content, $matches)) {
+        $insertLine = trim($matches[0]);
+        // Remove comment
+        $insertLine = preg_replace('/\/\*!40000.*/', '', $insertLine);
+        $insertLine = trim($insertLine);
+        if (substr($insertLine, -1) !== ';') {
+            $insertLine .= ';';
         }
+        echo "✅ Found INSERT using regex (method 1)\n";
+        echo "Preview: " . substr($insertLine, 0, 150) . "...\n";
     }
     
-    // Method 2: Regex on full content
-    if (!$insertLine && preg_match('/INSERT INTO\s+`?products`?\s+VALUES\s+[^;]+/i', $content, $matches)) {
-        $insertLine = $matches[0];
-        echo "✅ Found INSERT using regex\n";
+    // Method 2: Line by line - handle both Unix and Windows line endings
+    if (!$insertLine) {
+        $lines = preg_split('/\r?\n/', $content);
+        foreach ($lines as $i => $line) {
+            $lineTrimmed = trim($line);
+            if (stripos($lineTrimmed, 'INSERT') !== false && 
+                stripos($lineTrimmed, 'INTO') !== false &&
+                stripos($lineTrimmed, 'products') !== false && 
+                stripos($lineTrimmed, 'VALUES') !== false) {
+                $insertLine = $lineTrimmed;
+                // Remove comment
+                $insertLine = preg_replace('/\/\*!40000.*/', '', $insertLine);
+                $insertLine = trim($insertLine);
+                echo "✅ Found INSERT on line " . ($i + 1) . " (method: line-by-line)\n";
+                echo "Preview: " . substr($insertLine, 0, 150) . "...\n";
+                break;
+            }
+        }
     }
     
     if (!$insertLine) {
