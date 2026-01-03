@@ -33,25 +33,28 @@ echo "✓ Dropped\n\n";
 echo "Step 2: Creating table structure (without source column)...\n";
 $createTable = '';
 $inCreateTable = false;
+$createTableEndIdx = -1;
 for ($i = 0; $i < count($lines); $i++) {
     $line = $lines[$i];
     if (preg_match('/CREATE TABLE.*products/i', $line)) {
         $inCreateTable = true;
-        $createTable .= $line . "\n";
-    } elseif ($inCreateTable) {
-        // Skip line with source column
-        if (preg_match('/`source`/i', $line)) {
+    }
+    if ($inCreateTable) {
+        // Skip line with source column definition
+        if (preg_match('/^\s*`source`/i', $line)) {
             continue;
         }
         $createTable .= $line . "\n";
-        if (preg_match('/\);$/', $line)) {
+        if (preg_match('/^\);$/', trim($line))) {
+            $createTableEndIdx = $i;
             break;
         }
     }
 }
 
-// Remove source column references
+// Remove any trailing source column references (comma before source in previous line)
 $createTable = preg_replace('/,\s*`source`[^,)]*/i', '', $createTable);
+$createTable = preg_replace('/`source`[^,)]*,/i', '', $createTable);
 
 try {
     $pdo->exec($createTable);
