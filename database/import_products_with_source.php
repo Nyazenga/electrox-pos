@@ -26,8 +26,18 @@ try {
     echo "Reading SQL file...\n";
     $sql = file_get_contents($sqlFile);
     
-    // Extract INSERT statement
-    if (preg_match('/INSERT INTO `products` VALUES\s*(.*?);/s', $sql, $matches)) {
+    // Extract INSERT statement - handle both formats
+    if (preg_match('/INSERT INTO `products` VALUES\s*(.*?);/s', $sql, $matches) || 
+        preg_match('/INSERT INTO `products` VALUES\s*(.*?)\s*\/\*!40000/s', $sql, $matches) ||
+        preg_match('/INSERT INTO `products` VALUES\s*(.*?)\)\s*;/s', $sql, $matches)) {
+        
+        // If the match ends with );, we need to include the closing paren
+        if (isset($matches[1]) && substr(trim($matches[1]), -1) !== ')') {
+            // The values string might be incomplete, try to get the full statement
+            if (preg_match('/INSERT INTO `products` VALUES\s*(.*?)\)\s*;/s', $sql, $fullMatch)) {
+                $matches[1] = $fullMatch[1] . ')';
+            }
+        }
         $valuesString = $matches[1];
         
         // Split by ),( to get individual rows
