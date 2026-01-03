@@ -57,14 +57,16 @@ try {
     // Try to find INSERT - use multiple methods
     $insertLine = null;
     
-    // Method 1: Line by line
-    $lines = explode("\n", $content);
+    // Method 1: Line by line - handle both Unix and Windows line endings
+    $lines = preg_split('/\r?\n/', $content);
     foreach ($lines as $i => $line) {
+        $line = trim($line);
         if (stripos($line, 'INSERT INTO') !== false && 
             stripos($line, 'products') !== false && 
             stripos($line, 'VALUES') !== false) {
             $insertLine = $line;
             echo "✅ Found INSERT on line " . ($i + 1) . " (method: line-by-line)\n";
+            echo "Line preview: " . substr($line, 0, 150) . "...\n";
             break;
         }
     }
