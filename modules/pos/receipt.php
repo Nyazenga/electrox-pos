@@ -818,11 +818,12 @@ body, html {
     border-collapse: collapse;
     margin: 12px 0;
     font-size: 11px;
+    table-layout: auto;
 }
 
 .receipt-container table th, 
 .receipt-container table td {
-    padding: 6px 4px;
+    padding: 6px 8px;
     text-align: left;
     border-bottom: 1px solid #ddd;
 }
@@ -830,6 +831,68 @@ body, html {
 .receipt-container table th {
     background: #f3f4f6;
     font-weight: bold;
+}
+
+/* Responsive table columns */
+.receipt-container table colgroup col:nth-child(1) {
+    min-width: 120px;
+}
+
+.receipt-container table colgroup col:nth-child(2) {
+    width: 60px;
+    min-width: 50px;
+}
+
+.receipt-container table colgroup col:nth-child(3),
+.receipt-container table colgroup col:nth-child(4) {
+    width: 90px;
+    min-width: 70px;
+}
+
+/* Ensure item names wrap properly */
+.receipt-container table tbody td:first-child {
+    word-wrap: break-word;
+    word-break: break-word;
+    white-space: normal;
+    line-height: 1.4;
+}
+
+/* Prevent Qty, Price, Total from wrapping */
+.receipt-container table tbody td:nth-child(2),
+.receipt-container table tbody td:nth-child(3),
+.receipt-container table tbody td:nth-child(4) {
+    white-space: nowrap;
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 480px) {
+    .receipt-container {
+        padding: 20px 15px;
+    }
+    
+    .receipt-container table {
+        font-size: 10px;
+    }
+    
+    .receipt-container table th, 
+    .receipt-container table td {
+        padding: 5px 6px;
+    }
+    
+    .receipt-container table colgroup col:nth-child(1) {
+        min-width: 100px;
+    }
+    
+    .receipt-container table colgroup col:nth-child(2) {
+        width: 50px;
+        min-width: 45px;
+    }
+    
+    .receipt-container table colgroup col:nth-child(3),
+    .receipt-container table colgroup col:nth-child(4) {
+        width: 75px;
+        min-width: 65px;
+    }
 }
 
 .receipt-container .total-row {
