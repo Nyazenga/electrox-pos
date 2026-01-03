@@ -82,6 +82,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                  strpos(strtolower($newCategory['name']), 'beverage') !== false);
     }
     
+    // Check if this is a unique product (has serial/IMEI)
+    $isUniqueProduct = false;
+    if ($newCategoryId) {
+        $category = $db->getRow("SELECT name FROM product_categories WHERE id = :id", [':id' => $newCategoryId]);
+        if ($category) {
+            $categoryName = strtolower($category['name']);
+            $isUniqueProduct = (strpos($categoryName, 'smartphone') !== false || 
+                              strpos($categoryName, 'phone') !== false || 
+                              strpos($categoryName, 'laptop') !== false ||
+                              strpos($categoryName, 'tablet') !== false);
+        }
+    }
+    // Also check if product has serial_number or imei
+    if (!$isUniqueProduct && (!empty($product['serial_number']) || !empty($product['imei']))) {
+        $isUniqueProduct = true;
+    }
+    
+    // CRITICAL: Unique products (with serial/IMEI) must always have qty=1
+    // They cannot be increased through editing - each is a unique item
+    $quantityInStock = intval($_POST['quantity_in_stock'] ?? $product['quantity_in_stock'] ?? 0);
+    if ($isUniqueProduct) {
+        // Force qty=1 for unique products - cannot be changed
+        $quantityInStock = 1;
+    }
+    
     $data = [
         'category_id' => $newCategoryId,
         'product_name' => $newIsGeneralCategory ? sanitizeInput($_POST['product_name'] ?? '') : null,
@@ -99,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'reorder_level' => $_POST['reorder_level'] ?? 0,
         'branch_id' => $_POST['branch_id'] ?? $_SESSION['branch_id'],
         'tax_id' => !empty($_POST['tax_id']) ? intval($_POST['tax_id']) : null,
-        'quantity_in_stock' => $_POST['quantity_in_stock'] ?? 0,
+        'quantity_in_stock' => $quantityInStock,
         'status' => $_POST['status'] ?? 'Active',
         'updated_by' => $_SESSION['user_id'],
         'updated_at' => date('Y-m-d H:i:s')
@@ -286,7 +311,26 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Stock</label>
-                    <input type="number" class="form-control" name="quantity_in_stock" value="<?= $product['quantity_in_stock'] ?>">
+                    <?php 
+                    // Check if product is unique (has serial/IMEI)
+                    $isUniqueProduct = false;
+                    if ($currentCategory) {
+                        $categoryName = strtolower($currentCategory['name']);
+                        $isUniqueProduct = (strpos($categoryName, 'smartphone') !== false || 
+                                          strpos($categoryName, 'phone') !== false || 
+                                          strpos($categoryName, 'laptop') !== false ||
+                                          strpos($categoryName, 'tablet') !== false);
+                    }
+                    if (!$isUniqueProduct && (!empty($product['serial_number']) || !empty($product['imei']))) {
+                        $isUniqueProduct = true;
+                    }
+                    ?>
+                    <input type="number" class="form-control" name="quantity_in_stock" id="quantityInStock" 
+                           value="<?= $isUniqueProduct ? 1 : $product['quantity_in_stock'] ?>" 
+                           <?= $isUniqueProduct ? 'readonly style="background-color: #e9ecef; cursor: not-allowed;"' : '' ?>>
+                    <?php if ($isUniqueProduct): ?>
+                        <small class="text-muted">Unique products (smartphones/laptops) must have quantity = 1. Cannot be changed.</small>
+                    <?php endif; ?>
                 </div>
             </div>
             <!-- Grocery/General Fields -->
@@ -463,6 +507,34 @@ function updateDynamicFields(categoryName) {
      expiryDateField, weightField, unitOfMeasureField, manufacturerField, batchNumberField].forEach(field => {
         if (field) field.style.display = 'none';
     });
+    
+    // Check if this is a unique product (smartphone, laptop, tablet)
+    const isUniqueProduct = categoryName.includes('smartphone') || 
+                            categoryName.includes('phone') || 
+                            categoryName.includes('laptop') || 
+                            categoryName.includes('tablet');
+    
+    // Handle quantity field for unique products
+    const quantityInput = document.getElementById('quantityInStock');
+    if (quantityInput) {
+        if (isUniqueProduct) {
+            // Unique products must have qty=1 always
+            quantityInput.value = 1;
+            quantityInput.readOnly = true;
+            quantityInput.style.backgroundColor = '#e9ecef';
+            quantityInput.style.cursor = 'not-allowed';
+            // Update help text if exists
+            const helpText = quantityInput.nextElementSibling;
+            if (helpText && helpText.tagName === 'SMALL') {
+                helpText.textContent = 'Unique products (smartphones/laptops) must have quantity = 1. Cannot be changed.';
+                helpText.className = 'text-muted';
+            }
+        } else {
+            quantityInput.readOnly = false;
+            quantityInput.style.backgroundColor = '';
+            quantityInput.style.cursor = '';
+        }
+    }
     
     // Show fields based on category
     if (categoryName.includes('smartphone') || categoryName.includes('phone')) {

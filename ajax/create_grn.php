@@ -100,6 +100,21 @@ try {
             continue;
         }
         
+        // Check if product has serial/IMEI (unique product)
+        $product = $db->getRow(
+            "SELECT p.*, pc.name as category_name FROM products p 
+             LEFT JOIN product_categories pc ON p.category_id = pc.id 
+             WHERE p.id = :id",
+            [':id' => $productId]
+        );
+        
+        // CRITICAL: Unique products (with serial/IMEI) must always have qty=1
+        // They cannot be increased through GRN - each is a unique item
+        if ($product && productHasSerialOrImei($product, $db)) {
+            // Force qty=1 for unique products
+            $quantity = 1;
+        }
+        
         // Create GRN item
         $itemData = [
             'grn_id' => $grnId,

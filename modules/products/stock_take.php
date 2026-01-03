@@ -146,16 +146,31 @@ require_once APP_PATH . '/includes/header.php';
                                         $productDisplayName = 'Product #' . $product['id'];
                                     }
                                 ?>
+                                    <?php 
+                                    $categoryName = strtolower($product['category_name'] ?? '');
+                                    $isUnique = (strpos($categoryName, 'smartphone') !== false || 
+                                               strpos($categoryName, 'phone') !== false || 
+                                               strpos($categoryName, 'laptop') !== false ||
+                                               strpos($categoryName, 'tablet') !== false) ||
+                                               !empty($product['serial_number']) || 
+                                               !empty($product['imei']);
+                                    ?>
                                     <a class="dropdown-item product-item" 
                                        href="#" 
                                        data-id="<?= $product['id'] ?>"
                                        data-name="<?= escapeHtml($productDisplayName) ?>"
-                                       data-stock="<?= $product['quantity_in_stock'] ?? 0 ?>">
+                                       data-stock="<?= $isUnique ? 1 : ($product['quantity_in_stock'] ?? 0) ?>"
+                                       data-category="<?= escapeHtml($product['category_name'] ?? '') ?>"
+                                       data-serial="<?= escapeHtml($product['serial_number'] ?? '') ?>"
+                                       data-imei="<?= escapeHtml($product['imei'] ?? '') ?>">
                                         <?= escapeHtml($productDisplayName) ?> 
                                         (Code: <?= escapeHtml($product['product_code'] ?? 'N/A') ?>) 
-                                        - Stock: <?= $product['quantity_in_stock'] ?? 0 ?>
+                                        - Stock: <?= $isUnique ? 1 : ($product['quantity_in_stock'] ?? 0) ?>
                                         <?php if (!empty($product['category_name'])): ?>
                                             <small class="text-muted"> - <?= escapeHtml($product['category_name']) ?></small>
+                                        <?php endif; ?>
+                                        <?php if ($isUnique): ?>
+                                            <small class="text-warning d-block">⚠ Unique product - qty=1</small>
                                         <?php endif; ?>
                                     </a>
                                 <?php endforeach; ?>
@@ -175,6 +190,7 @@ require_once APP_PATH . '/includes/header.php';
                     <div class="col-md-3 mb-3">
                         <label class="form-label">Counted Stock *</label>
                         <input type="number" class="form-control" name="counted_stock" id="countedStock" required min="0" step="1">
+                        <small class="text-muted" id="countedStockHelp">Enter counted stock quantity</small>
                     </div>
                 </div>
                 <div class="row">
@@ -338,6 +354,22 @@ function renderStockTakeTable() {
             };
         }
         
+        // Check if product is unique (has serial/IMEI)
+        const categoryName = (product.category_name || '').toLowerCase();
+        const isUniqueProduct = categoryName.includes('smartphone') || 
+                                categoryName.includes('phone') || 
+                                categoryName.includes('laptop') || 
+                                categoryName.includes('tablet') ||
+                                product.serial_number || 
+                                product.imei;
+        
+        // CRITICAL: Unique products must have qty=1 always
+        if (isUniqueProduct) {
+            item.counted_stock = 1;
+            item.current_stock = 1;
+            item.difference = 0;
+        }
+        
         const difference = item.counted_stock - item.current_stock;
         
         const row = document.createElement('tr');
@@ -352,8 +384,11 @@ function renderStockTakeTable() {
                        value="${item.counted_stock}" 
                        min="0" 
                        step="1"
+                       ${isUniqueProduct ? 'readonly style="background-color: #e9ecef; cursor: not-allowed;"' : ''}
                        onchange="updateStockTakeItem(${product.id}, this.value)"
-                       data-product-id="${product.id}">
+                       data-product-id="${product.id}"
+                       data-is-unique="${isUniqueProduct ? '1' : '0'}">
+                ${isUniqueProduct ? '<small class="text-muted d-block">Unique product - qty=1</small>' : ''}
             </td>
             <td class="text-end ${difference >= 0 ? 'text-success' : 'text-danger'}">
                 ${difference >= 0 ? '+' : ''}${difference}
@@ -373,6 +408,18 @@ function renderStockTakeTable() {
 }
 
 function updateStockTakeItem(productId, countedStock) {
+    // Check if this is a unique product
+    const input = document.querySelector(`input[data-product-id="${productId}"]`);
+    const isUnique = input && input.getAttribute('data-is-unique') === '1';
+    
+    if (isUnique) {
+        // Force qty=1 for unique products
+        countedStock = 1;
+        if (input) {
+            input.value = 1;
+        }
+    }
+    
     if (!stockTakeItems[productId]) {
         const product = products.find(p => p.id == productId);
         stockTakeItems[productId] = {
@@ -789,7 +836,41 @@ document.addEventListener('DOMContentLoaded', function() {
             productSearch.value = item.dataset.name;
             document.getElementById('selectedProductId').value = item.dataset.id;
             document.getElementById('currentStock').textContent = item.dataset.stock || 0;
-            document.getElementById('countedStock').value = item.dataset.stock || 0;
+            
+            // Check if product is unique (has serial/IMEI or is in smartphone/laptop category)
+            const categoryName = (item.dataset.category || '').toLowerCase();
+            const hasSerial = item.dataset.serial || '';
+            const hasImei = item.dataset.imei || '';
+            const isUniqueProduct = categoryName.includes('smartphone') || 
+                                  categoryName.includes('phone') || 
+                                  categoryName.includes('laptop') || 
+                                  categoryName.includes('tablet') ||
+                                  hasSerial || hasImei;
+            
+            const countedStockInput = document.getElementById('countedStock');
+            const countedStockHelp = document.getElementById('countedStockHelp');
+            
+            if (isUniqueProduct) {
+                // Force qty=1 for unique products
+                countedStockInput.value = 1;
+                countedStockInput.readOnly = true;
+                countedStockInput.style.backgroundColor = '#e9ecef';
+                countedStockInput.style.cursor = 'not-allowed';
+                if (countedStockHelp) {
+                    countedStockHelp.textContent = 'Unique products (smartphones/laptops) must have quantity = 1. Cannot be changed.';
+                    countedStockHelp.className = 'text-muted';
+                }
+            } else {
+                countedStockInput.value = item.dataset.stock || 0;
+                countedStockInput.readOnly = false;
+                countedStockInput.style.backgroundColor = '';
+                countedStockInput.style.cursor = '';
+                if (countedStockHelp) {
+                    countedStockHelp.textContent = 'Enter counted stock quantity';
+                    countedStockHelp.className = 'text-muted';
+                }
+            }
+            
             document.getElementById('productInfo').style.display = 'block';
             updateDifference();
             productDropdown.style.display = 'none';

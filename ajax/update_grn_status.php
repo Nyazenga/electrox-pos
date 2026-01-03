@@ -114,24 +114,56 @@ try {
                             }
                         }
                         
-                        // Add stock
-                        if (function_exists('updateStock')) {
-                            $GLOBALS['current_transaction_db'] = $db;
-                            updateStock($productId, $quantity, $branchId, 'Purchase', true);
-                        } else {
-                            // Manual stock update
-                            $product = $db->getRow("SELECT quantity_in_stock FROM products WHERE id = :id" . ($branchId ? " AND branch_id = :branch_id" : ""),
-                                $branchId ? [':id' => $productId, ':branch_id' => $branchId] : [':id' => $productId]);
-                            
-                            $previousQuantity = $product !== false ? (int)($product['quantity_in_stock'] ?? 0) : 0;
-                            $newQuantity = $previousQuantity + $quantity;
-                            
+                        // Check if product has serial/IMEI (unique product)
+                        $productCheck = $db->getRow(
+                            "SELECT p.*, pc.name as category_name FROM products p 
+                             LEFT JOIN product_categories pc ON p.category_id = pc.id 
+                             WHERE p.id = :id" . ($branchId ? " AND p.branch_id = :branch_id" : ""),
+                            $branchId ? [':id' => $productId, ':branch_id' => $branchId] : [':id' => $productId]
+                        );
+                        
+                        // CRITICAL: Unique products (with serial/IMEI) must always have qty=1
+                        // They cannot be increased through GRN - each is a unique item
+                        if ($productCheck && productHasSerialOrImei($productCheck, $db)) {
+                            // Force qty=1 for unique products - don't add stock, just ensure it's 1
                             $updateWhere = ['id' => $productId];
                             if ($branchId) {
                                 $updateWhere['branch_id'] = $branchId;
                             }
+                            $db->update('products', ['quantity_in_stock' => 1], $updateWhere);
                             
-                            $db->update('products', ['quantity_in_stock' => $newQuantity], $updateWhere);
+                            $db->insert('stock_movements', [
+                                'product_id' => $productId,
+                                'branch_id' => $branchId,
+                                'movement_type' => 'Purchase',
+                                'quantity' => 0, // No quantity change for unique products
+                                'previous_quantity' => 0,
+                                'new_quantity' => 1,
+                                'reference_id' => $grnId,
+                                'reference_type' => 'GRN',
+                                'user_id' => $userId,
+                                'notes' => 'GRN Approved: ' . $grn['grn_number'] . ' (Unique product - qty set to 1)',
+                                'created_at' => date('Y-m-d H:i:s')
+                            ]);
+                        } else {
+                            // Normal products - add stock normally
+                            if (function_exists('updateStock')) {
+                                $GLOBALS['current_transaction_db'] = $db;
+                                updateStock($productId, $quantity, $branchId, 'Purchase', true);
+                            } else {
+                                // Manual stock update
+                                $product = $db->getRow("SELECT quantity_in_stock FROM products WHERE id = :id" . ($branchId ? " AND branch_id = :branch_id" : ""),
+                                    $branchId ? [':id' => $productId, ':branch_id' => $branchId] : [':id' => $productId]);
+                                
+                                $previousQuantity = $product !== false ? (int)($product['quantity_in_stock'] ?? 0) : 0;
+                                $newQuantity = $previousQuantity + $quantity;
+                                
+                                $updateWhere = ['id' => $productId];
+                                if ($branchId) {
+                                    $updateWhere['branch_id'] = $branchId;
+                                }
+                                
+                                $db->update('products', ['quantity_in_stock' => $newQuantity], $updateWhere);
                             
                             $db->insert('stock_movements', [
                                 'product_id' => $productId,

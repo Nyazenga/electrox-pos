@@ -83,11 +83,23 @@ try {
         // Handle both array format (from frontend) and database row format
         $countedStock = floatval($item['counted_stock'] ?? 0);
         
-        // Get current product
-        $product = $db->getRow("SELECT * FROM products WHERE id = :id", [':id' => $productId]);
+        // Get current product with category info
+        $product = $db->getRow(
+            "SELECT p.*, pc.name as category_name FROM products p 
+             LEFT JOIN product_categories pc ON p.category_id = pc.id 
+             WHERE p.id = :id",
+            [':id' => $productId]
+        );
         
         if (!$product) {
             continue;
+        }
+        
+        // CRITICAL: Unique products (with serial/IMEI) must always have qty=1
+        // They cannot be changed through stock take - each is a unique item
+        if (productHasSerialOrImei($product, $db)) {
+            // Force qty=1 for unique products - ignore counted stock
+            $countedStock = 1;
         }
         
         // If negative stock is not allowed and counted stock would be negative, skip

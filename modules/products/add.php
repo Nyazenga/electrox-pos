@@ -82,7 +82,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $hasImei = isset($_POST['has_imei']) && $_POST['has_imei'] == '1' ? 1 : 0;
     $hasBatchNumber = isset($_POST['has_batch_number']) && $_POST['has_batch_number'] == '1' ? 1 : 0;
     
-    $quantityInStock = intval($_POST['quantity_in_stock'] ?? 0);
+    // Check if this is a unique product (has serial/IMEI)
+    $isUniqueProduct = false;
+    if ($categoryId) {
+        $category = $db->getRow("SELECT name FROM product_categories WHERE id = :id", [':id' => $categoryId]);
+        if ($category) {
+            $categoryName = strtolower($category['name']);
+            $isUniqueProduct = (strpos($categoryName, 'smartphone') !== false || 
+                              strpos($categoryName, 'phone') !== false || 
+                              strpos($categoryName, 'laptop') !== false ||
+                              strpos($categoryName, 'tablet') !== false) ||
+                              $hasSerialNumber || $hasImei;
+        }
+    }
+    
+    // CRITICAL: Unique products (with serial/IMEI) must always have qty=1
+    // They cannot be increased - each is a unique item
+    if ($isUniqueProduct) {
+        $quantityInStock = 1; // Force qty=1 for unique products
+    } else {
+        $quantityInStock = intval($_POST['quantity_in_stock'] ?? 0);
+    }
     
     // Get identifiers if provided (from modal)
     $identifiers = [];
@@ -415,7 +435,8 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
                 <div class="col-md-4 mb-3">
                     <label class="form-label">Initial Stock</label>
-                    <input type="number" class="form-control" name="quantity_in_stock" value="0">
+                    <input type="number" class="form-control" name="quantity_in_stock" id="quantityInStock" value="0" min="0">
+                    <small class="text-muted" id="quantityHelpText">Enter initial stock quantity</small>
                 </div>
             </div>
             
@@ -662,6 +683,33 @@ function updateDynamicFields(categoryName) {
      expiryDateField, weightField, unitOfMeasureField, manufacturerField, batchNumberField].forEach(field => {
         if (field) field.style.display = 'none';
     });
+    
+    // Check if this is a unique product (smartphone, laptop, tablet)
+    const isUniqueProduct = categoryName.includes('smartphone') || 
+                            categoryName.includes('phone') || 
+                            categoryName.includes('laptop') || 
+                            categoryName.includes('tablet');
+    
+    // Handle quantity field for unique products
+    const quantityInput = document.getElementById('quantityInStock');
+    const quantityHelpText = document.getElementById('quantityHelpText');
+    if (quantityInput && quantityHelpText) {
+        if (isUniqueProduct) {
+            // Unique products must have qty=1 always
+            quantityInput.value = 1;
+            quantityInput.readOnly = true;
+            quantityInput.style.backgroundColor = '#e9ecef';
+            quantityInput.style.cursor = 'not-allowed';
+            quantityHelpText.textContent = 'Unique products (smartphones/laptops) must have quantity = 1. Each item is unique.';
+            quantityHelpText.className = 'text-muted';
+        } else {
+            quantityInput.readOnly = false;
+            quantityInput.style.backgroundColor = '';
+            quantityInput.style.cursor = '';
+            quantityHelpText.textContent = 'Enter initial stock quantity';
+            quantityHelpText.className = 'text-muted';
+        }
+    }
     
     // Show fields based on category
     if (categoryName.includes('smartphone') || categoryName.includes('phone')) {

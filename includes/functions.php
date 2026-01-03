@@ -319,6 +319,51 @@ function checkStockLevel($productId, $branchId = null) {
     }
 }
 
+/**
+ * Check if a product has serial number or IMEI (unique products that must have qty=1)
+ * Products with serial/IMEI are unique items like smartphones and laptops
+ */
+function productHasSerialOrImei($product, $db = null) {
+    if (!$product) {
+        return false;
+    }
+    
+    // Check if product has serial_number or imei fields populated
+    if (!empty($product['serial_number']) || !empty($product['imei'])) {
+        return true;
+    }
+    
+    // Check by category name (smartphone, laptop, tablet)
+    if (!empty($product['category_id'])) {
+        if (!$db) {
+            $db = Database::getInstance();
+        }
+        $category = $db->getRow("SELECT name FROM product_categories WHERE id = :id", [':id' => $product['category_id']]);
+        if ($category) {
+            $categoryName = strtolower($category['name']);
+            if (strpos($categoryName, 'smartphone') !== false || 
+                strpos($categoryName, 'phone') !== false || 
+                strpos($categoryName, 'laptop') !== false ||
+                strpos($categoryName, 'tablet') !== false) {
+                return true;
+            }
+        }
+    }
+    
+    // Check if category name is in product data
+    if (!empty($product['category_name'])) {
+        $categoryName = strtolower($product['category_name']);
+        if (strpos($categoryName, 'smartphone') !== false || 
+            strpos($categoryName, 'phone') !== false || 
+            strpos($categoryName, 'laptop') !== false ||
+            strpos($categoryName, 'tablet') !== false) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
 function updateStock($productId, $quantity, $branchId = null, $movementType = 'Adjustment', $useTransaction = false) {
     try {
         // If useTransaction is false, get a new instance to avoid transaction conflicts
@@ -331,8 +376,11 @@ function updateStock($productId, $quantity, $branchId = null, $movementType = 'A
         
         $branchId = $branchId ?? $_SESSION['branch_id'] ?? null;
         
+        // Get full product data to check if it has serial/IMEI
         $product = $db->getRow(
-            "SELECT quantity_in_stock FROM products WHERE id = :id" . ($branchId !== null ? " AND branch_id = :branch_id" : ""),
+            "SELECT p.*, pc.name as category_name FROM products p 
+             LEFT JOIN product_categories pc ON p.category_id = pc.id 
+             WHERE p.id = :id" . ($branchId !== null ? " AND p.branch_id = :branch_id" : ""),
             $branchId !== null ? [':id' => $productId, ':branch_id' => $branchId] : [':id' => $productId]
         );
         
@@ -340,13 +388,34 @@ function updateStock($productId, $quantity, $branchId = null, $movementType = 'A
             $product = ['quantity_in_stock' => 0];
         }
         
-        $previousQuantity = (int)($product['quantity_in_stock'] ?? 0);
-        $newQuantity = $previousQuantity + $quantity;
+        // CRITICAL: Products with serial/IMEI must always have qty=1
+        // They cannot be increased through stock updates
+        if (productHasSerialOrImei($product, $db)) {
+            // Only allow setting to 1 or 0 (sold/available)
+            // Don't allow quantity increases - these are unique products
+            if ($quantity > 0) {
+                // Trying to add stock - not allowed for unique products
+                logError("Attempted to increase stock for unique product (ID: $productId) with serial/IMEI. Quantity must remain 1.");
+                return false;
+            }
+            // Allow decreasing (selling) - set to 0 when sold
+            if ($quantity < 0) {
+                $newQuantity = 0; // Product sold
+            } else {
+                $newQuantity = 1; // Product available
+            }
+        } else {
+            // Normal products - allow quantity changes
+            $previousQuantity = (int)($product['quantity_in_stock'] ?? 0);
+            $newQuantity = max(0, $previousQuantity + $quantity);
+        }
         
         $updateWhere = ['id' => $productId];
         if ($branchId !== null) {
             $updateWhere['branch_id'] = $branchId;
         }
+        
+        $previousQuantity = (int)($product['quantity_in_stock'] ?? 0);
         
         $db->update('products', [
             'quantity_in_stock' => $newQuantity

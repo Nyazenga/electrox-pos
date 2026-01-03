@@ -36,15 +36,24 @@ $db = Database::getInstance();
 $primaryDb = Database::getPrimaryInstance();
 $userId = $_SESSION['user_id'] ?? 0;
 
-// Get product
-$product = $db->getRow("SELECT * FROM products WHERE id = :id AND branch_id = :branch_id", [
-    ':id' => $productId,
-    ':branch_id' => $branchId
-]);
+// Get product with category info
+$product = $db->getRow(
+    "SELECT p.*, pc.name as category_name FROM products p 
+     LEFT JOIN product_categories pc ON p.category_id = pc.id 
+     WHERE p.id = :id AND p.branch_id = :branch_id",
+    [':id' => $productId, ':branch_id' => $branchId]
+);
 
 if (!$product) {
     echo json_encode(['success' => false, 'message' => 'Product not found']);
     exit;
+}
+
+// CRITICAL: Unique products (with serial/IMEI) must always have qty=1
+// They cannot be changed through stock take - each is a unique item
+if (productHasSerialOrImei($product, $db)) {
+    // Force qty=1 for unique products - ignore counted stock
+    $countedStock = 1;
 }
 
 $allowNegativeStock = getSetting('allow_negative_stock', '0') == '1';
