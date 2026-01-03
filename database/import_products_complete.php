@@ -89,6 +89,24 @@ try {
         $sql = "INSERT INTO `products` ($columnList) VALUES $rowData";
         
         try {
+            // Debug first row
+            if ($i == 79) {
+                echo "\n=== DEBUG FIRST ROW ===\n";
+                echo "Column list length: " . strlen($columnList) . "\n";
+                echo "Row data length: " . strlen($rowData) . "\n";
+                echo "SQL preview (first 500 chars): " . substr($sql, 0, 500) . "...\n";
+                
+                // Count columns in column list
+                preg_match_all('/`([^`]+)`/', $columnList, $colMatches);
+                echo "Column count from column list: " . count($colMatches[1]) . "\n";
+                
+                // Try a test query to see table structure
+                $stmt = $pdo->query("SHOW COLUMNS FROM products");
+                $dbCols = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                echo "Database column count: " . count($dbCols) . "\n";
+                echo "======================\n\n";
+            }
+            
             $pdo->exec($sql);
             $inserted++;
             if ($inserted % 10 == 0) {
@@ -98,6 +116,9 @@ try {
             $errors++;
             $rowNum = $i - 78;
             echo "❌ Error on row $rowNum: " . $e->getMessage() . "\n";
+            if ($i == 79) {
+                echo "Full SQL (first 1000 chars): " . substr($sql, 0, 1000) . "...\n";
+            }
             throw $e;
         }
     }
