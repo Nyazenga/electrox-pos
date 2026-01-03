@@ -69,21 +69,12 @@ for ($i = 79; $i <= 131; $i++) {
     
     // Debug first row
     if ($i == 79) {
-        // Count values in the row
+        // Count values in the row (same logic as verify_server_row.php)
         $inQuotes = false;
-        $escapeNext = false;
         $commaCount = 0;
         for ($j = 0; $j < strlen($line); $j++) {
             $char = $line[$j];
-            if ($escapeNext) {
-                $escapeNext = false;
-                continue;
-            }
-            if ($char === '\\') {
-                $escapeNext = true;
-                continue;
-            }
-            if ($char === "'" && !$escapeNext) {
+            if ($char === "'" && ($j === 0 || $line[$j-1] !== '\\')) {
                 $inQuotes = !$inQuotes;
             } elseif ($char === ',' && !$inQuotes) {
                 $commaCount++;
@@ -91,7 +82,8 @@ for ($i = 79; $i <= 131; $i++) {
         }
         $valueCount = $commaCount + 1;
         echo "DEBUG Row 1: Column count: " . count($columns) . ", Value count: $valueCount\n";
-        echo "DEBUG First 200 chars of SQL: " . substr($sql, 0, 200) . "...\n";
+        echo "DEBUG Row line (first 200): " . substr($line, 0, 200) . "...\n";
+        echo "DEBUG Row line (last 100): ..." . substr($line, -100) . "\n";
     }
     
     try {
