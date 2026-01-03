@@ -356,6 +356,7 @@ try {
             'status' => !empty($rowData['status']) && strtolower($rowData['status']) === 'inactive' ? 'Inactive' : 'Active',
             'battery_health' => !empty($rowData['batteryHealth']) && is_numeric($rowData['batteryHealth']) ? intval($rowData['batteryHealth']) : null,
             'created_by' => $userId,
+            'source' => 'bulk_upload',
             'created_at' => date('Y-m-d H:i:s')
         ];
         

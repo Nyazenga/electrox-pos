@@ -151,6 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'quantity_in_stock' => $quantityInStock,
         'status' => 'Active',
         'created_by' => $_SESSION['user_id'],
+        'source' => 'manual',
         'created_at' => date('Y-m-d H:i:s'),
         'images' => !empty($uploadedImages) ? json_encode($uploadedImages) : null
     ];

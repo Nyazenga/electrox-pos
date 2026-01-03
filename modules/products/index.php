@@ -76,6 +76,7 @@ $selectedBranch = $_GET['branch_id'] ?? ($branchId ?: 'all');
 $categoryId = $_GET['category_id'] ?? 'all';
 $status = $_GET['status'] ?? 'all';
 $stockLevel = $_GET['stock_level'] ?? 'all';
+$source = $_GET['source'] ?? 'all';
 $search = $_GET['search'] ?? '';
 
 // Get branches for filter
@@ -118,6 +119,11 @@ if ($stockLevel !== 'all') {
     } elseif ($stockLevel === 'in_stock') {
         $whereConditions[] = "p.quantity_in_stock > p.reorder_level";
     }
+}
+
+if ($source !== 'all') {
+    $whereConditions[] = "p.source = :source";
+    $params[':source'] = $source;
 }
 
 if ($search) {
@@ -224,7 +230,15 @@ require_once APP_PATH . '/includes/header.php';
                     <option value="in_stock" <?= $stockLevel === 'in_stock' ? 'selected' : '' ?>>In Stock</option>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <label class="form-label">Source</label>
+                <select name="source" class="form-select">
+                    <option value="all" <?= $source === 'all' ? 'selected' : '' ?>>All Sources</option>
+                    <option value="manual" <?= $source === 'manual' ? 'selected' : '' ?>>Manual</option>
+                    <option value="bulk_upload" <?= $source === 'bulk_upload' ? 'selected' : '' ?>>Bulk Upload</option>
+                </select>
+            </div>
+            <div class="col-md-2">
                 <label class="form-label">Search</label>
                 <input type="text" name="search" class="form-control" placeholder="Brand, Model, Product Name, Code..." value="<?= escapeHtml($search) ?>">
             </div>
