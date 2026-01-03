@@ -26,13 +26,22 @@ try {
     echo "Reading SQL file...\n";
     $sql = file_get_contents($sqlFile);
     
-    // Extract the INSERT statement line (line 23)
-    $lines = explode("\n", $sql);
+    // Extract the INSERT statement - it might be on a single very long line
     $insertLine = null;
-    foreach ($lines as $lineNum => $line) {
-        if (strpos($line, 'INSERT INTO `products` VALUES') !== false) {
-            $insertLine = $line;
-            break;
+    if (preg_match('/INSERT INTO `products` VALUES\s*[^(]*\((.*?)\)\s*;/s', $sql, $matches)) {
+        // Found INSERT with VALUES
+        $insertLine = 'INSERT INTO `products` VALUES ' . $matches[1] . ');';
+    } elseif (preg_match('/INSERT INTO `products` VALUES\s*[^(]*\((.*?)\/\*!40000/s', $sql, $matches)) {
+        // Found INSERT ending with comment
+        $insertLine = 'INSERT INTO `products` VALUES ' . $matches[1] . ');';
+    } else {
+        // Try line by line
+        $lines = explode("\n", $sql);
+        foreach ($lines as $lineNum => $line) {
+            if (strpos($line, 'INSERT INTO `products` VALUES') !== false) {
+                $insertLine = $line;
+                break;
+            }
         }
     }
     
