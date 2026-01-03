@@ -28,18 +28,35 @@ try {
     
     // Extract the INSERT statement - it might be on a single very long line
     $insertLine = null;
-    if (preg_match('/INSERT INTO `products` VALUES\s*[^(]*\((.*?)\)\s*;/s', $sql, $matches)) {
-        // Found INSERT with VALUES
-        $insertLine = 'INSERT INTO `products` VALUES ' . $matches[1] . ');';
-    } elseif (preg_match('/INSERT INTO `products` VALUES\s*[^(]*\((.*?)\/\*!40000/s', $sql, $matches)) {
-        // Found INSERT ending with comment
-        $insertLine = 'INSERT INTO `products` VALUES ' . $matches[1] . ');';
+    
+    // Try multiple patterns
+    if (preg_match('/INSERT INTO `products` VALUES\s*\((.*?)\)\s*;/s', $sql, $matches)) {
+        // Found INSERT with VALUES ending with );
+        $insertLine = 'INSERT INTO `products` VALUES (' . $matches[1] . ');';
+    } elseif (preg_match('/INSERT INTO `products` VALUES\s*\((.*?)\/\*!40000/s', $sql, $matches)) {
+        // Found INSERT ending with comment (no semicolon before comment)
+        $insertLine = 'INSERT INTO `products` VALUES (' . trim($matches[1]) . ');';
+    } elseif (preg_match('/INSERT INTO `products` VALUES\s*(.*?)\/\*!40000/s', $sql, $matches)) {
+        // Found INSERT with VALUES but no opening paren in pattern
+        $valuesPart = trim($matches[1]);
+        // Remove trailing ); if present
+        $valuesPart = rtrim($valuesPart, ');');
+        $valuesPart = rtrim($valuesPart, ')');
+        $insertLine = 'INSERT INTO `products` VALUES (' . $valuesPart . ');';
     } else {
         // Try line by line
         $lines = explode("\n", $sql);
         foreach ($lines as $lineNum => $line) {
             if (strpos($line, 'INSERT INTO `products` VALUES') !== false) {
                 $insertLine = $line;
+                // Remove comment if present
+                if (strpos($insertLine, '/*!40000') !== false) {
+                    $insertLine = substr($insertLine, 0, strpos($insertLine, '/*!40000'));
+                    $insertLine = rtrim($insertLine);
+                    if (substr($insertLine, -1) !== ';') {
+                        $insertLine .= ';';
+                    }
+                }
                 break;
             }
         }
@@ -48,6 +65,8 @@ try {
     if (!$insertLine) {
         die("❌ No INSERT statement found in backup file.\n");
     }
+    
+    echo "Extracted INSERT statement (length: " . strlen($insertLine) . " chars)\n";
     
     echo "Found INSERT statement\n";
     
