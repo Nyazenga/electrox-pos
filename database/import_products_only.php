@@ -25,12 +25,37 @@ if ($insertStart === false) {
     die("❌ Could not find INSERT statement in SQL file\n");
 }
 
-$insertEnd = strpos($content, ';', $insertStart);
+// Find the end of the INSERT statement - it ends with ');' followed by newline and '--'
+// Look for the pattern: ');\n--' or ');\n\n--'
+$insertEnd = false;
+$searchPos = $insertStart;
+while (($pos = strpos($content, ');', $searchPos)) !== false) {
+    // Check if this is followed by newline and comment marker
+    $afterPos = $pos + 2;
+    $nextChars = substr($content, $afterPos, 5);
+    if (preg_match('/^\s*\n\s*--/', $nextChars)) {
+        $insertEnd = $pos + 2;
+        break;
+    }
+    $searchPos = $pos + 2;
+}
+
+if ($insertEnd === false) {
+    // Fallback: find the last ');' before the next SQL statement
+    $nextSql = strpos($content, '--', $insertStart);
+    if ($nextSql !== false) {
+        $lastSemicolon = strrpos(substr($content, $insertStart, $nextSql - $insertStart), ');');
+        if ($lastSemicolon !== false) {
+            $insertEnd = $insertStart + $lastSemicolon + 2;
+        }
+    }
+}
+
 if ($insertEnd === false) {
     die("❌ Could not find end of INSERT statement\n");
 }
 
-$insertStatement = substr($content, $insertStart, $insertEnd - $insertStart + 1);
+$insertStatement = substr($content, $insertStart, $insertEnd - $insertStart);
 $insertStatement = trim($insertStatement);
 
 echo "Extracted INSERT statement (length: " . strlen($insertStatement) . " chars)\n";
