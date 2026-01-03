@@ -45,35 +45,10 @@ try {
     
     $db->commitTransaction();
     
-    // Check if this is the last open shift of the day (for fiscal day reminder)
-    $branchId = $shift['branch_id'] ?? null;
-    if ($branchId) {
-        try {
-            require_once APP_PATH . '/includes/fiscal_service.php';
-            
-            // Check if fiscalization is enabled
-            if (FiscalService::isFiscalizationEnabled($branchId)) {
-                // Check if there are any other open shifts for this branch today
-                $today = date('Y-m-d');
-                $otherOpenShifts = $db->getRow(
-                    "SELECT COUNT(*) as count FROM shifts 
-                     WHERE branch_id = :branch_id 
-                     AND DATE(opened_at) = :today 
-                     AND status = 'open' 
-                     AND id != :shift_id",
-                    [':branch_id' => $branchId, ':today' => $today, ':shift_id' => $input['shift_id']]
-                );
-                
-                // If this is the last shift, log a reminder about fiscal day
-                if ($otherOpenShifts && $otherOpenShifts['count'] == 0) {
-                    error_log("Reminder: Last shift of the day closed for branch $branchId. Consider closing the fiscal day if all business is done for the day.");
-                }
-            }
-        } catch (Exception $e) {
-            // Log but don't fail the shift closing
-            error_log("Warning: Fiscal day reminder check failed: " . $e->getMessage());
-        }
-    }
+    // NOTE: Fiscal day opening/closing is now handled by cron jobs
+    // Cron job opens fiscal day at 04:00 AM daily
+    // Cron job closes fiscal day at 21:00 PM daily
+    // No manual intervention needed when opening/closing shifts
     
     logActivity($_SESSION['user_id'], 'shift_end', ['shift_id' => $input['shift_id']]);
     

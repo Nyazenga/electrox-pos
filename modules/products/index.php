@@ -588,21 +588,52 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Bulk Upload Functions
 function showBulkUploadModal() {
+    // Clear any previous messages
+    clearBulkUploadMessages();
+    
+    // Show loading message
+    showBulkUploadMessage('Loading category information...', 'info');
+    
     // Fetch dynamic category information
     fetch('<?= BASE_URL ?>ajax/get_bulk_upload_info.php')
         .then(response => response.json())
         .then(data => {
+            clearBulkUploadMessages();
             if (data.success) {
                 populateBulkUploadModal(data);
                 new bootstrap.Modal(document.getElementById('bulkUploadModal')).show();
             } else {
-                Swal.fire('Error', data.message || 'Failed to load upload information', 'error');
+                showBulkUploadMessage('Error: ' + (data.message || 'Failed to load upload information'), 'danger');
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            Swal.fire('Error', 'Failed to load upload information', 'error');
+            showBulkUploadMessage('Error: Failed to load upload information. Please try again.', 'danger');
         });
+}
+
+function showBulkUploadMessage(message, type) {
+    const messagesContainer = document.getElementById('bulkUploadMessages');
+    if (!messagesContainer) return;
+    
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.setAttribute('role', 'alert');
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    messagesContainer.appendChild(alertDiv);
+    
+    // Scroll to top of modal to show message
+    messagesContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function clearBulkUploadMessages() {
+    const messagesContainer = document.getElementById('bulkUploadMessages');
+    if (messagesContainer) {
+        messagesContainer.innerHTML = '';
+    }
 }
 
 function populateBulkUploadModal(data) {
@@ -690,25 +721,31 @@ function handleBulkUpload() {
     const fileInput = document.getElementById('bulkUploadFile');
     const file = fileInput.files[0];
     
+    // Clear previous messages
+    clearBulkUploadMessages();
+    
     if (!file) {
-        Swal.fire('Error', 'Please select a CSV file to upload', 'error');
+        showBulkUploadMessage('Error: Please select a CSV file to upload', 'danger');
         return;
     }
     
     // Validate file type
     const fileName = file.name.toLowerCase();
     if (!fileName.endsWith('.csv') && !fileName.endsWith('.txt')) {
-        Swal.fire('Error', 'Please upload a CSV file (.csv or .txt)', 'error');
+        showBulkUploadMessage('Error: Please upload a CSV file (.csv or .txt)', 'danger');
         return;
     }
     
-    // Show loading
-    Swal.fire({
-        title: 'Processing...',
-        text: 'Please wait while we process your bulk upload',
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
-    });
+    // Show processing message
+    showBulkUploadMessage('Processing your bulk upload. Please wait...', 'info');
+    
+    // Disable upload button
+    const uploadBtn = document.querySelector('button[onclick="handleBulkUpload()"]');
+    const originalBtnText = uploadBtn ? uploadBtn.innerHTML : '';
+    if (uploadBtn) {
+        uploadBtn.disabled = true;
+        uploadBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processing...';
+    }
     
     // Create form data
     const formData = new FormData();
@@ -721,6 +758,15 @@ function handleBulkUpload() {
     })
     .then(response => response.json())
     .then(data => {
+        // Clear previous messages
+        clearBulkUploadMessages();
+        
+        // Re-enable upload button
+        if (uploadBtn) {
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = originalBtnText;
+        }
+        
         if (data.success) {
             const summary = data.summary || {};
             let message = `<strong>Bulk Upload Complete!</strong><br><br>`;
@@ -731,32 +777,39 @@ function handleBulkUpload() {
             message += `<br>Total rows processed: <strong>${summary.total_rows || 0}</strong>`;
             
             if (summary.errors > 0 && data.results && data.results.errors) {
-                message += `<br><br><details><summary>View Error Details</summary><ul style="text-align: left; max-height: 200px; overflow-y: auto;">`;
-                data.results.errors.slice(0, 10).forEach(err => {
-                    message += `<li><strong>Row ${err.row}:</strong> ${err.errors.join(', ')}</li>`;
+                message += `<br><br><details><summary style="cursor: pointer; color: #0d6efd;"><strong>View Error Details (Click to expand)</strong></summary><ul style="text-align: left; max-height: 300px; overflow-y: auto; margin-top: 10px;">`;
+                data.results.errors.slice(0, 20).forEach(err => {
+                    const productInfo = err.data ? ` (${err.data.product || err.data.category || 'N/A'})` : '';
+                    message += `<li style="margin-bottom: 5px;"><strong>Row ${err.row}:</strong> ${err.errors.join(', ')}${productInfo}</li>`;
                 });
-                if (data.results.errors.length > 10) {
-                    message += `<li>... and ${data.results.errors.length - 10} more errors</li>`;
+                if (data.results.errors.length > 20) {
+                    message += `<li style="color: #666; font-style: italic;">... and ${data.results.errors.length - 20} more errors</li>`;
                 }
                 message += `</ul></details>`;
             }
             
-            Swal.fire({
-                icon: 'success',
-                title: 'Upload Successful',
-                html: message,
-                confirmButtonText: 'OK',
-                width: '600px'
-            }).then(() => {
-                window.location.reload();
-            });
+            showBulkUploadMessage(message, 'success');
+            
+            // Reload page after 3 seconds if successful
+            if (summary.errors === 0) {
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            }
         } else {
-            Swal.fire('Error', data.message || 'Failed to process bulk upload', 'error');
+            showBulkUploadMessage('Error: ' + (data.message || 'Failed to process bulk upload'), 'danger');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        Swal.fire('Error', 'An error occurred while processing the upload', 'error');
+        clearBulkUploadMessages();
+        showBulkUploadMessage('Error: An error occurred while processing the upload. Please try again.', 'danger');
+        
+        // Re-enable upload button
+        if (uploadBtn) {
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = originalBtnText;
+        }
     });
 }
 </script>
@@ -772,6 +825,9 @@ function handleBulkUpload() {
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <!-- Persistent Messages Container -->
+                <div id="bulkUploadMessages"></div>
+                
                 <div class="alert alert-info">
                     <h6><i class="bi bi-info-circle"></i> How to Use Bulk Upload</h6>
                     <ol class="mb-0">
