@@ -8,8 +8,11 @@ require_once APP_PATH . '/config.php';
 
 function initSession() {
     if (session_status() == PHP_SESSION_NONE) {
+        // Set cookie lifetime to 1 year (31536000 seconds) to persist sessions
+        // Sessions will only expire on explicit logout, not on browser close
+        $cookieLifetime = SESSION_LIFETIME > 0 ? SESSION_LIFETIME : 31536000; // 1 year if no timeout
         session_set_cookie_params(
-            SESSION_LIFETIME,
+            $cookieLifetime,
             '/',
             '',
             APP_MODE === 'production',
