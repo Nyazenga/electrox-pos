@@ -43,19 +43,25 @@ try {
     echo "✅ Found INSERT statement\n";
     echo "Length: " . strlen($insertLine) . " chars\n\n";
     
-    // Extract VALUES part - the line starts with "INSERT INTO `products` VALUES"
+    // Extract VALUES part - find "VALUES" and get everything after it
     $valuesStart = stripos($insertLine, 'VALUES');
     if ($valuesStart === false) {
-        die("❌ Could not find VALUES in: " . substr($insertLine, 0, 100) . "...\n");
+        // Try uppercase
+        $valuesStart = strpos($insertLine, 'VALUES');
+    }
+    if ($valuesStart === false) {
+        die("❌ Could not find VALUES. Line starts with: " . substr($insertLine, 0, 50) . "...\n");
     }
     
-    $valuesStr = substr($insertLine, $valuesStart + 5); // Skip "VALUES"
+    $valuesStr = substr($insertLine, $valuesStart + 6); // Skip "VALUES " (6 chars including space)
     $valuesStr = trim($valuesStr);
     // Remove trailing ); or comment
     $valuesStr = preg_replace('/\)\s*;?\s*\/\*.*$/', '', $valuesStr);
     $valuesStr = rtrim($valuesStr, ');');
     $valuesStr = rtrim($valuesStr, ')');
     $valuesStr = trim($valuesStr);
+    
+    echo "Extracted VALUES string (length: " . strlen($valuesStr) . " chars)\n";
     
     // Split into rows
     $rows = preg_split('/\)\s*,\s*\(/', $valuesStr);
