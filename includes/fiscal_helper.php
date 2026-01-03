@@ -806,17 +806,15 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
         
         // Calculate receiptTotal from sum of all receiptLines (items + discount)
         // EXCLUDING delivery_cost (delivery is non-taxable and not part of fiscal invoice)
+        // NOTE: Receipt lines are already converted to payment currency above (lines 684-688),
+        // so we should NOT convert the sum again - that would be a double conversion
         $sumReceiptLines = 0;
         foreach ($receiptData['receiptLines'] as $line) {
             $sumReceiptLines += floatval($line['receiptLineTotal']);
         }
         
-        // Convert to payment currency if needed
-        if ($exchangeRateToPayment != 1.0) {
-            $sumReceiptLines = $sumReceiptLines * $exchangeRateToPayment;
-            writeFiscalLog("FISCALIZE SALE: Converted receiptTotal from base currency to payment currency (rate: $exchangeRateToPayment)");
-        }
-        
+        // Receipt lines are already in payment currency (converted above), so sum is already in payment currency
+        // No need to convert again - this was causing double conversion bug
         $receiptData['receiptTotal'] = round($sumReceiptLines, 2);
         writeFiscalLog("FISCALIZE SALE: Calculated receiptTotal from sum of receiptLines (EXCLUDING delivery_cost): {$receiptData['receiptTotal']}");
         writeFiscalLog("FISCALIZE SALE: Delivery cost ({$sale['delivery_cost']}) is NOT included in fiscal invoice total");
