@@ -102,9 +102,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // CRITICAL: Unique products (with serial/IMEI) must always have qty=1
     // They cannot be increased through editing - each is a unique item
     $quantityInStock = intval($_POST['quantity_in_stock'] ?? $product['quantity_in_stock'] ?? 0);
+    $reorderLevel = intval($_POST['reorder_level'] ?? $product['reorder_level'] ?? 0);
     if ($isUniqueProduct) {
         // Force qty=1 for unique products - cannot be changed
         $quantityInStock = 1;
+        // Force reorder_level=0 for unique products (can't reorder unique items)
+        $reorderLevel = 0;
     }
     
     $data = [
@@ -121,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'batch_number' => sanitizeInput($_POST['batch_number'] ?? ''),
         'cost_price' => $_POST['cost_price'] ?? 0,
         'selling_price' => $_POST['selling_price'] ?? 0,
-        'reorder_level' => $_POST['reorder_level'] ?? 0,
+        'reorder_level' => $reorderLevel,
         'branch_id' => $_POST['branch_id'] ?? $_SESSION['branch_id'],
         'tax_id' => !empty($_POST['tax_id']) ? intval($_POST['tax_id']) : null,
         'quantity_in_stock' => $quantityInStock,
@@ -372,7 +375,27 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Reorder Level</label>
-                    <input type="number" class="form-control" name="reorder_level" value="<?= $product['reorder_level'] ?>">
+                    <?php 
+                    // Check if product is unique (has serial/IMEI)
+                    $isUniqueProduct = false;
+                    if ($currentCategory) {
+                        $categoryName = strtolower($currentCategory['name']);
+                        $isUniqueProduct = (strpos($categoryName, 'smartphone') !== false || 
+                                          strpos($categoryName, 'phone') !== false || 
+                                          strpos($categoryName, 'laptop') !== false ||
+                                          strpos($categoryName, 'tablet') !== false);
+                    }
+                    if (!$isUniqueProduct && (!empty($product['serial_number']) || !empty($product['imei']))) {
+                        $isUniqueProduct = true;
+                    }
+                    ?>
+                    <input type="number" class="form-control" name="reorder_level" id="reorderLevel" 
+                           value="<?= $isUniqueProduct ? 0 : $product['reorder_level'] ?>" 
+                           min="0"
+                           <?= $isUniqueProduct ? 'readonly style="background-color: #e9ecef; cursor: not-allowed;"' : '' ?>>
+                    <?php if ($isUniqueProduct): ?>
+                        <small class="text-muted">Unique products cannot be reordered. Reorder level must be 0.</small>
+                    <?php endif; ?>
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Status</label>
@@ -533,6 +556,28 @@ function updateDynamicFields(categoryName) {
             quantityInput.readOnly = false;
             quantityInput.style.backgroundColor = '';
             quantityInput.style.cursor = '';
+        }
+    }
+    
+    // Handle reorder level field for unique products
+    const reorderLevelInput = document.getElementById('reorderLevel');
+    if (reorderLevelInput) {
+        if (isUniqueProduct) {
+            // Unique products must have reorder_level=0 (can't reorder unique items)
+            reorderLevelInput.value = 0;
+            reorderLevelInput.readOnly = true;
+            reorderLevelInput.style.backgroundColor = '#e9ecef';
+            reorderLevelInput.style.cursor = 'not-allowed';
+            // Update help text if exists
+            const helpText = reorderLevelInput.nextElementSibling;
+            if (helpText && helpText.tagName === 'SMALL') {
+                helpText.textContent = 'Unique products cannot be reordered. Reorder level must be 0.';
+                helpText.className = 'text-muted';
+            }
+        } else {
+            reorderLevelInput.readOnly = false;
+            reorderLevelInput.style.backgroundColor = '';
+            reorderLevelInput.style.cursor = '';
         }
     }
     

@@ -1,16 +1,19 @@
 -- Update all products with serial numbers, IMEI, or in smartphone/laptop/tablet categories to have qty=1
 -- This script enforces the rule that unique products must always have quantity = 1
+-- Also sets reorder_level = 0 for unique products (can't reorder unique items)
 
 -- Step 1: Update products that have serial_number or imei populated
 UPDATE products 
-SET quantity_in_stock = 1 
+SET quantity_in_stock = 1,
+    reorder_level = 0
 WHERE (serial_number IS NOT NULL AND serial_number != '') 
    OR (imei IS NOT NULL AND imei != '');
 
 -- Step 2: Update products in smartphone, phone, laptop, or tablet categories
 UPDATE products p
 INNER JOIN product_categories pc ON p.category_id = pc.id
-SET p.quantity_in_stock = 1
+SET p.quantity_in_stock = 1,
+    p.reorder_level = 0
 WHERE LOWER(pc.name) LIKE '%smartphone%' 
    OR LOWER(pc.name) LIKE '%phone%'
    OR LOWER(pc.name) LIKE '%laptop%'

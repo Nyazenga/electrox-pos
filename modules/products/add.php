@@ -98,8 +98,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // CRITICAL: Unique products (with serial/IMEI) must always have qty=1
     // They cannot be increased - each is a unique item
+    $reorderLevel = intval($_POST['reorder_level'] ?? 0);
     if ($isUniqueProduct) {
         $quantityInStock = 1; // Force qty=1 for unique products
+        $reorderLevel = 0; // Force reorder_level=0 for unique products (can't reorder unique items)
     } else {
         $quantityInStock = intval($_POST['quantity_in_stock'] ?? 0);
     }
@@ -143,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'specifications' => sanitizeInput($_POST['specifications'] ?? ''),
         'cost_price' => $_POST['cost_price'] ?? 0,
         'selling_price' => $_POST['selling_price'] ?? 0,
-        'reorder_level' => $_POST['reorder_level'] ?? 0,
+        'reorder_level' => $reorderLevel,
         'branch_id' => $_POST['branch_id'] ?? $_SESSION['branch_id'],
         'tax_id' => !empty($_POST['tax_id']) ? intval($_POST['tax_id']) : null,
         'quantity_in_stock' => $quantityInStock,
@@ -475,7 +477,8 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
                 <div class="col-md-6 mb-3">
                     <label class="form-label">Reorder Level</label>
-                    <input type="number" class="form-control" name="reorder_level" value="10">
+                    <input type="number" class="form-control" name="reorder_level" id="reorderLevel" value="10" min="0">
+                    <small class="text-muted" id="reorderLevelHelp">Enter reorder level threshold</small>
                 </div>
             </div>
             
@@ -708,6 +711,27 @@ function updateDynamicFields(categoryName) {
             quantityInput.style.cursor = '';
             quantityHelpText.textContent = 'Enter initial stock quantity';
             quantityHelpText.className = 'text-muted';
+        }
+    }
+    
+    // Handle reorder level field for unique products
+    const reorderLevelInput = document.getElementById('reorderLevel');
+    const reorderLevelHelp = document.getElementById('reorderLevelHelp');
+    if (reorderLevelInput && reorderLevelHelp) {
+        if (isUniqueProduct) {
+            // Unique products must have reorder_level=0 (can't reorder unique items)
+            reorderLevelInput.value = 0;
+            reorderLevelInput.readOnly = true;
+            reorderLevelInput.style.backgroundColor = '#e9ecef';
+            reorderLevelInput.style.cursor = 'not-allowed';
+            reorderLevelHelp.textContent = 'Unique products cannot be reordered. Reorder level must be 0.';
+            reorderLevelHelp.className = 'text-muted';
+        } else {
+            reorderLevelInput.readOnly = false;
+            reorderLevelInput.style.backgroundColor = '';
+            reorderLevelInput.style.cursor = '';
+            reorderLevelHelp.textContent = 'Enter reorder level threshold';
+            reorderLevelHelp.className = 'text-muted';
         }
     }
     
