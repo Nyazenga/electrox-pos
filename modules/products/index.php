@@ -781,44 +781,55 @@ function handleBulkUpload() {
             uploadBtn.innerHTML = originalBtnText;
         }
         
+        // Close modal first
+        const modal = bootstrap.Modal.getInstance(document.getElementById('bulkUploadModal'));
+        if (modal) {
+            modal.hide();
+        }
+        
         if (data.success) {
             const summary = data.summary || {};
-            let message = `<div style="color: #155724;">`;
-            message += `<h6 style="color: #155724; margin-bottom: 15px;">✓ Bulk Upload Complete!</h6>`;
-            message += `<p><strong>Successfully created:</strong> <span style="font-size: 1.1em; font-weight: bold;">${summary.successful || 0}</span> products</p>`;
-            if (summary.errors > 0) {
-                message += `<p><strong>Errors:</strong> <span style="font-size: 1.1em; font-weight: bold; color: #dc3545;">${summary.errors}</span> rows</p>`;
-            }
-            message += `<p><strong>Total rows processed:</strong> ${summary.total_rows || 0}</p>`;
+            let message = `<strong>Bulk Upload Successful!</strong><br><br>`;
+            message += `✅ Successfully created: <strong>${summary.successful || 0}</strong> product(s)<br>`;
+            message += `<br>Total rows processed: <strong>${summary.total_rows || 0}</strong>`;
             
-            if (summary.errors > 0 && data.results && data.results.errors) {
-                message += `<hr style="margin: 15px 0; border-color: #ccc;">`;
-                message += `<details style="margin-top: 15px;">`;
-                message += `<summary style="cursor: pointer; color: #0d6efd; font-weight: bold; margin-bottom: 10px; user-select: none;">View Error Details (Click to expand)</summary>`;
-                message += `<ul style="text-align: left; max-height: 300px; overflow-y: auto; margin-top: 10px; padding-left: 20px;">`;
-                data.results.errors.slice(0, 30).forEach(err => {
-                    const productInfo = err.data ? ` <span style="color: #666;">(${err.data.product || err.data.category || 'N/A'})</span>` : '';
-                    message += `<li style="margin-bottom: 8px; padding: 5px; background: #fff; border-left: 3px solid #dc3545;">`;
-                    message += `<strong>Row ${err.row}:</strong> ${err.errors.join(', ')}${productInfo}`;
-                    message += `</li>`;
-                });
-                if (data.results.errors.length > 30) {
-                    message += `<li style="color: #666; font-style: italic; padding: 5px;">... and ${data.results.errors.length - 30} more errors</li>`;
-                }
-                message += `</ul></details>`;
-            }
-            message += `</div>`;
-            
-            showBulkUploadResult(message, 'success');
-            
-            // Reload page after 5 seconds if successful and no errors
-            if (summary.errors === 0) {
-                setTimeout(() => {
-                    window.location.reload();
-                }, 5000);
-            }
+            // Show SweetAlert on success
+            Swal.fire({
+                icon: 'success',
+                title: 'Upload Complete!',
+                html: message,
+                confirmButtonText: 'OK',
+                width: '500px'
+            }).then(() => {
+                window.location.reload();
+            });
         } else {
-            showBulkUploadResult(`<div style="color: #721c24;"><strong>Error:</strong> ${data.message || 'Failed to process bulk upload'}</div>`, 'error');
+            // Show errors in SweetAlert
+            let errorMessage = `<strong>Upload Failed</strong><br><br>`;
+            errorMessage += `<p>${data.message || 'Failed to process bulk upload'}</p>`;
+            
+            if (data.results && data.results.errors && data.results.errors.length > 0) {
+                errorMessage += `<hr style="margin: 15px 0;">`;
+                errorMessage += `<details style="text-align: left;">`;
+                errorMessage += `<summary style="cursor: pointer; color: #0d6efd; font-weight: bold; margin-bottom: 10px;">View Error Details (${data.results.errors.length} errors)</summary>`;
+                errorMessage += `<ul style="max-height: 300px; overflow-y: auto; padding-left: 20px; margin-top: 10px;">`;
+                data.results.errors.slice(0, 20).forEach(err => {
+                    const productInfo = err.data ? ` <span style="color: #666;">(${err.data.product || err.data.category || 'N/A'})</span>` : '';
+                    errorMessage += `<li style="margin-bottom: 5px;"><strong>Row ${err.row}:</strong> ${err.errors.join(', ')}${productInfo}</li>`;
+                });
+                if (data.results.errors.length > 20) {
+                    errorMessage += `<li style="color: #666; font-style: italic;">... and ${data.results.errors.length - 20} more errors</li>`;
+                }
+                errorMessage += `</ul></details>`;
+            }
+            
+            Swal.fire({
+                icon: 'error',
+                title: 'Upload Failed',
+                html: errorMessage,
+                confirmButtonText: 'OK',
+                width: '600px'
+            });
         }
     })
     .catch(error => {
