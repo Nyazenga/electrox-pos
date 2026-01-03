@@ -588,51 +588,71 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Bulk Upload Functions
 function showBulkUploadModal() {
-    // Clear any previous messages
-    clearBulkUploadMessages();
-    
-    // Show loading message
-    showBulkUploadMessage('Loading category information...', 'info');
+    // Hide results area initially
+    const resultsArea = document.getElementById('bulkUploadResults');
+    if (resultsArea) {
+        resultsArea.style.display = 'none';
+    }
     
     // Fetch dynamic category information
     fetch('<?= BASE_URL ?>ajax/get_bulk_upload_info.php')
         .then(response => response.json())
         .then(data => {
-            clearBulkUploadMessages();
             if (data.success) {
                 populateBulkUploadModal(data);
                 new bootstrap.Modal(document.getElementById('bulkUploadModal')).show();
             } else {
-                showBulkUploadMessage('Error: ' + (data.message || 'Failed to load upload information'), 'danger');
+                showBulkUploadResult('Error: ' + (data.message || 'Failed to load upload information'), 'error');
+                new bootstrap.Modal(document.getElementById('bulkUploadModal')).show();
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            showBulkUploadMessage('Error: Failed to load upload information. Please try again.', 'danger');
+            showBulkUploadResult('Error: Failed to load upload information. Please try again.', 'error');
+            new bootstrap.Modal(document.getElementById('bulkUploadModal')).show();
         });
 }
 
-function showBulkUploadMessage(message, type) {
-    const messagesContainer = document.getElementById('bulkUploadMessages');
-    if (!messagesContainer) return;
+function showBulkUploadResult(message, type) {
+    const resultsArea = document.getElementById('bulkUploadResults');
+    const resultsContent = document.getElementById('bulkUploadResultsContent');
+    const resultsTitle = document.getElementById('bulkUploadResultsTitle');
     
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-    alertDiv.setAttribute('role', 'alert');
-    alertDiv.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
-    messagesContainer.appendChild(alertDiv);
+    if (!resultsArea || !resultsContent || !resultsTitle) return;
     
-    // Scroll to top of modal to show message
-    messagesContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // Set title and styling based on type
+    if (type === 'success') {
+        resultsTitle.textContent = '✓ Upload Successful';
+        resultsArea.style.borderColor = '#28a745';
+        resultsArea.style.background = '#d4edda';
+        resultsTitle.style.color = '#155724';
+    } else if (type === 'error') {
+        resultsTitle.textContent = '✗ Upload Failed';
+        resultsArea.style.borderColor = '#dc3545';
+        resultsArea.style.background = '#f8d7da';
+        resultsTitle.style.color = '#721c24';
+    } else if (type === 'info') {
+        resultsTitle.textContent = 'ℹ Processing...';
+        resultsArea.style.borderColor = '#17a2b8';
+        resultsArea.style.background = '#d1ecf1';
+        resultsTitle.style.color = '#0c5460';
+    }
+    
+    // Set content
+    resultsContent.innerHTML = message;
+    
+    // Show the results area
+    resultsArea.style.display = 'block';
+    
+    // Scroll to top of modal to show results
+    resultsArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function clearBulkUploadMessages() {
-    const messagesContainer = document.getElementById('bulkUploadMessages');
-    if (messagesContainer) {
-        messagesContainer.innerHTML = '';
+function clearBulkUploadResults() {
+    const resultsArea = document.getElementById('bulkUploadResults');
+    if (resultsArea) {
+        resultsArea.style.display = 'none';
+        document.getElementById('bulkUploadResultsContent').innerHTML = '';
     }
 }
 
@@ -721,23 +741,20 @@ function handleBulkUpload() {
     const fileInput = document.getElementById('bulkUploadFile');
     const file = fileInput.files[0];
     
-    // Clear previous messages
-    clearBulkUploadMessages();
-    
     if (!file) {
-        showBulkUploadMessage('Error: Please select a CSV file to upload', 'danger');
+        showBulkUploadResult('<div style="color: #721c24;"><strong>Error:</strong> Please select a CSV file to upload</div>', 'error');
         return;
     }
     
     // Validate file type
     const fileName = file.name.toLowerCase();
     if (!fileName.endsWith('.csv') && !fileName.endsWith('.txt')) {
-        showBulkUploadMessage('Error: Please upload a CSV file (.csv or .txt)', 'danger');
+        showBulkUploadResult('<div style="color: #721c24;"><strong>Error:</strong> Please upload a CSV file (.csv or .txt)</div>', 'error');
         return;
     }
     
     // Show processing message
-    showBulkUploadMessage('Processing your bulk upload. Please wait...', 'info');
+    showBulkUploadResult('<div style="color: #0c5460;"><strong>Processing your bulk upload. Please wait...</strong></div>', 'info');
     
     // Disable upload button
     const uploadBtn = document.querySelector('button[onclick="handleBulkUpload()"]');
@@ -758,9 +775,6 @@ function handleBulkUpload() {
     })
     .then(response => response.json())
     .then(data => {
-        // Clear previous messages
-        clearBulkUploadMessages();
-        
         // Re-enable upload button
         if (uploadBtn) {
             uploadBtn.disabled = false;
@@ -769,41 +783,47 @@ function handleBulkUpload() {
         
         if (data.success) {
             const summary = data.summary || {};
-            let message = `<strong>Bulk Upload Complete!</strong><br><br>`;
-            message += `✅ Successfully created: <strong>${summary.successful || 0}</strong> products<br>`;
+            let message = `<div style="color: #155724;">`;
+            message += `<h6 style="color: #155724; margin-bottom: 15px;">✓ Bulk Upload Complete!</h6>`;
+            message += `<p><strong>Successfully created:</strong> <span style="font-size: 1.1em; font-weight: bold;">${summary.successful || 0}</span> products</p>`;
             if (summary.errors > 0) {
-                message += `❌ Errors: <strong>${summary.errors}</strong> rows<br>`;
+                message += `<p><strong>Errors:</strong> <span style="font-size: 1.1em; font-weight: bold; color: #dc3545;">${summary.errors}</span> rows</p>`;
             }
-            message += `<br>Total rows processed: <strong>${summary.total_rows || 0}</strong>`;
+            message += `<p><strong>Total rows processed:</strong> ${summary.total_rows || 0}</p>`;
             
             if (summary.errors > 0 && data.results && data.results.errors) {
-                message += `<br><br><details><summary style="cursor: pointer; color: #0d6efd;"><strong>View Error Details (Click to expand)</strong></summary><ul style="text-align: left; max-height: 300px; overflow-y: auto; margin-top: 10px;">`;
-                data.results.errors.slice(0, 20).forEach(err => {
-                    const productInfo = err.data ? ` (${err.data.product || err.data.category || 'N/A'})` : '';
-                    message += `<li style="margin-bottom: 5px;"><strong>Row ${err.row}:</strong> ${err.errors.join(', ')}${productInfo}</li>`;
+                message += `<hr style="margin: 15px 0; border-color: #ccc;">`;
+                message += `<details style="margin-top: 15px;">`;
+                message += `<summary style="cursor: pointer; color: #0d6efd; font-weight: bold; margin-bottom: 10px; user-select: none;">View Error Details (Click to expand)</summary>`;
+                message += `<ul style="text-align: left; max-height: 300px; overflow-y: auto; margin-top: 10px; padding-left: 20px;">`;
+                data.results.errors.slice(0, 30).forEach(err => {
+                    const productInfo = err.data ? ` <span style="color: #666;">(${err.data.product || err.data.category || 'N/A'})</span>` : '';
+                    message += `<li style="margin-bottom: 8px; padding: 5px; background: #fff; border-left: 3px solid #dc3545;">`;
+                    message += `<strong>Row ${err.row}:</strong> ${err.errors.join(', ')}${productInfo}`;
+                    message += `</li>`;
                 });
-                if (data.results.errors.length > 20) {
-                    message += `<li style="color: #666; font-style: italic;">... and ${data.results.errors.length - 20} more errors</li>`;
+                if (data.results.errors.length > 30) {
+                    message += `<li style="color: #666; font-style: italic; padding: 5px;">... and ${data.results.errors.length - 30} more errors</li>`;
                 }
                 message += `</ul></details>`;
             }
+            message += `</div>`;
             
-            showBulkUploadMessage(message, 'success');
+            showBulkUploadResult(message, 'success');
             
-            // Reload page after 3 seconds if successful
+            // Reload page after 5 seconds if successful and no errors
             if (summary.errors === 0) {
                 setTimeout(() => {
                     window.location.reload();
-                }, 3000);
+                }, 5000);
             }
         } else {
-            showBulkUploadMessage('Error: ' + (data.message || 'Failed to process bulk upload'), 'danger');
+            showBulkUploadResult(`<div style="color: #721c24;"><strong>Error:</strong> ${data.message || 'Failed to process bulk upload'}</div>`, 'error');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        clearBulkUploadMessages();
-        showBulkUploadMessage('Error: An error occurred while processing the upload. Please try again.', 'danger');
+        showBulkUploadResult('<div style="color: #721c24;"><strong>Error:</strong> An error occurred while processing the upload. Please try again.</div>', 'error');
         
         // Re-enable upload button
         if (uploadBtn) {
@@ -825,8 +845,14 @@ function handleBulkUpload() {
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
-                <!-- Persistent Messages Container -->
-                <div id="bulkUploadMessages"></div>
+                <!-- Permanent Results Display Area (No Auto-Dismiss) -->
+                <div id="bulkUploadResults" style="display: none; margin-bottom: 20px; padding: 15px; border-radius: 5px; border: 2px solid #ddd; background: #f8f9fa;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h6 style="margin: 0; font-weight: bold;" id="bulkUploadResultsTitle">Upload Results</h6>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="clearBulkUploadResults()" style="padding: 2px 8px;">Clear</button>
+                    </div>
+                    <div id="bulkUploadResultsContent" style="max-height: 300px; overflow-y: auto;"></div>
+                </div>
                 
                 <div class="alert alert-info">
                     <h6><i class="bi bi-info-circle"></i> How to Use Bulk Upload</h6>
