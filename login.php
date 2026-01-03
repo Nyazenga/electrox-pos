@@ -35,23 +35,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         error_log("checkTenantExists('$tenant_name') returned: " . ($tenantExists ? 'TRUE' : 'FALSE'));
         
         if (!$tenantExists) {
-            $error = 'Tenant does not exist. Please check your tenant name.';
+        $error = 'Tenant does not exist. Please check your tenant name.';
             error_log("Login failed: Tenant '$tenant_name' does not exist");
-        } elseif (!isTenantActive($tenant_name)) {
-            $error = 'This tenant account is not active. Please contact support.';
+    } elseif (!isTenantActive($tenant_name)) {
+        $error = 'This tenant account is not active. Please contact support.';
             error_log("Login failed: Tenant '$tenant_name' is not active");
+    } else {
+        setCurrentTenant($tenant_name);
+        $auth = Auth::getInstance();
+        $result = $auth->login($email, $password, $tenant_name);
+        
+        if ($result['success']) {
+            if ($remember_me) {
+                setcookie('remember_tenant', $tenant_name, time() + (86400 * 30), '/');
+            }
+            redirectTo('modules/dashboard/index.php');
         } else {
-            setCurrentTenant($tenant_name);
-            $auth = Auth::getInstance();
-            $result = $auth->login($email, $password, $tenant_name);
-            
-            if ($result['success']) {
-                if ($remember_me) {
-                    setcookie('remember_tenant', $tenant_name, time() + (86400 * 30), '/');
-                }
-                redirectTo('modules/dashboard/index.php');
-            } else {
-                $error = $result['message'];
+            $error = $result['message'];
             }
         }
     }

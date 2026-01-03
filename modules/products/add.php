@@ -77,6 +77,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $isGeneralCategory = $category && strtolower($category['name']) === 'general';
     }
     
+    // Get boolean flags for identifier tracking
+    $hasSerialNumber = isset($_POST['has_serial_number']) && $_POST['has_serial_number'] == '1' ? 1 : 0;
+    $hasImei = isset($_POST['has_imei']) && $_POST['has_imei'] == '1' ? 1 : 0;
+    $hasBatchNumber = isset($_POST['has_batch_number']) && $_POST['has_batch_number'] == '1' ? 1 : 0;
+    
+    $quantityInStock = intval($_POST['quantity_in_stock'] ?? 0);
+    
+    // Get identifiers if provided (from modal)
+    $identifiers = [];
+    if (isset($_POST['identifiers']) && is_array($_POST['identifiers'])) {
+        $identifiers = $_POST['identifiers'];
+    }
+    
+    // Validate: If product has identifier flags set and stock > 0, identifiers must be provided
+    $requiresIdentifiers = ($hasSerialNumber || $hasImei || $hasBatchNumber) && $quantityInStock > 0;
+    if ($requiresIdentifiers && empty($identifiers)) {
+        $error = 'Please enter ' . ($hasSerialNumber ? 'serial numbers' : '') . 
+                 ($hasImei ? ($hasSerialNumber ? ', ' : '') . 'IMEI numbers' : '') . 
+                 ($hasBatchNumber ? (($hasSerialNumber || $hasImei) ? ', ' : '') . 'batch numbers' : '') . 
+                 ' for the stock quantity (' . $quantityInStock . ' items).';
+    } elseif ($requiresIdentifiers && count($identifiers) != $quantityInStock) {
+        $error = 'Number of identifiers (' . count($identifiers) . ') must match stock quantity (' . $quantityInStock . ').';
+    }
+    
     $data = [
         'product_code' => generateProductCode(),
         'category_id' => $categoryId,
@@ -85,15 +109,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'model' => $isGeneralCategory ? null : sanitizeInput($_POST['model'] ?? ''),
         'color' => sanitizeInput($_POST['color'] ?? ''),
         'storage' => sanitizeInput($_POST['storage'] ?? ''),
-        'serial_number' => sanitizeInput($_POST['serial_number'] ?? ''),
-        'imei' => sanitizeInput($_POST['imei'] ?? ''),
+        'has_serial_number' => $hasSerialNumber,
+        'has_imei' => $hasImei,
+        'has_batch_number' => $hasBatchNumber,
         'sim_configuration' => sanitizeInput($_POST['sim_configuration'] ?? ''),
         'battery_health' => !empty($_POST['battery_health']) ? intval($_POST['battery_health']) : null,
         'expiry_date' => !empty($_POST['expiry_date']) ? $_POST['expiry_date'] : null,
         'weight' => !empty($_POST['weight']) ? floatval($_POST['weight']) : null,
         'unit_of_measure' => sanitizeInput($_POST['unit_of_measure'] ?? ''),
         'manufacturer' => sanitizeInput($_POST['manufacturer'] ?? ''),
-        'batch_number' => sanitizeInput($_POST['batch_number'] ?? ''),
         'barcode' => sanitizeInput($_POST['barcode'] ?? ''),
         'description' => sanitizeInput($_POST['description'] ?? ''),
         'specifications' => sanitizeInput($_POST['specifications'] ?? ''),
@@ -102,7 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'reorder_level' => $_POST['reorder_level'] ?? 0,
         'branch_id' => $_POST['branch_id'] ?? $_SESSION['branch_id'],
         'tax_id' => !empty($_POST['tax_id']) ? intval($_POST['tax_id']) : null,
-        'quantity_in_stock' => $_POST['quantity_in_stock'] ?? 0,
+        'quantity_in_stock' => $quantityInStock,
         'status' => 'Active',
         'created_by' => $_SESSION['user_id'],
         'created_at' => date('Y-m-d H:i:s'),
@@ -115,11 +139,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!$isGeneralCategory && (empty($data['brand']) || empty($data['model']))) {
         $error = 'Brand and Model are required for this category.';
     } else {
-        if ($db->insert('products', $data)) {
+        $db->beginTransaction();
+        try {
+            $productId = $db->insert('products', $data);
+            if (!$productId) {
+                throw new Exception('Failed to add product: ' . $db->getLastError());
+            }
+            
+            // Create product identifiers if provided
+            if ($requiresIdentifiers && !empty($identifiers)) {
+                $branchId = $data['branch_id'];
+                foreach ($identifiers as $identifier) {
+                    $identifierType = $identifier['type'] ?? '';
+                    $identifierValue = sanitizeInput($identifier['value'] ?? '');
+                    
+                    if (empty($identifierValue)) continue;
+                    
+                    // Validate type matches flags
+                    if (($identifierType === 'serial_number' && !$hasSerialNumber) ||
+                        ($identifierType === 'imei' && !$hasImei) ||
+                        ($identifierType === 'batch_number' && !$hasBatchNumber)) {
+                        continue;
+                    }
+                    
+                    $identifierData = [
+                        'product_id' => $productId,
+                        'branch_id' => $branchId,
+                        'identifier_type' => $identifierType,
+                        'identifier_value' => $identifierValue,
+                        'status' => 'available',
+                        'created_at' => date('Y-m-d H:i:s')
+                    ];
+                    
+                    $db->insert('product_identifiers', $identifierData);
+                }
+            }
+            
+            $db->commitTransaction();
             $_SESSION['success_message'] = 'Product added successfully!';
             redirectTo('modules/products/index.php');
-        } else {
-            $error = 'Failed to add product: ' . $db->getLastError();
+        } catch (Exception $e) {
+            $db->rollbackTransaction();
+            $error = $e->getMessage();
         }
     }
 }
