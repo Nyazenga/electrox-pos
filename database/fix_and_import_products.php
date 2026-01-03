@@ -27,29 +27,37 @@ try {
     $sql = file_get_contents($sqlFile);
     echo "SQL file size: " . strlen($sql) . " bytes\n";
     
-    // Check if INSERT statement exists - try different variations
-    $hasInsert = false;
-    if (strpos($sql, 'INSERT INTO `products` VALUES') !== false) {
-        $hasInsert = true;
-        echo "Found 'INSERT INTO `products` VALUES' in file\n";
-    } elseif (strpos($sql, 'INSERT INTO') !== false) {
-        echo "Found 'INSERT INTO' but not 'INSERT INTO `products` VALUES'\n";
-        // Try to find the actual pattern
-        if (preg_match('/INSERT INTO[^`]*`products`[^V]*VALUES/s', $sql)) {
-            $hasInsert = true;
-            echo "Found INSERT INTO products VALUES with different spacing\n";
+    // Extract the INSERT statement - read line by line to find it
+    $insertLine = null;
+    $lines = explode("\n", $sql);
+    foreach ($lines as $lineNum => $line) {
+        // Check if this line contains INSERT INTO products VALUES
+        if (stripos($line, 'INSERT INTO') !== false && stripos($line, 'products') !== false && stripos($line, 'VALUES') !== false) {
+            $insertLine = $line;
+            echo "Found INSERT statement on line " . ($lineNum + 1) . "\n";
+            // Remove comment if present
+            if (strpos($insertLine, '/*!40000') !== false) {
+                $insertLine = substr($insertLine, 0, strpos($insertLine, '/*!40000'));
+                $insertLine = rtrim($insertLine);
+            }
+            // Ensure it ends properly
+            if (substr($insertLine, -2) !== ');' && substr($insertLine, -1) === ')') {
+                $insertLine .= ';';
+            }
+            break;
         }
     }
     
-    if (!$hasInsert) {
+    if (!$insertLine) {
         die("❌ INSERT statement not found in SQL file.\n");
     }
     
-    // Extract the INSERT statement - it's on a single very long line ending with ); followed by /*!40000
-    $insertLine = null;
+    echo "Extracted INSERT statement (length: " . strlen($insertLine) . " chars)\n";
     
-    // The INSERT statement ends with ); followed by /*!40000
-    if (preg_match('/INSERT INTO `products` VALUES\s*(.*?)\)\s*;?\s*\/\*!40000/s', $sql, $matches)) {
+    // Extract VALUES part using regex
+    $valuesString = null;
+    if (preg_match('/INSERT INTO `products` VALUES\s*(.*?)\)\s*;?\s*\/\*!40000/s', $insertLine, $matches) ||
+        preg_match('/INSERT INTO `products` VALUES\s*(.*?)\)\s*;/s', $insertLine, $matches)) {
         $valuesPart = trim($matches[1]);
         // Remove any trailing ); if present
         $valuesPart = rtrim($valuesPart, ');');
