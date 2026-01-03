@@ -25,6 +25,13 @@ try {
     
     echo "Reading SQL file...\n";
     $sql = file_get_contents($sqlFile);
+    echo "SQL file size: " . strlen($sql) . " bytes\n";
+    
+    // Check if INSERT statement exists
+    if (strpos($sql, 'INSERT INTO `products` VALUES') === false) {
+        die("❌ INSERT statement not found in SQL file. Searching for 'INSERT INTO'...\n");
+    }
+    echo "Found 'INSERT INTO `products` VALUES' in file\n";
     
     // Extract the INSERT statement - it's on a single very long line ending with ); followed by /*!40000
     $insertLine = null;
