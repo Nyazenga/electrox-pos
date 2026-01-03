@@ -43,9 +43,9 @@ try {
     echo "✅ Found INSERT statement\n";
     echo "Length: " . strlen($insertLine) . " chars\n\n";
     
-    // Extract VALUES part
-    if (!preg_match('/VALUES\s*(.+)/', $insertLine, $m)) {
-        die("❌ Could not extract VALUES\n");
+    // Extract VALUES part - handle case-insensitive
+    if (!preg_match('/VALUES\s*(.+)/i', $insertLine, $m)) {
+        die("❌ Could not extract VALUES from: " . substr($insertLine, 0, 100) . "...\n");
     }
     
     $valuesStr = trim($m[1]);
