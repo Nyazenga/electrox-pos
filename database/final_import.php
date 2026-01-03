@@ -29,26 +29,41 @@ try {
     $columnList = '`' . implode('`, `', $columnsWithoutSource) . '`, `source`';
     
     echo "Table has " . count($allColumns) . " columns\n";
-    echo "Source column index: $sourceIndex\n\n";
+    echo "Source column index: " . ($sourceIndex !== false ? $sourceIndex : 'NOT FOUND') . "\n\n";
     
-    // Read backup file - get line 23
+    // Read backup file
     $sqlFile = dirname(dirname(__FILE__)) . '/products_backup.sql';
     if (!file_exists($sqlFile)) {
-        die("❌ Backup file not found\n");
+        die("❌ Backup file not found: $sqlFile\n");
     }
     
-    $lines = file($sqlFile);
+    echo "Reading file...\n";
+    $content = file_get_contents($sqlFile);
+    echo "File size: " . strlen($content) . " bytes\n";
+    
+    // Try to find INSERT - use multiple methods
     $insertLine = null;
+    
+    // Method 1: Line by line
+    $lines = explode("\n", $content);
     foreach ($lines as $i => $line) {
-        if (stripos($line, 'INSERT INTO') !== false && stripos($line, 'products') !== false) {
+        if (stripos($line, 'INSERT INTO') !== false && 
+            stripos($line, 'products') !== false && 
+            stripos($line, 'VALUES') !== false) {
             $insertLine = $line;
-            echo "✅ Found INSERT on line " . ($i + 1) . "\n";
+            echo "✅ Found INSERT on line " . ($i + 1) . " (method: line-by-line)\n";
             break;
         }
     }
     
+    // Method 2: Regex on full content
+    if (!$insertLine && preg_match('/INSERT INTO\s+`?products`?\s+VALUES\s+[^;]+/i', $content, $matches)) {
+        $insertLine = $matches[0];
+        echo "✅ Found INSERT using regex\n";
+    }
+    
     if (!$insertLine) {
-        die("❌ INSERT not found\n");
+        die("❌ INSERT not found. File contains: " . substr($content, 0, 200) . "...\n");
     }
     
     // Remove comment
