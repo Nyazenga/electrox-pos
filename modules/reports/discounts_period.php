@@ -37,6 +37,12 @@ if ($selectedBranch !== 'all' && $selectedBranch) {
     $params[':branch_id'] = $branchId;
 }
 
+// Apply discount_type filter if specified
+if ($discountType !== 'all') {
+    $whereConditions[] = "s.discount_type = :discount_type";
+    $params[':discount_type'] = $discountType;
+}
+
 $whereClause = implode(' AND ', $whereConditions);
 
 // Get summary stats
@@ -70,11 +76,7 @@ $discounts = $db->getRows("SELECT
     s.subtotal,
     b.branch_name,
     CONCAT(u.first_name, ' ', u.last_name) as cashier_name,
-    CONCAT(c.first_name, ' ', c.last_name) as customer_name,
-    CASE 
-        WHEN s.discount_type = 'percentage' THEN CONCAT(ROUND((s.discount_amount / s.subtotal * 100), 2), '%')
-        ELSE formatCurrency(s.discount_amount)
-    END as discount_display
+    CONCAT(c.first_name, ' ', c.last_name) as customer_name
 FROM sales s
 LEFT JOIN branches b ON s.branch_id = b.id
 LEFT JOIN users u ON s.user_id = u.id
@@ -103,6 +105,15 @@ if (isset($_GET['export']) && $_GET['export'] === 'pdf') {
     $html .= '<table border="1" cellpadding="5" cellspacing="0" style="width: 100%; font-size: 9px;">';
     $html .= '<tr style="background-color: #f0f0f0;"><th>Date</th><th>Receipt #</th><th>Branch</th><th>Cashier</th><th>Customer</th><th>Discount Type</th><th style="text-align: right;">Discount Amount</th><th style="text-align: right;">Sale Total</th></tr>';
     foreach ($discounts as $discount) {
+        // Calculate discount display (percentage or value)
+        $discountDisplay = '';
+        if ($discount['discount_type'] === 'percentage' && $discount['subtotal'] > 0) {
+            $percentage = round(($discount['discount_amount'] / $discount['subtotal'] * 100), 2);
+            $discountDisplay = $percentage . '%';
+        } else {
+            $discountDisplay = formatCurrency($discount['discount_amount']);
+        }
+        
         $html .= '<tr>';
         $html .= '<td>' . date('M d, Y H:i', strtotime($discount['sale_date'])) . '</td>';
         $html .= '<td>' . escapeHtml($discount['receipt_number']) . '</td>';
@@ -110,7 +121,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'pdf') {
         $html .= '<td>' . escapeHtml($discount['cashier_name'] ?? 'N/A') . '</td>';
         $html .= '<td>' . escapeHtml($discount['customer_name'] ?? 'Walk-in') . '</td>';
         $html .= '<td>' . ucfirst($discount['discount_type'] ?? 'N/A') . '</td>';
-        $html .= '<td style="text-align: right;">' . formatCurrency($discount['discount_amount']) . '</td>';
+        $html .= '<td style="text-align: right;">' . $discountDisplay . '</td>';
         $html .= '<td style="text-align: right;">' . formatCurrency($discount['total_amount']) . '</td>';
         $html .= '</tr>';
     }
@@ -223,7 +234,16 @@ require_once APP_PATH . '/includes/header.php';
                             <td colspan="8" class="text-center text-muted py-4">No discounts found for the selected period</td>
                         </tr>
                     <?php else: ?>
-                        <?php foreach ($discounts as $discount): ?>
+                        <?php foreach ($discounts as $discount): 
+                            // Calculate discount display (percentage or value)
+                            $discountDisplay = '';
+                            if ($discount['discount_type'] === 'percentage' && $discount['subtotal'] > 0) {
+                                $percentage = round(($discount['discount_amount'] / $discount['subtotal'] * 100), 2);
+                                $discountDisplay = $percentage . '%';
+                            } else {
+                                $discountDisplay = formatCurrency($discount['discount_amount']);
+                            }
+                        ?>
                             <tr>
                                 <td><?= date('M d, Y H:i', strtotime($discount['sale_date'])) ?></td>
                                 <td><a href="<?= BASE_URL ?>modules/pos/receipt.php?id=<?= $discount['id'] ?>" target="_blank"><?= escapeHtml($discount['receipt_number']) ?></a></td>
@@ -231,7 +251,7 @@ require_once APP_PATH . '/includes/header.php';
                                 <td><?= escapeHtml($discount['cashier_name'] ?? 'N/A') ?></td>
                                 <td><?= escapeHtml($discount['customer_name'] ?? 'Walk-in') ?></td>
                                 <td><span class="badge bg-info"><?= ucfirst($discount['discount_type'] ?? 'N/A') ?></span></td>
-                                <td class="text-end text-danger fw-bold"><?= formatCurrency($discount['discount_amount']) ?></td>
+                                <td class="text-end text-danger fw-bold"><?= $discountDisplay ?></td>
                                 <td class="text-end"><?= formatCurrency($discount['total_amount']) ?></td>
                             </tr>
                         <?php endforeach; ?>
