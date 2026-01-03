@@ -237,7 +237,32 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    <?php if (!empty($dailyTax)): ?>
+    <?php if (!empty($dailyTax)): 
+        // Calculate max values for proper scaling
+        $taxAmounts = array_map(function($d) { return floatval($d['tax_amount']); }, $dailyTax);
+        $taxableSales = array_map(function($d) { return floatval($d['taxable_sales']); }, $dailyTax);
+        $allValues = array_merge($taxAmounts, $taxableSales);
+        $maxValue = max($allValues);
+        $minValue = min($allValues);
+        $range = $maxValue - $minValue;
+        
+        // Calculate appropriate step size based on range
+        $stepSize = 10;
+        if ($range >= 50000) {
+            $stepSize = 50000;
+        } elseif ($range >= 10000) {
+            $stepSize = 10000;
+        } elseif ($range >= 1000) {
+            $stepSize = 1000;
+        } elseif ($range >= 100) {
+            $stepSize = 100;
+        } elseif ($range >= 10) {
+            $stepSize = 10;
+        }
+        
+        // Calculate max with 15% padding
+        $suggestedMax = ceil(($maxValue * 1.15) / $stepSize) * $stepSize;
+    ?>
     const taxTrendCtx = document.getElementById('taxTrendChart');
     if (taxTrendCtx && typeof Chart !== 'undefined') {
         const labels = [<?= implode(',', array_map(function($d) { return "'" . date('M d', strtotime($d['sale_date'])) . "'"; }, array_reverse($dailyTax))) ?>];
@@ -267,9 +292,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 scales: {
                     y: {
                         beginAtZero: true,
+                        max: <?= $suggestedMax ?>,
                         ticks: {
+                            stepSize: <?= $stepSize ?>,
                             callback: function(value) {
-                                return '$' + value.toFixed(2);
+                                return '$' + value.toLocaleString('en-US', {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0
+                                });
                             }
                         }
                     }

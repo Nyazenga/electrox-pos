@@ -256,6 +256,26 @@ require_once APP_PATH . '/includes/header.php';
     </div>
 </div>
 
+<style>
+/* Ensure Select2 dropdowns match form-select styling */
+.select2-container--bootstrap-5 .select2-selection--single {
+    font-size: 1rem !important;
+    height: calc(1.5em + 0.75rem + 2px) !important;
+    line-height: 1.5 !important;
+    padding: 0.375rem 2.25rem 0.375rem 0.75rem !important;
+}
+
+.select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
+    font-size: 1rem !important;
+    line-height: 1.5 !important;
+    padding: 0 !important;
+}
+
+.select2-container--bootstrap-5 .select2-selection--single .select2-selection__arrow {
+    height: calc(1.5em + 0.75rem + 2px) !important;
+}
+</style>
+
 <?php require_once APP_PATH . '/includes/footer.php'; ?>
 
 <script>

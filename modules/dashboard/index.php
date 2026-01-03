@@ -125,10 +125,10 @@ $refundData = $db->getRow("SELECT COALESCE(SUM(amount), 0) as total_refunds
     $params) ?: ['total_refunds' => 0];
 $cashRefund = floatval($refundData['total_refunds'] ?? 0);
 
-// Get hourly sales for today
+// Get hourly sales for selected date range
 $hourlySales = [];
 $hourlyDeductions = [];
-if ($startDate === date('Y-m-d') && $endDate === date('Y-m-d')) {
+if ($startDate === $endDate) {
     $hourlyData = $db->getRows("SELECT 
         HOUR(sale_date) as hour,
         COALESCE(SUM(total_amount), 0) as gross_sales,
@@ -136,10 +136,10 @@ if ($startDate === date('Y-m-d') && $endDate === date('Y-m-d')) {
         COALESCE(SUM(discount_amount), 0) as discount_amount,
         COALESCE(SUM((SELECT SUM(si2.quantity * p2.cost_price) FROM sale_items si2 INNER JOIN products p2 ON si2.product_id = p2.id WHERE si2.sale_id = s.id)), 0) as cost_of_sales
         FROM sales s
-        WHERE DATE(sale_date) = :date" . ($branchId ? " AND branch_id = :branch_id" : "") . "
+        WHERE DATE(sale_date) BETWEEN :start_date AND :end_date" . ($branchId ? " AND branch_id = :branch_id" : "") . "
         GROUP BY HOUR(sale_date)
         ORDER BY hour", 
-        array_merge([':date' => $startDate], $branchId ? [':branch_id' => $branchId] : [])) ?: [];
+        array_merge([':start_date' => $startDate, ':end_date' => $endDate], $branchId ? [':branch_id' => $branchId] : [])) ?: [];
     
     // Get hourly refunds
     $hourlyRefundData = $db->getRows("SELECT 
@@ -147,10 +147,10 @@ if ($startDate === date('Y-m-d') && $endDate === date('Y-m-d')) {
         COALESCE(SUM(dt.amount), 0) as refund_amount
         FROM drawer_transactions dt
         WHERE dt.transaction_type = 'pay_out'
-        AND DATE(dt.created_at) = :date" . ($branchId ? " AND EXISTS (SELECT 1 FROM shifts WHERE id = dt.shift_id AND branch_id = :branch_id)" : "") . "
+        AND DATE(dt.created_at) BETWEEN :start_date AND :end_date" . ($branchId ? " AND EXISTS (SELECT 1 FROM shifts WHERE id = dt.shift_id AND branch_id = :branch_id)" : "") . "
         GROUP BY HOUR(dt.created_at)
         ORDER BY hour", 
-        array_merge([':date' => $startDate], $branchId ? [':branch_id' => $branchId] : [])) ?: [];
+        array_merge([':start_date' => $startDate, ':end_date' => $endDate], $branchId ? [':branch_id' => $branchId] : [])) ?: [];
     
     // Initialize arrays for all 24 hours
     for ($i = 0; $i < 24; $i++) {
@@ -917,15 +917,15 @@ if ($checkLowStockAtLogin && $isAdministrator && !isset($_SESSION['low_stock_che
         <?php endif; ?>
     </div>
 
-    <!-- Today Sales Summary -->
-    <?php if ($startDate === date('Y-m-d') && $endDate === date('Y-m-d')): ?>
+    <!-- Sales Summary -->
+    <?php if (true): ?>
     <div class="row g-3 mb-4">
         <div class="col-lg-8">
             <div class="chart-card-modern">
                 <div class="chart-card-header-modern">
                     <h5 class="chart-title-modern">
                         <i class="bi bi-bar-chart-fill"></i>
-                        <span>Today Sales Summary</span>
+                        <span><?= $startDate === date('Y-m-d') && $endDate === date('Y-m-d') ? 'Today Sales Summary' : 'Sales Summary' ?></span>
                     </h5>
                 </div>
                 <div class="chart-container-modern">
@@ -975,7 +975,7 @@ if ($checkLowStockAtLogin && $isAdministrator && !isset($_SESSION['low_stock_che
                 <div class="chart-card-header-modern">
                     <h6 class="chart-title-modern" style="font-size: 14px;">
                         <i class="bi bi-pie-chart-fill"></i>
-                        <span>Today Deductions</span>
+                        <span><?= $startDate === date('Y-m-d') && $endDate === date('Y-m-d') ? 'Today Deductions' : 'Deductions' ?></span>
                     </h6>
                 </div>
                 <div style="height: 200px;">
@@ -992,7 +992,7 @@ if ($checkLowStockAtLogin && $isAdministrator && !isset($_SESSION['low_stock_che
                 <div class="chart-card-header-modern">
                     <h5 class="chart-title-modern">
                         <i class="bi bi-graph-down-arrow"></i>
-                        <span>Today Sales Deduction Breakdown</span>
+                        <span><?= $startDate === date('Y-m-d') && $endDate === date('Y-m-d') ? 'Today Sales Deduction Breakdown' : 'Sales Deduction Breakdown' ?></span>
                     </h5>
                 </div>
                 <div class="chart-container-modern">
@@ -1129,8 +1129,8 @@ new Chart(document.getElementById('grossProfitChart'), {
     options: miniChartOptions
 });
 
-<?php if ($startDate === date('Y-m-d') && $endDate === date('Y-m-d')): ?>
-// Today Sales Summary Chart
+<?php if (true): ?>
+// Sales Summary Chart
 const todayCtx = document.getElementById('todaySalesChart').getContext('2d');
 new Chart(todayCtx, {
     type: 'bar',
