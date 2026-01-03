@@ -23,26 +23,23 @@ try {
         die("❌ Backup file not found: $sqlFile\n");
     }
     
-    echo "Reading SQL file line by line...\n";
-    $handle = fopen($sqlFile, 'r');
-    if (!$handle) {
-        die("❌ Could not open SQL file\n");
+    echo "Reading SQL file...\n";
+    $lines = file($sqlFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if ($lines === false) {
+        die("❌ Could not read SQL file\n");
     }
     
     $insertLine = null;
-    $lineNum = 0;
-    while (($line = fgets($handle)) !== false) {
-        $lineNum++;
+    foreach ($lines as $lineNum => $line) {
         // Check if this line contains INSERT INTO products VALUES
         if (stripos($line, 'INSERT INTO') !== false && 
             stripos($line, 'products') !== false && 
             stripos($line, 'VALUES') !== false) {
             $insertLine = trim($line);
-            echo "Found INSERT on line $lineNum\n";
+            echo "Found INSERT on line " . ($lineNum + 1) . "\n";
             break;
         }
     }
-    fclose($handle);
     
     if (!$insertLine) {
         die("❌ INSERT statement not found\n");
