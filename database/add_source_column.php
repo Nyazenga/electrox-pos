@@ -7,7 +7,8 @@
 require_once dirname(dirname(__FILE__)) . '/config.php';
 require_once APP_PATH . '/includes/db.php';
 
-$db = Database::getInstance();
+// Use PRIMARY database instance to ensure we're working with the right database
+$db = Database::getPrimaryInstance();
 
 try {
     // Check if column exists
