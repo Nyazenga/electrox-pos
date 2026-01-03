@@ -235,11 +235,11 @@ try {
             $errors[] = "Selling Price is required and must be numeric";
         }
         
-        if (empty($quantityInStock) || !is_numeric($quantityInStock)) {
+        if ($quantityInStock === '' || $quantityInStock === null || !is_numeric($quantityInStock)) {
             $errors[] = "Quantity in Stock is required and must be numeric";
         }
         
-        if (empty($reorderLevel) || !is_numeric($reorderLevel)) {
+        if ($reorderLevel === '' || $reorderLevel === null || !is_numeric($reorderLevel)) {
             $errors[] = "Reorder Level is required and must be numeric";
         }
         
