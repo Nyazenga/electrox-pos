@@ -6,9 +6,13 @@
 
 require_once dirname(dirname(__FILE__)) . '/config.php';
 require_once APP_PATH . '/includes/db.php';
+require_once APP_PATH . '/includes/session.php';
 
-// Use PRIMARY database instance to ensure we're working with the right database
-$db = Database::getPrimaryInstance();
+// Initialize session to get tenant
+initSession();
+
+// Use the tenant database instance (where products are stored)
+$db = Database::getInstance();
 
 try {
     // Check if column exists
