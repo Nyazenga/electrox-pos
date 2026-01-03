@@ -39,12 +39,20 @@ try {
     
     echo "Reading file...\n";
     $content = file_get_contents($sqlFile);
-    // Remove BOM if present
+    // Remove BOM if present (UTF-8 BOM: EF BB BF)
     if (substr($content, 0, 3) === "\xEF\xBB\xBF") {
         $content = substr($content, 3);
-        echo "Removed BOM from file\n";
+        echo "Removed UTF-8 BOM\n";
     }
+    // Also try removing any other BOM variants
+    $content = ltrim($content, "\xFE\xFF\xFF\xFE\x00\x00\xFE\xFF");
     echo "File size: " . strlen($content) . " bytes\n";
+    
+    // Convert to UTF-8 if needed
+    if (!mb_check_encoding($content, 'UTF-8')) {
+        $content = mb_convert_encoding($content, 'UTF-8', 'auto');
+        echo "Converted encoding to UTF-8\n";
+    }
     
     // Try to find INSERT - use multiple methods
     $insertLine = null;
