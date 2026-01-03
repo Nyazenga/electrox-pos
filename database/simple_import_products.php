@@ -24,20 +24,32 @@ try {
     }
     
     echo "Reading SQL file...\n";
-    $lines = file($sqlFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    if ($lines === false) {
+    $sql = file_get_contents($sqlFile);
+    if ($sql === false) {
         die("❌ Could not read SQL file\n");
     }
     
+    // Find INSERT statement - it's on a single line
     $insertLine = null;
-    foreach ($lines as $lineNum => $line) {
-        // Check if this line contains INSERT INTO products VALUES
-        if (stripos($line, 'INSERT INTO') !== false && 
-            stripos($line, 'products') !== false && 
-            stripos($line, 'VALUES') !== false) {
-            $insertLine = trim($line);
-            echo "Found INSERT on line " . ($lineNum + 1) . "\n";
-            break;
+    if (preg_match('/INSERT INTO\s+`?products`?\s+VALUES\s+(.+?)(?:\s*\)\s*;?\s*\/\*!40000|\s*\)\s*;)/s', $sql, $matches)) {
+        $insertLine = 'INSERT INTO `products` VALUES ' . trim($matches[1]) . ');';
+        echo "Found INSERT statement using regex\n";
+    } else {
+        // Try line by line
+        $lines = explode("\n", $sql);
+        foreach ($lines as $lineNum => $line) {
+            if (stripos($line, 'INSERT INTO') !== false && 
+                stripos($line, 'products') !== false && 
+                stripos($line, 'VALUES') !== false) {
+                $insertLine = trim($line);
+                // Remove comment
+                if (strpos($insertLine, '/*!40000') !== false) {
+                    $insertLine = substr($insertLine, 0, strpos($insertLine, '/*!40000'));
+                    $insertLine = trim($insertLine);
+                }
+                echo "Found INSERT on line " . ($lineNum + 1) . "\n";
+                break;
+            }
         }
     }
     
