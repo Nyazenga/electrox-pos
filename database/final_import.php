@@ -57,22 +57,18 @@ try {
     // Try to find INSERT - use multiple methods
     $insertLine = null;
     
-    // Method 1: Direct search in content (case-insensitive)
-    if (preg_match('/INSERT\s+INTO\s+[`\']?products[`\']?\s+VALUES\s+.+?\)\s*;?\s*(?:\/\*!40000|$)/is', $content, $matches)) {
-        $insertLine = trim($matches[0]);
-        // Remove comment
-        $insertLine = preg_replace('/\/\*!40000.*/', '', $insertLine);
-        $insertLine = trim($insertLine);
-        if (substr($insertLine, -1) !== ';') {
-            $insertLine .= ';';
+    // Method 1: Read line 23 directly (where INSERT is located)
+    $lines = preg_split('/\r?\n/', $content);
+    if (isset($lines[22])) { // Line 23 is index 22
+        $line23 = trim($lines[22]);
+        if (stripos($line23, 'INSERT') !== false && stripos($line23, 'products') !== false) {
+            $insertLine = $line23;
+            echo "✅ Found INSERT on line 23 (direct access)\n";
         }
-        echo "✅ Found INSERT using regex (method 1)\n";
-        echo "Preview: " . substr($insertLine, 0, 150) . "...\n";
     }
     
-    // Method 2: Line by line - handle both Unix and Windows line endings
+    // Method 2: Search all lines
     if (!$insertLine) {
-        $lines = preg_split('/\r?\n/', $content);
         foreach ($lines as $i => $line) {
             $lineTrimmed = trim($line);
             if (stripos($lineTrimmed, 'INSERT') !== false && 
@@ -80,14 +76,23 @@ try {
                 stripos($lineTrimmed, 'products') !== false && 
                 stripos($lineTrimmed, 'VALUES') !== false) {
                 $insertLine = $lineTrimmed;
-                // Remove comment
-                $insertLine = preg_replace('/\/\*!40000.*/', '', $insertLine);
-                $insertLine = trim($insertLine);
-                echo "✅ Found INSERT on line " . ($i + 1) . " (method: line-by-line)\n";
-                echo "Preview: " . substr($insertLine, 0, 150) . "...\n";
+                echo "✅ Found INSERT on line " . ($i + 1) . " (search method)\n";
                 break;
             }
         }
+    }
+    
+    // Method 3: Regex search
+    if (!$insertLine && preg_match('/INSERT\s+INTO\s+[`\']?products[`\']?\s+VALUES\s+.+?\)\s*;?\s*(?:\/\*!40000|$)/is', $content, $matches)) {
+        $insertLine = trim($matches[0]);
+        echo "✅ Found INSERT using regex\n";
+    }
+    
+    if ($insertLine) {
+        // Remove comment
+        $insertLine = preg_replace('/\/\*!40000.*/', '', $insertLine);
+        $insertLine = trim($insertLine);
+        echo "Preview: " . substr($insertLine, 0, 150) . "...\n";
     }
     
     if (!$insertLine) {
