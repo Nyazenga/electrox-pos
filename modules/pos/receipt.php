@@ -1091,19 +1091,19 @@ body, html {
     }
     ?>
     
-    <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
+    <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
         <colgroup>
-            <col style="width: auto;">
-            <col style="width: 50px;">
-            <col style="width: 80px;">
-            <col style="width: 80px;">
+            <col style="min-width: 120px;">
+            <col style="width: 60px; min-width: 50px;">
+            <col style="width: 90px; min-width: 70px;">
+            <col style="width: 90px; min-width: 70px;">
         </colgroup>
         <thead>
             <tr>
-                <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">Item</th>
-                <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">Qty</th>
-                <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Price</th>
-                <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Total</th>
+                <th style="text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: normal;">Item</th>
+                <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Qty</th>
+                <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Price</th>
+                <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Total</th>
             </tr>
         </thead>
         <tbody>
@@ -1125,10 +1125,10 @@ body, html {
                 $totalPriceFormatted = $paymentCurrency ? formatCurrencyAmount($totalPrice, $paymentCurrencyId, $db) : formatCurrency($totalPrice);
             ?>
                 <tr>
-                    <td style="text-align: left; padding: 6px 4px; word-wrap: break-word; border-bottom: 1px solid #ddd;"><?= escapeHtml($item['product_name']) ?></td>
-                    <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $item['quantity'] ?></td>
-                    <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $unitPriceFormatted ?></td>
-                    <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $totalPriceFormatted ?></td>
+                    <td style="text-align: left; padding: 6px 8px; word-wrap: break-word; word-break: break-word; border-bottom: 1px solid #ddd; white-space: normal; line-height: 1.4;"><?= escapeHtml($item['product_name']) ?></td>
+                    <td style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $item['quantity'] ?></td>
+                    <td style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $unitPriceFormatted ?></td>
+                    <td style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $totalPriceFormatted ?></td>
                 </tr>
             <?php endforeach; ?>
         </tbody>
