@@ -100,6 +100,15 @@ jobs:
               chmod -R 755 assets/uploads/
             fi
             
+            # Create uploads directory structure if it doesn't exist
+            echo "Creating upload directories..."
+            mkdir -p uploads/products
+            chmod -R 755 uploads
+            if [ -d "/var/www/electro-pos/uploads" ]; then
+              chown -R www-data:www-data uploads 2>/dev/null || chown -R nginx:nginx uploads 2>/dev/null || true
+            fi
+            echo "✓ Upload directories created"
+            
             echo "=== Deployment completed at $(date) ==="
           ENDSSH
 
