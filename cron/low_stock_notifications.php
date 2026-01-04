@@ -12,34 +12,43 @@ set_time_limit(300); // 5 minutes
 define('APP_PATH', dirname(dirname(__FILE__)));
 
 require_once APP_PATH . '/config.php';
-require_once APP_PATH . '/includes/db.php';
 require_once APP_PATH . '/includes/functions.php';
 require_once APP_PATH . '/includes/mailer.php';
 
 // Email recipient - use same as fiscal day cron jobs
 $emailRecipient = 'nyazengamd@gmail.com';
 
-// Force enable notifications
-$primaryDb = Database::getPrimaryInstance();
-$primaryDb->query("INSERT INTO settings (setting_key, value) VALUES ('send_low_stock_notifications', '1') ON DUPLICATE KEY UPDATE value = '1'");
-
 try {
-    // Get products with low stock from primary database
-    $products = $primaryDb->getRows("SELECT p.*, 
-                                       COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
-                                       pc.name as category_name,
-                                       b.branch_name
-                                       FROM products p
-                                       LEFT JOIN product_categories pc ON p.category_id = pc.id
-                                       LEFT JOIN branches b ON p.branch_id = b.id
-                                       WHERE p.status = 'Active' 
-                                       AND p.quantity_in_stock <= p.reorder_level
-                                       AND p.reorder_level > 0
-                                       ORDER BY p.quantity_in_stock ASC, p.product_name ASC");
+    // Connect directly to primary database (same pattern as fiscal day cron jobs)
+    $dsn = "mysql:host=" . DB_HOST . ";dbname=" . PRIMARY_DB_NAME . ";charset=" . DB_CHARSET;
+    $options = [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false,
+    ];
+    $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
     
-    if ($products === false || empty($products)) {
+    // Force enable notifications
+    $pdo->exec("INSERT INTO settings (setting_key, value) VALUES ('send_low_stock_notifications', '1') ON DUPLICATE KEY UPDATE value = '1'");
+    
+    // Get products with low stock
+    $stmt = $pdo->query("SELECT p.*, 
+                         COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
+                         pc.name as category_name,
+                         b.branch_name
+                         FROM products p
+                         LEFT JOIN product_categories pc ON p.category_id = pc.id
+                         LEFT JOIN branches b ON p.branch_id = b.id
+                         WHERE p.status = 'Active' 
+                         AND p.quantity_in_stock <= p.reorder_level
+                         AND p.reorder_level > 0
+                         ORDER BY p.quantity_in_stock ASC, p.product_name ASC");
+    
+    $products = $stmt->fetchAll();
+    
+    if (empty($products)) {
         error_log("LOW STOCK NOTIFICATION CRON: No low stock products found");
-        exit(0); // No low stock products
+        exit(0);
     }
     
     error_log("LOW STOCK NOTIFICATION CRON: Found " . count($products) . " products with low stock");
@@ -84,16 +93,20 @@ try {
         
         if ($mailSent) {
             error_log("LOW STOCK NOTIFICATION CRON: Email sent successfully to {$emailRecipient}");
+            echo "LOW STOCK NOTIFICATION CRON: Email sent successfully to {$emailRecipient}\n";
         } else {
             $mailerError = $mailer->getMailer()->ErrorInfo;
             error_log("LOW STOCK NOTIFICATION CRON: Failed to send email to {$emailRecipient} - Error: $mailerError");
+            echo "LOW STOCK NOTIFICATION CRON: Failed to send email - Error: $mailerError\n";
         }
     } catch (Exception $e) {
         error_log("LOW STOCK NOTIFICATION CRON: Exception sending email: " . $e->getMessage());
+        echo "LOW STOCK NOTIFICATION CRON: Exception - " . $e->getMessage() . "\n";
     }
     
 } catch (Exception $e) {
     error_log("LOW STOCK NOTIFICATION CRON: Error: " . $e->getMessage());
+    echo "LOW STOCK NOTIFICATION CRON: Error - " . $e->getMessage() . "\n";
 }
 
 exit(0);

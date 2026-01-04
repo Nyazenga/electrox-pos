@@ -5,70 +5,64 @@
  * Sends email notifications for products expiring within 3 months
  */
 
-// Set time limit for long-running script
-set_time_limit(300);
+// Set script execution time limit
+set_time_limit(300); // 5 minutes
 
 // Define APP_PATH before requiring config (same as fiscal day cron jobs)
 define('APP_PATH', dirname(dirname(__FILE__)));
 
-// Include configuration
 require_once APP_PATH . '/config.php';
-require_once APP_PATH . '/includes/db.php';
-require_once APP_PATH . '/includes/settings_functions.php';
+require_once APP_PATH . '/includes/functions.php';
 require_once APP_PATH . '/includes/mailer.php';
 
 // Email recipient - use same as fiscal day cron jobs
 $emailRecipient = 'nyazengamd@gmail.com';
 
-// Force enable notifications
-$primaryDb = Database::getPrimaryInstance();
-$primaryDb->query("INSERT INTO settings (setting_key, value) VALUES ('send_expiry_notifications', '1') ON DUPLICATE KEY UPDATE value = '1'");
-
-// Get notification settings
-$sendNotifications = getSetting('send_expiry_notifications', '0') == '1';
-
-if (!$sendNotifications) {
-    error_log("EXPIRY NOTIFICATION CRON: Notifications disabled, exiting");
-    exit(0); // Notifications disabled
-}
-
 try {
-    $primaryDb = Database::getPrimaryInstance();
+    // Connect directly to primary database (same pattern as fiscal day cron jobs)
+    $dsn = "mysql:host=" . DB_HOST . ";dbname=" . PRIMARY_DB_NAME . ";charset=" . DB_CHARSET;
+    $options = [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false,
+    ];
+    $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+    
+    // Force enable notifications
+    $pdo->exec("INSERT INTO settings (setting_key, value) VALUES ('send_expiry_notifications', '1') ON DUPLICATE KEY UPDATE value = '1'");
     
     // Calculate date 3 months from now
     $threeMonthsFromNow = date('Y-m-d', strtotime('+3 months'));
     $today = date('Y-m-d');
     
-    // Get products expiring within 3 months from primary database
-    $products = $primaryDb->getRows("SELECT p.*, 
-                                 COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
-                                 pc.name as category_name,
-                                 b.branch_name,
-                                 DATEDIFF(p.expiry_date, CURDATE()) as days_until_expiry
-                                 FROM products p
-                                 LEFT JOIN product_categories pc ON p.category_id = pc.id
-                                 LEFT JOIN branches b ON p.branch_id = b.id
-                                 WHERE p.status = 'Active' 
-                                 AND p.expiry_date IS NOT NULL
-                                 AND p.expiry_date >= :today
-                                 AND p.expiry_date <= :three_months
-                                 AND (p.branch_id = :branch_id OR :branch_id IS NULL)
-                                 ORDER BY p.expiry_date ASC, p.product_name ASC", [
-            ':today' => $today,
-            ':three_months' => $threeMonthsFromNow,
-            ':branch_id' => $branch['id']
-        ]);
-        
-        if ($products !== false && !empty($products)) {
-            foreach ($products as $product) {
-                $expiringProducts[] = $product;
-            }
-        }
+    // Get products expiring within 3 months
+    $stmt = $pdo->prepare("SELECT p.*, 
+                           COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
+                           pc.name as category_name,
+                           b.branch_name,
+                           DATEDIFF(p.expiry_date, CURDATE()) as days_until_expiry
+                           FROM products p
+                           LEFT JOIN product_categories pc ON p.category_id = pc.id
+                           LEFT JOIN branches b ON p.branch_id = b.id
+                           WHERE p.status = 'Active' 
+                           AND p.expiry_date IS NOT NULL
+                           AND p.expiry_date >= :today
+                           AND p.expiry_date <= :three_months
+                           ORDER BY p.expiry_date ASC, p.product_name ASC");
+    
+    $stmt->execute([
+        ':today' => $today,
+        ':three_months' => $threeMonthsFromNow
+    ]);
+    
+    $products = $stmt->fetchAll();
+    
+    if (empty($products)) {
+        error_log("EXPIRY NOTIFICATION CRON: No expiring products found");
+        exit(0);
     }
     
-    if (empty($expiringProducts)) {
-        exit(0); // No expiring products
-    }
+    error_log("EXPIRY NOTIFICATION CRON: Found " . count($products) . " products expiring within 3 months");
     
     // Prepare email content - use HTML format like fiscal day cron jobs
     $subject = "Product Expiry Alert - " . date('Y-m-d');
@@ -77,11 +71,11 @@ try {
     $body = "<html><body>";
     $body .= "<h2>Product Expiry Date Notification</h2>";
     $body .= "<p><strong>Date:</strong> " . date('Y-m-d H:i:s') . "</p>";
-    $body .= "<p>The following " . count($expiringProducts) . " product(s) are expiring within 3 months:</p>";
+    $body .= "<p>The following " . count($products) . " product(s) are expiring within 3 months:</p>";
     $body .= "<hr>";
     
     $currentBranch = null;
-    foreach ($expiringProducts as $product) {
+    foreach ($products as $product) {
         if ($currentBranch !== $product['branch_name']) {
             $currentBranch = $product['branch_name'];
             if ($currentBranch) {
@@ -123,16 +117,20 @@ try {
         
         if ($mailSent) {
             error_log("EXPIRY NOTIFICATION CRON: Email sent successfully to {$emailRecipient}");
+            echo "EXPIRY NOTIFICATION CRON: Email sent successfully to {$emailRecipient}\n";
         } else {
             $mailerError = $mailer->getMailer()->ErrorInfo;
             error_log("EXPIRY NOTIFICATION CRON: Failed to send email to {$emailRecipient} - Error: $mailerError");
+            echo "EXPIRY NOTIFICATION CRON: Failed to send email - Error: $mailerError\n";
         }
     } catch (Exception $e) {
         error_log("EXPIRY NOTIFICATION CRON: Exception sending email: " . $e->getMessage());
+        echo "EXPIRY NOTIFICATION CRON: Exception - " . $e->getMessage() . "\n";
     }
     
 } catch (Exception $e) {
-    error_log("Expiry notification cron error: " . $e->getMessage());
+    error_log("EXPIRY NOTIFICATION CRON: Error: " . $e->getMessage());
+    echo "EXPIRY NOTIFICATION CRON: Error - " . $e->getMessage() . "\n";
 }
 
-
+exit(0);
