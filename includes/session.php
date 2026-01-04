@@ -8,6 +8,10 @@ require_once APP_PATH . '/config.php';
 
 function initSession() {
     if (session_status() == PHP_SESSION_NONE) {
+        // Disable session timeout completely - sessions persist until explicit logout
+        // Set PHP session garbage collection to 1 year (31536000 seconds)
+        ini_set('session.gc_maxlifetime', 31536000);
+        
         // Set cookie lifetime to 1 year (31536000 seconds) to persist sessions
         // Sessions will only expire on explicit logout, not on browser close
         $cookieLifetime = SESSION_LIFETIME > 0 ? SESSION_LIFETIME : 31536000; // 1 year if no timeout
@@ -21,13 +25,27 @@ function initSession() {
         
         session_name(SESSION_NAME);
         session_start();
+        
+        // Ensure session doesn't expire - set a very long expiration time
+        // This prevents PHP from garbage collecting the session
+        if (isset($_SESSION)) {
+            // Keep session alive indefinitely
+            $_SESSION['session_start_time'] = time();
+        }
     }
 }
 
 function checkSessionActivity() {
     // Update last activity timestamp (for logging/auditing purposes only)
     // Sessions no longer expire based on inactivity - they persist until explicit logout
+    if (!isset($_SESSION)) {
+        return; // Session not initialized
+    }
+    
     $_SESSION['last_activity'] = time();
+    
+    // Ensure session doesn't expire - reset session start time on each activity
+    $_SESSION['session_start_time'] = time();
     
     // Regenerate session ID periodically for security (every 30 minutes of activity)
     // This helps prevent session fixation attacks without logging the user out
