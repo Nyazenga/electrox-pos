@@ -49,15 +49,22 @@ if ($isEdit) {
 $suppliers = $db->getRows("SELECT * FROM suppliers WHERE status = 'Active' ORDER BY name");
 if ($suppliers === false) $suppliers = [];
 
-// Get products - handle both General category (product_name) and others (brand/model)
-$products = $db->getRows("SELECT p.*, 
-                         COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
-                         c.name as category_name 
-                         FROM products p 
-                         LEFT JOIN product_categories c ON p.category_id = c.id 
-                         WHERE p.status = 'Active' 
-                         ORDER BY COALESCE(p.product_name, p.brand, ''), p.model");
-if ($products === false) $products = [];
+// Get products - Only load if branch is selected (for initial display)
+// Products will be loaded dynamically via AJAX based on selected branch
+$initialBranchId = $isEdit ? ($grn['branch_id'] ?? null) : $branchId;
+$products = [];
+if ($initialBranchId) {
+    $products = $db->getRows("SELECT p.*, 
+                             COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
+                             c.name as category_name 
+                             FROM products p 
+                             LEFT JOIN product_categories c ON p.category_id = c.id 
+                             WHERE p.status = 'Active' 
+                             AND p.branch_id = :branch_id
+                             ORDER BY COALESCE(p.product_name, p.brand, ''), p.model", 
+                             [':branch_id' => $initialBranchId]);
+    if ($products === false) $products = [];
+}
 
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
 if ($branches === false) $branches = [];
@@ -135,7 +142,7 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Branch *</label>
-                    <select class="form-select" name="branch_id" required>
+                    <select class="form-select" name="branch_id" id="branch_id" required>
                         <?php foreach ($branches as $branch): ?>
                             <option value="<?= $branch['id'] ?>" <?= ($isEdit ? ($grn['branch_id'] == $branch['id']) : ($branchId == $branch['id'])) ? 'selected' : '' ?>>
                                 <?= escapeHtml($branch['branch_name']) ?>
@@ -217,11 +224,12 @@ require_once APP_PATH . '/includes/header.php';
                         <input type="text" class="form-control" id="product_search" placeholder="Type to search products..." autocomplete="off">
                         <input type="hidden" id="selected_product_id">
                         <div class="dropdown-menu position-absolute w-100" id="product_dropdown" style="max-height: 300px; overflow-y: auto; z-index: 1050; display: none;">
-                        <?php foreach ($products as $product): 
-                            $productDisplayName = $product['display_name'] ?? ($product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')));
-                            if (empty($productDisplayName)) {
-                                $productDisplayName = 'Product #' . $product['id'];
-                            }
+                        <?php if (!empty($products)): 
+                            foreach ($products as $product): 
+                                $productDisplayName = $product['display_name'] ?? ($product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')));
+                                if (empty($productDisplayName)) {
+                                    $productDisplayName = 'Product #' . $product['id'];
+                                }
                         ?>
                             <a class="dropdown-item product-item" href="#" 
                                data-id="<?= $product['id'] ?>"
@@ -236,7 +244,9 @@ require_once APP_PATH . '/includes/header.php';
                                     Stock: <?= $product['quantity_in_stock'] ?? 0 ?>
                                 </small>
                             </a>
-                        <?php endforeach; ?>
+                        <?php 
+                            endforeach; 
+                        endif; ?>
                         </div>
                     </div>
                 </div>
@@ -275,6 +285,9 @@ let itemCounter = 0;
 
 // Generate GRN number on page load (only for new GRN)
 document.addEventListener('DOMContentLoaded', function() {
+    const branchSelect = document.getElementById('branch_id');
+    let currentBranchId = branchSelect ? branchSelect.value : null;
+    
     <?php if (!$isEdit): ?>
     generateGRNNumber();
     <?php else: ?>
@@ -367,6 +380,19 @@ document.addEventListener('DOMContentLoaded', function() {
             productDropdown.style.display = 'none';
         }
     });
+    
+    // Load products for initial branch
+    if (currentBranchId) {
+        loadProductsForBranch(currentBranchId);
+    }
+    
+    // Update products when branch changes
+    if (branchSelect) {
+        branchSelect.addEventListener('change', function() {
+            currentBranchId = this.value;
+            loadProductsForBranch(currentBranchId);
+        });
+    }
 });
 
 function filterDropdown(searchTerm, dropdown, itemSelector) {
@@ -420,7 +446,59 @@ function generateGRNNumber() {
     tryGenerate();
 }
 
+function loadProductsForBranch(branchId) {
+    if (!branchId) {
+        document.getElementById('product_dropdown').innerHTML = '<div class="dropdown-item text-muted">Please select a branch first</div>';
+        return;
+    }
+    
+    fetch('<?= BASE_URL ?>ajax/get_products_for_branch.php?branch_id=' + encodeURIComponent(branchId))
+        .then(response => response.json())
+        .then(data => {
+            const dropdown = document.getElementById('product_dropdown');
+            if (data.success && data.products && data.products.length > 0) {
+                dropdown.innerHTML = '';
+                data.products.forEach(product => {
+                    const item = document.createElement('a');
+                    item.className = 'dropdown-item product-item';
+                    item.href = '#';
+                    item.setAttribute('data-id', product.id);
+                    item.setAttribute('data-name', product.display_name);
+                    item.setAttribute('data-cost', product.cost_price || 0);
+                    item.setAttribute('data-selling', product.selling_price || 0);
+                    item.innerHTML = `
+                        <strong>${escapeHtml(product.display_name)}</strong>
+                        <br>
+                        <small class="text-muted">
+                            ${escapeHtml(product.category_name || 'N/A')} | 
+                            Code: ${escapeHtml(product.product_code || 'N/A')} |
+                            Stock: ${product.quantity_in_stock || 0}
+                        </small>
+                    `;
+                    dropdown.appendChild(item);
+                });
+            } else {
+                dropdown.innerHTML = '<div class="dropdown-item text-muted">No products found for this branch</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading products:', error);
+            document.getElementById('product_dropdown').innerHTML = '<div class="dropdown-item text-danger">Error loading products</div>';
+        });
+}
+
 function addItem() {
+    // Get current branch ID
+    const branchSelect = document.getElementById('branch_id');
+    const currentBranchId = branchSelect ? branchSelect.value : null;
+    
+    // Load products for current branch
+    if (currentBranchId) {
+        loadProductsForBranch(currentBranchId);
+    } else {
+        document.getElementById('product_dropdown').innerHTML = '<div class="dropdown-item text-muted">Please select a branch first</div>';
+    }
+    
     // Reset modal fields
     document.getElementById('product_search').value = '';
     document.getElementById('selected_product_id').value = '';

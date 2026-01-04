@@ -53,7 +53,9 @@ try {
             'model' => $product['model'] ?? '',
             'product_code' => $product['product_code'] ?? '',
             'category_name' => $product['category_name'] ?? 'N/A',
-            'quantity_in_stock' => intval($product['quantity_in_stock'] ?? 0)
+            'quantity_in_stock' => intval($product['quantity_in_stock'] ?? 0),
+            'cost_price' => floatval($product['cost_price'] ?? 0),
+            'selling_price' => floatval($product['selling_price'] ?? 0)
         ];
     }
     
