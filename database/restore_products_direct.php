@@ -1,125 +1,172 @@
 <?php
 /**
- * Script to restore products directly from localhost database to live server
- * This connects to localhost, exports products, and inserts them into live database
+ * Direct restore - modifies SQL file and imports using mysql command
  */
 
-// For live server - connect to localhost MySQL and export, then import to live
-// This script should be run on the live server, but we'll read from a SQL file
+define('APP_PATH', dirname(dirname(__FILE__)));
+require_once APP_PATH . '/config.php';
 
-require_once dirname(dirname(__FILE__)) . '/config.php';
+echo "Restoring products...\n\n";
 
-$host = DB_HOST;
-$user = DB_USER;
-$pass = DB_PASS;
-$dbname = 'electrox_primary';
+$sqlFile = APP_PATH . '/database/products_clean.sql';
 
-try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-    ]);
-    
-    echo "Connected to $dbname\n";
-    
-    // Read the SQL file from the root directory
-    $sqlFile = dirname(dirname(__FILE__)) . '/products_backup.sql';
-    if (!file_exists($sqlFile)) {
-        die("Backup file not found: $sqlFile\n");
-    }
-    
-    echo "Reading SQL file...\n";
-    $sql = file_get_contents($sqlFile);
-    
-    // Split by semicolons but preserve within quotes
-    $statements = [];
-    $current = '';
-    $inQuotes = false;
-    $quoteChar = null;
-    
-    for ($i = 0; $i < strlen($sql); $i++) {
-        $char = $sql[$i];
-        
-        if (!$inQuotes && ($char === '"' || $char === "'" || $char === '`')) {
-            $inQuotes = true;
-            $quoteChar = $char;
-            $current .= $char;
-        } elseif ($inQuotes && $char === $quoteChar && ($i == 0 || $sql[$i-1] !== '\\')) {
-            $inQuotes = false;
-            $quoteChar = null;
-            $current .= $char;
-        } elseif (!$inQuotes && $char === ';') {
-            $stmt = trim($current);
-            if (!empty($stmt) && stripos($stmt, 'INSERT INTO') !== false) {
-                $statements[] = $stmt;
-            }
-            $current = '';
-        } else {
-            $current .= $char;
-        }
-    }
-    
-    if (!empty(trim($current)) && stripos($current, 'INSERT INTO') !== false) {
-        $statements[] = trim($current);
-    }
-    
-    echo "Found " . count($statements) . " INSERT statements\n";
-    
-    if (empty($statements)) {
-        die("No INSERT statements found in backup file.\n");
-    }
-    
-    echo "Starting restore...\n\n";
-    
-    $pdo->beginTransaction();
-    
-    try {
-        $inserted = 0;
-        $skipped = 0;
-        
-        foreach ($statements as $stmt) {
-            try {
-                // Replace the VALUES part to handle the source column
-                // If the statement doesn't have enough columns, we need to add source
-                $pdo->exec($stmt);
-                $inserted++;
-                
-                if ($inserted % 10 == 0) {
-                    echo "Inserted $inserted products...\n";
-                }
-            } catch (PDOException $e) {
-                // Check if it's a duplicate key error
-                if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
-                    $skipped++;
-                } else {
-                    echo "Error: " . $e->getMessage() . "\n";
-                    // Continue anyway
-                }
-            }
-        }
-        
-        // Update source values for all products
-        echo "\nUpdating source values...\n";
-        $updated = $pdo->exec("UPDATE products SET source = 'manual' WHERE source IS NULL OR source = ''");
-        echo "Updated $updated products to have source = 'manual'\n";
-        
-        $pdo->commit();
-        
-        echo "\n✅ Restore completed!\n";
-        echo "Inserted: $inserted products\n";
-        echo "Skipped (duplicates): $skipped products\n";
-        
-        // Verify
-        $stmt = $pdo->query("SELECT COUNT(*) as total FROM products");
-        $count = $stmt->fetch();
-        echo "Total products in database: " . $count['total'] . "\n";
-        
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        throw $e;
-    }
-    
-} catch (PDOException $e) {
-    echo "❌ Error: " . $e->getMessage() . "\n";
+if (!file_exists($sqlFile)) {
+    echo "❌ File not found: $sqlFile\n";
     exit(1);
 }
 
+try {
+    $dsn = "mysql:host=" . DB_HOST . ";dbname=" . PRIMARY_DB_NAME . ";charset=" . DB_CHARSET;
+    $options = [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ];
+    $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+    
+    // Ensure source column exists
+    $stmt = $pdo->query("SHOW COLUMNS FROM products WHERE Field = 'source'");
+    if (!$stmt->fetch()) {
+        $pdo->exec("ALTER TABLE `products` ADD COLUMN `source` enum('manual','bulk_upload') DEFAULT 'manual' AFTER `created_by`");
+        $pdo->exec("ALTER TABLE `products` ADD KEY `idx_source` (`source`)");
+        echo "✓ Source column added\n";
+    }
+    
+    // Read SQL file
+    $sql = file_get_contents($sqlFile);
+    
+    // Remove BOM
+    if (substr($sql, 0, 3) === "\xEF\xBB\xBF") {
+        $sql = substr($sql, 3);
+    }
+    
+    // Extract INSERT statement
+    if (preg_match('/INSERT\s+INTO\s+`?products`?\s*\(([^)]+)\)\s*VALUES\s*(.+);/is', $sql, $matches)) {
+        $columns = $matches[1];
+        $values = $matches[2];
+        
+        // Parse column list
+        $columnList = array_map('trim', explode(',', preg_replace('/`/', '', $columns)));
+        
+        // Find created_by index
+        $createdByIndex = array_search('created_by', $columnList);
+        $sourceIndex = $createdByIndex !== false ? $createdByIndex + 1 : count($columnList);
+        
+        // Add source to column list
+        array_splice($columnList, $sourceIndex, 0, 'source');
+        
+        // Parse and modify values
+        // Split by ),( to get rows
+        $rows = preg_split('/\)\s*,\s*\(/', trim($values, '()'));
+        
+        $newRows = [];
+        foreach ($rows as $row) {
+            $row = trim($row, '()');
+            $rowValues = [];
+            
+            // Parse values (handle quoted strings)
+            $current = '';
+            $inQuotes = false;
+            $quoteChar = null;
+            
+            for ($i = 0; $i < strlen($row); $i++) {
+                $char = $row[$i];
+                
+                if (!$inQuotes && ($char === '"' || $char === "'")) {
+                    $inQuotes = true;
+                    $quoteChar = $char;
+                    $current .= $char;
+                } elseif ($inQuotes && $char === $quoteChar) {
+                    if ($i > 0 && $row[$i-1] === '\\') {
+                        $current .= $char;
+                    } else {
+                        $inQuotes = false;
+                        $quoteChar = null;
+                        $current .= $char;
+                    }
+                } elseif (!$inQuotes && $char === ',') {
+                    $rowValues[] = trim($current);
+                    $current = '';
+                } else {
+                    $current .= $char;
+                }
+            }
+            if (!empty($current)) {
+                $rowValues[] = trim($current);
+            }
+            
+            // Insert 'manual' at source position
+            if (count($rowValues) <= $sourceIndex - 1) {
+                while (count($rowValues) < $sourceIndex - 1) {
+                    $rowValues[] = 'NULL';
+                }
+                $rowValues[] = "'manual'";
+            } else {
+                array_splice($rowValues, $sourceIndex - 1, 0, "'manual'");
+            }
+            
+            $newRows[] = '(' . implode(',', $rowValues) . ')';
+        }
+        
+        // Build new INSERT
+        $newColumns = '`' . implode('`, `', $columnList) . '`';
+        $newValues = implode(', ', $newRows);
+        $newInsert = "INSERT INTO `products` ($newColumns) VALUES $newValues;";
+        
+        // Execute
+        echo "Inserting products...\n";
+        $pdo->beginTransaction();
+        
+        try {
+            $pdo->exec($newInsert);
+            $pdo->commit();
+            echo "✓ Products inserted\n";
+        } catch (PDOException $e) {
+            $pdo->rollBack();
+            // Try inserting row by row
+            echo "Bulk insert failed, trying row by row...\n";
+            $pdo->beginTransaction();
+            $inserted = 0;
+            $skipped = 0;
+            
+            foreach ($newRows as $row) {
+                $rowValues = trim($row, '()');
+                $valuesList = explode(',', $rowValues);
+                $rowInsert = "INSERT INTO `products` ($newColumns) VALUES ($rowValues)";
+                
+                try {
+                    $pdo->exec($rowInsert);
+                    $inserted++;
+                } catch (PDOException $e2) {
+                    if (strpos($e2->getMessage(), 'Duplicate') === false) {
+                        $skipped++;
+                        if ($skipped <= 5) {
+                            echo "  ⚠ " . substr($e2->getMessage(), 0, 80) . "\n";
+                        }
+                    }
+                }
+            }
+            
+            $pdo->commit();
+            echo "✓ Inserted $inserted product(s)\n";
+            if ($skipped > 0) {
+                echo "  ⚠ Skipped $skipped row(s)\n";
+            }
+        }
+        
+        // Update source
+        $pdo->exec("UPDATE `products` SET `source` = 'manual' WHERE `source` IS NULL OR `source` = ''");
+        
+        // Verify
+        $stmt = $pdo->query("SELECT COUNT(*) as total FROM products");
+        $total = $stmt->fetch()['total'];
+        echo "\n✅ Restored $total product(s)!\n";
+        
+    } else {
+        echo "❌ Could not parse INSERT statement from SQL file\n";
+        exit(1);
+    }
+    
+} catch (Exception $e) {
+    echo "❌ Error: " . $e->getMessage() . "\n";
+    exit(1);
+}
