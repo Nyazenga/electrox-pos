@@ -77,10 +77,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $isGeneralCategory = $category && strtolower($category['name']) === 'general';
     }
     
-    // Get boolean flags for identifier tracking
-    $hasSerialNumber = isset($_POST['has_serial_number']) && $_POST['has_serial_number'] == '1' ? 1 : 0;
-    $hasImei = isset($_POST['has_imei']) && $_POST['has_imei'] == '1' ? 1 : 0;
-    $hasBatchNumber = isset($_POST['has_batch_number']) && $_POST['has_batch_number'] == '1' ? 1 : 0;
+    // Get serial number and IMEI directly from POST
+    $serialNumber = !empty($_POST['serial_number']) ? sanitizeInput($_POST['serial_number']) : null;
+    $imei = !empty($_POST['imei']) ? sanitizeInput($_POST['imei']) : null;
     
     // Check if this is a unique product (has serial/IMEI)
     $isUniqueProduct = false;
@@ -92,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                               strpos($categoryName, 'phone') !== false || 
                               strpos($categoryName, 'laptop') !== false ||
                               strpos($categoryName, 'tablet') !== false) ||
-                              $hasSerialNumber || $hasImei;
+                              !empty($serialNumber) || !empty($imei);
         }
     }
     
@@ -106,21 +105,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $quantityInStock = intval($_POST['quantity_in_stock'] ?? 0);
     }
     
-    // Get identifiers if provided (from modal)
-    $identifiers = [];
-    if (isset($_POST['identifiers']) && is_array($_POST['identifiers'])) {
-        $identifiers = $_POST['identifiers'];
+    // Validate for duplicate serial numbers
+    if (!empty($serialNumber)) {
+        $existingSerial = $db->getRow("SELECT id, product_code FROM products WHERE serial_number = :serial_number", [':serial_number' => $serialNumber]);
+        if ($existingSerial) {
+            $error = 'Serial Number "' . $serialNumber . '" already exists in the database (Product Code: ' . $existingSerial['product_code'] . '). Cannot create duplicate.';
+        }
     }
     
-    // Validate: If product has identifier flags set and stock > 0, identifiers must be provided
-    $requiresIdentifiers = ($hasSerialNumber || $hasImei || $hasBatchNumber) && $quantityInStock > 0;
-    if ($requiresIdentifiers && empty($identifiers)) {
-        $error = 'Please enter ' . ($hasSerialNumber ? 'serial numbers' : '') . 
-                 ($hasImei ? ($hasSerialNumber ? ', ' : '') . 'IMEI numbers' : '') . 
-                 ($hasBatchNumber ? (($hasSerialNumber || $hasImei) ? ', ' : '') . 'batch numbers' : '') . 
-                 ' for the stock quantity (' . $quantityInStock . ' items).';
-    } elseif ($requiresIdentifiers && count($identifiers) != $quantityInStock) {
-        $error = 'Number of identifiers (' . count($identifiers) . ') must match stock quantity (' . $quantityInStock . ').';
+    // Validate for duplicate IMEI
+    if (empty($error) && !empty($imei)) {
+        $existingImei = $db->getRow("SELECT id, product_code FROM products WHERE imei = :imei", [':imei' => $imei]);
+        if ($existingImei) {
+            $error = 'IMEI "' . $imei . '" already exists in the database (Product Code: ' . $existingImei['product_code'] . '). Cannot create duplicate.';
+        }
     }
     
     $data = [
@@ -131,9 +129,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'model' => $isGeneralCategory ? null : sanitizeInput($_POST['model'] ?? ''),
         'color' => sanitizeInput($_POST['color'] ?? ''),
         'storage' => sanitizeInput($_POST['storage'] ?? ''),
-        'has_serial_number' => $hasSerialNumber,
-        'has_imei' => $hasImei,
-        'has_batch_number' => $hasBatchNumber,
+        'serial_number' => $serialNumber,
+        'imei' => $imei,
         'sim_configuration' => sanitizeInput($_POST['sim_configuration'] ?? ''),
         'battery_health' => !empty($_POST['battery_health']) ? intval($_POST['battery_health']) : null,
         'expiry_date' => !empty($_POST['expiry_date']) ? $_POST['expiry_date'] : null,
@@ -157,53 +154,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ];
     
     // Validation: For General category, product_name is required; for others, brand and model are required
-    if ($isGeneralCategory && empty($data['product_name'])) {
-        $error = 'Product name is required for General category products.';
-    } elseif (!$isGeneralCategory && (empty($data['brand']) || empty($data['model']))) {
-        $error = 'Brand and Model are required for this category.';
-    } else {
-        $db->beginTransaction();
-        try {
-            $productId = $db->insert('products', $data);
-            if (!$productId) {
-                throw new Exception('Failed to add product: ' . $db->getLastError());
-            }
-            
-            // Create product identifiers if provided
-            if ($requiresIdentifiers && !empty($identifiers)) {
-                $branchId = $data['branch_id'];
-                foreach ($identifiers as $identifier) {
-                    $identifierType = $identifier['type'] ?? '';
-                    $identifierValue = sanitizeInput($identifier['value'] ?? '');
-                    
-                    if (empty($identifierValue)) continue;
-                    
-                    // Validate type matches flags
-                    if (($identifierType === 'serial_number' && !$hasSerialNumber) ||
-                        ($identifierType === 'imei' && !$hasImei) ||
-                        ($identifierType === 'batch_number' && !$hasBatchNumber)) {
-                        continue;
-                    }
-                    
-                    $identifierData = [
-                        'product_id' => $productId,
-                        'branch_id' => $branchId,
-                        'identifier_type' => $identifierType,
-                        'identifier_value' => $identifierValue,
-                        'status' => 'available',
-                        'created_at' => date('Y-m-d H:i:s')
-                    ];
-                    
-                    $db->insert('product_identifiers', $identifierData);
+    if (empty($error)) {
+        if ($isGeneralCategory && empty($data['product_name'])) {
+            $error = 'Product name is required for General category products.';
+        } elseif (!$isGeneralCategory && (empty($data['brand']) || empty($data['model']))) {
+            $error = 'Brand and Model are required for this category.';
+        } else {
+            $db->beginTransaction();
+            try {
+                $productId = $db->insert('products', $data);
+                if (!$productId) {
+                    throw new Exception('Failed to add product: ' . $db->getLastError());
                 }
+                
+                $db->commitTransaction();
+                $_SESSION['success_message'] = 'Product added successfully!';
+                redirectTo('modules/products/index.php');
+            } catch (Exception $e) {
+                $db->rollbackTransaction();
+                $error = $e->getMessage();
             }
-            
-            $db->commitTransaction();
-            $_SESSION['success_message'] = 'Product added successfully!';
-            redirectTo('modules/products/index.php');
-        } catch (Exception $e) {
-            $db->rollbackTransaction();
-            $error = $e->getMessage();
         }
     }
 }

@@ -381,6 +381,26 @@ try {
             $reorderLevel = 0;
         }
         
+        // Get serial number and IMEI
+        $serialNumber = !empty($rowData['serialNumber']) ? sanitizeInput($rowData['serialNumber']) : null;
+        $imei = !empty($rowData['imei']) ? sanitizeInput($rowData['imei']) : null;
+        
+        // Validate for duplicate serial numbers
+        if (!empty($serialNumber)) {
+            $existingSerial = $db->getRow("SELECT id, product_code FROM products WHERE serial_number = :serial_number", [':serial_number' => $serialNumber]);
+            if ($existingSerial) {
+                throw new Exception('Row ' . $rowData['row'] . ': Serial Number "' . $serialNumber . '" already exists in the database (Product Code: ' . $existingSerial['product_code'] . '). Cannot create duplicate.');
+            }
+        }
+        
+        // Validate for duplicate IMEI
+        if (!empty($imei)) {
+            $existingImei = $db->getRow("SELECT id, product_code FROM products WHERE imei = :imei", [':imei' => $imei]);
+            if ($existingImei) {
+                throw new Exception('Row ' . $rowData['row'] . ': IMEI "' . $imei . '" already exists in the database (Product Code: ' . $existingImei['product_code'] . '). Cannot create duplicate.');
+            }
+        }
+        
         // Prepare product data
         $productData = [
             'product_code' => generateProductCode(),
@@ -391,8 +411,8 @@ try {
             'color' => sanitizeInput($rowData['color']),
             'storage' => sanitizeInput($rowData['storage']),
             'sim_configuration' => sanitizeInput($rowData['simConfig']),
-            'serial_number' => sanitizeInput($rowData['serialNumber']),
-            'imei' => sanitizeInput($rowData['imei']),
+            'serial_number' => $serialNumber,
+            'imei' => $imei,
             'batch_number' => sanitizeInput($rowData['batchNumber']),
             'expiry_date' => !empty($rowData['expiryDate']) ? date('Y-m-d', strtotime($rowData['expiryDate'])) : null,
             'weight' => !empty($rowData['weight']) && is_numeric($rowData['weight']) ? floatval($rowData['weight']) : null,
