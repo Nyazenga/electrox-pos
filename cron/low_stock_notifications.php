@@ -8,8 +8,11 @@
 // Set time limit for long-running script
 set_time_limit(300);
 
+// Define APP_PATH before requiring config (same as fiscal day cron jobs)
+define('APP_PATH', dirname(dirname(__FILE__)));
+
 // Include configuration
-require_once dirname(dirname(__FILE__)) . '/config.php';
+require_once APP_PATH . '/config.php';
 require_once APP_PATH . '/includes/db.php';
 require_once APP_PATH . '/includes/settings_functions.php';
 require_once APP_PATH . '/includes/mailer.php';
