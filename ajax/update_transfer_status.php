@@ -1,27 +1,58 @@
 <?php
-require_once dirname(dirname(__FILE__)) . '/config.php';
-require_once APP_PATH . '/includes/db.php';
-require_once APP_PATH . '/includes/auth.php';
-require_once APP_PATH . '/includes/functions.php';
-
-initSession();
-$auth = Auth::getInstance();
-$auth->requireLogin();
-$auth->requirePermission('transfers.change_status');
-
-// Enable error logging for debugging
-error_reporting(E_ALL);
+// Start output buffering BEFORE any includes
+ob_start();
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
+error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE & ~E_DEPRECATED);
 
-// Start output buffering
-ob_start();
+// Suppress any output from includes
+@require_once dirname(dirname(__FILE__)) . '/config.php';
+@require_once APP_PATH . '/includes/db.php';
+@require_once APP_PATH . '/includes/auth.php';
+@require_once APP_PATH . '/includes/functions.php';
 
-// Set JSON header early
+// Clear any output that might have been generated
+ob_clean();
 header('Content-Type: application/json');
 
+try {
+    initSession();
+    $auth = Auth::getInstance();
+    if (!$auth->isLoggedIn()) {
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Not authenticated']);
+        exit;
+    }
+    
+    try {
+        $auth->requirePermission('transfers.change_status');
+    } catch (Exception $permError) {
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Permission denied: ' . $permError->getMessage()]);
+        exit;
+    }
+} catch (Exception $e) {
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Initialization error: ' . $e->getMessage()]);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    sendErrorResponse('Invalid request method');
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Invalid request method']);
+    exit;
 }
 
 $input = json_decode(file_get_contents('php://input'), true);
@@ -29,7 +60,12 @@ $transferId = intval($input['transfer_id'] ?? 0);
 $status = trim($input['status'] ?? '');
 
 if (!$transferId || !in_array($status, ['Pending', 'Approved', 'InTransit', 'Received', 'Rejected', 'Completed'])) {
-    sendErrorResponse('Invalid input');
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Invalid input']);
+    exit;
 }
 
 try {
@@ -292,9 +328,20 @@ try {
         
         $db->commitTransaction();
         
-        logActivity($userId, 'transfer_status_updated', ['transfer_id' => $transferId, 'status' => $status]);
-        ob_end_clean();
+        // Log activity (wrap in try-catch to prevent errors from breaking response)
+        try {
+            logActivity($userId, 'transfer_status_updated', ['transfer_id' => $transferId, 'status' => $status]);
+        } catch (Exception $logError) {
+            error_log("Activity log error: " . $logError->getMessage());
+            // Don't fail the response if logging fails
+        }
+        
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        header('Content-Type: application/json');
         echo json_encode(['success' => true, 'message' => 'Transfer status updated successfully']);
+        exit;
         
     } catch (Exception $e) {
         if ($db->inTransaction()) {
@@ -310,8 +357,12 @@ try {
     $errorMessage = $e->getMessage();
     error_log("Update transfer status error: " . $errorMessage);
     error_log("Stack trace: " . $e->getTraceAsString());
-    ob_end_clean();
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/json');
     echo json_encode(['success' => false, 'message' => 'An error occurred: ' . $errorMessage]);
+    exit;
 } catch (Error $e) {
     // Catch fatal errors (PHP 7+)
     if (isset($db) && $db->inTransaction()) {
@@ -320,8 +371,11 @@ try {
     $errorMessage = $e->getMessage();
     error_log("Update transfer status fatal error: " . $errorMessage);
     error_log("Stack trace: " . $e->getTraceAsString());
-    ob_end_clean();
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/json');
     echo json_encode(['success' => false, 'message' => 'System error: ' . $errorMessage]);
+    exit;
 }
-
 
