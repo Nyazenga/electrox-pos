@@ -228,26 +228,36 @@ function createInvoice() {
 
 
 <script>
-// Display error and warning messages from session
-<?php if (isset($_SESSION['error_message'])): ?>
-    Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: '<?= addslashes($_SESSION['error_message']) ?>',
-        confirmButtonColor: '#d33'
-    });
-    <?php unset($_SESSION['error_message']); ?>
-<?php endif; ?>
+// Display error and warning messages from session - wait for DOM and SweetAlert to load
+document.addEventListener('DOMContentLoaded', function() {
+    <?php if (isset($_SESSION['error_message'])): ?>
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: '<?= addslashes($_SESSION['error_message']) ?>',
+                confirmButtonColor: '#d33'
+            });
+        } else {
+            alert('Error: <?= addslashes($_SESSION['error_message']) ?>');
+        }
+        <?php unset($_SESSION['error_message']); ?>
+    <?php endif; ?>
 
-<?php if (isset($_SESSION['warning_message'])): ?>
-    Swal.fire({
-        icon: 'warning',
-        title: 'Warning',
-        text: '<?= addslashes($_SESSION['warning_message']) ?>',
-        confirmButtonColor: '#ffc107'
-    });
-    <?php unset($_SESSION['warning_message']); ?>
-<?php endif; ?>
+    <?php if (isset($_SESSION['warning_message'])): ?>
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Warning',
+                text: '<?= addslashes($_SESSION['warning_message']) ?>',
+                confirmButtonColor: '#ffc107'
+            });
+        } else {
+            alert('Warning: <?= addslashes($_SESSION['warning_message']) ?>');
+        }
+        <?php unset($_SESSION['warning_message']); ?>
+    <?php endif; ?>
+});
 
 function convertToSale(invoiceId) {
     Swal.fire({
