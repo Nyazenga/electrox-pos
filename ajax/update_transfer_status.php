@@ -163,35 +163,61 @@ try {
                     $quantity = intval($item['quantity'] ?? 0);
                     
                     if ($productId > 0 && $quantity > 0 && $fromBranchId && $toBranchId) {
-                        // Check available stock in source branch
-                        $fromProduct = $db->getRow("SELECT quantity_in_stock FROM products WHERE id = :id AND branch_id = :branch_id", 
+                        // Check available stock in source branch and get product details
+                        $fromProduct = $db->getRow("SELECT quantity_in_stock, serial_number, imei FROM products WHERE id = :id AND branch_id = :branch_id", 
                             [':id' => $productId, ':branch_id' => $fromBranchId]);
                         
                         if (!$fromProduct || ($fromProduct['quantity_in_stock'] ?? 0) < $quantity) {
                             throw new Exception("Insufficient stock for product ID: {$productId} in source branch");
                         }
                         
-                        // Deduct from source branch
-                        $fromPreviousQuantity = (int)($fromProduct['quantity_in_stock'] ?? 0);
-                        $fromNewQuantity = $fromPreviousQuantity - $quantity;
+                        // Check if product is unique (has serial number or IMEI)
+                        $isUniqueProduct = !empty($fromProduct['serial_number']) || !empty($fromProduct['imei']);
                         
-                        $db->update('products', [
-                            'quantity_in_stock' => $fromNewQuantity
-                        ], ['id' => $productId, 'branch_id' => $fromBranchId]);
-                        
-                        $db->insert('stock_movements', [
-                            'product_id' => $productId,
-                            'branch_id' => $fromBranchId,
-                            'movement_type' => 'Transfer',
-                            'quantity' => -$quantity,
-                            'previous_quantity' => $fromPreviousQuantity,
-                            'new_quantity' => $fromNewQuantity,
-                            'reference_id' => $transferId,
-                            'reference_type' => 'Transfer',
-                            'user_id' => $userId,
-                            'notes' => 'Transfer Out: ' . $transfer['transfer_number'],
-                            'created_at' => date('Y-m-d H:i:s')
-                        ]);
+                        if ($isUniqueProduct) {
+                            // For unique products, completely remove from source branch
+                            $fromPreviousQuantity = (int)($fromProduct['quantity_in_stock'] ?? 0);
+                            
+                            // Delete the product from source branch
+                            $db->delete('products', ['id' => $productId, 'branch_id' => $fromBranchId]);
+                            
+                            // Create stock movement record
+                            $db->insert('stock_movements', [
+                                'product_id' => $productId,
+                                'branch_id' => $fromBranchId,
+                                'movement_type' => 'Transfer',
+                                'quantity' => -$fromPreviousQuantity,
+                                'previous_quantity' => $fromPreviousQuantity,
+                                'new_quantity' => 0,
+                                'reference_id' => $transferId,
+                                'reference_type' => 'Transfer',
+                                'user_id' => $userId,
+                                'notes' => 'Transfer Out (Unique Product Removed): ' . $transfer['transfer_number'],
+                                'created_at' => date('Y-m-d H:i:s')
+                            ]);
+                        } else {
+                            // For non-unique products, just reduce quantity
+                            $fromPreviousQuantity = (int)($fromProduct['quantity_in_stock'] ?? 0);
+                            $fromNewQuantity = $fromPreviousQuantity - $quantity;
+                            
+                            $db->update('products', [
+                                'quantity_in_stock' => $fromNewQuantity
+                            ], ['id' => $productId, 'branch_id' => $fromBranchId]);
+                            
+                            $db->insert('stock_movements', [
+                                'product_id' => $productId,
+                                'branch_id' => $fromBranchId,
+                                'movement_type' => 'Transfer',
+                                'quantity' => -$quantity,
+                                'previous_quantity' => $fromPreviousQuantity,
+                                'new_quantity' => $fromNewQuantity,
+                                'reference_id' => $transferId,
+                                'reference_type' => 'Transfer',
+                                'user_id' => $userId,
+                                'notes' => 'Transfer Out: ' . $transfer['transfer_number'],
+                                'created_at' => date('Y-m-d H:i:s')
+                            ]);
+                        }
                         
                         // Add to destination branch
                         $toProduct = $db->getRow("SELECT quantity_in_stock FROM products WHERE id = :id AND branch_id = :branch_id", 

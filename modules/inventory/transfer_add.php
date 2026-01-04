@@ -385,7 +385,6 @@ function confirmAddItem() {
     const productId = document.getElementById('selected_product_id').value;
     const productName = document.getElementById('product_search').value;
     const quantity = parseInt(document.getElementById('item_quantity').value);
-    const serialNumbers = document.getElementById('item_serial_numbers').value;
     const availableStock = parseInt(document.getElementById('item_quantity').max);
     
     if (!productId || !productName || !quantity || quantity <= 0) {
@@ -409,7 +408,6 @@ function confirmAddItem() {
         product_id: productId,
         product_name: productName,
         quantity: quantity,
-        serial_numbers: serialNumbers,
         available_stock: availableStock
     };
     
