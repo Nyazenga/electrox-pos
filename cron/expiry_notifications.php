@@ -12,6 +12,7 @@ set_time_limit(300);
 require_once dirname(dirname(__FILE__)) . '/config.php';
 require_once APP_PATH . '/includes/db.php';
 require_once APP_PATH . '/includes/settings_functions.php';
+require_once APP_PATH . '/includes/mailer.php';
 
 // Get notification settings
 $sendNotifications = getSetting('send_expiry_notifications', '0') == '1';
@@ -117,17 +118,18 @@ try {
     $message .= "\nPlease review and take appropriate action for these items.\n";
     $message .= "\nGenerated: " . date('Y-m-d H:i:s');
     
-    // Send email
-    $headers = "From: " . APP_NAME . " <noreply@" . $_SERVER['HTTP_HOST'] . ">\r\n";
-    $headers .= "Reply-To: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
-    $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
-    
-    $mailSent = @mail($notificationEmail, $subject, $message, $headers);
-    
-    if ($mailSent) {
-        error_log("Expiry notification sent successfully to: $notificationEmail");
-    } else {
-        error_log("Failed to send expiry notification to: $notificationEmail");
+    // Send email using Mailer class
+    try {
+        $mailer = new Mailer();
+        $mailSent = $mailer->send($notificationEmail, $subject, nl2br(htmlspecialchars($message)), false);
+        
+        if ($mailSent) {
+            error_log("Expiry notification sent successfully to: $notificationEmail");
+        } else {
+            error_log("Failed to send expiry notification to: $notificationEmail");
+        }
+    } catch (Exception $e) {
+        error_log("Error sending expiry notification: " . $e->getMessage());
     }
     
 } catch (Exception $e) {
