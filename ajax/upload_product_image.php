@@ -61,19 +61,32 @@ if ($_FILES['image']['size'] > $maxFileSize) {
     exit;
 }
 
+// Create upload directory structure
 $uploadDir = APP_PATH . '/uploads/products/';
+$uploadsBaseDir = APP_PATH . '/uploads/';
+
+// Try to create base uploads directory first if it doesn't exist
+if (!is_dir($uploadsBaseDir)) {
+    if (!mkdir($uploadsBaseDir, 0755, true)) {
+        error_log("Failed to create base uploads directory: $uploadsBaseDir");
+        echo json_encode(['success' => false, 'message' => 'Failed to create uploads directory. Please contact administrator to create the uploads directory with proper permissions.']);
+        exit;
+    }
+}
+
+// Now create products subdirectory if it doesn't exist
 if (!is_dir($uploadDir)) {
     if (!mkdir($uploadDir, 0755, true)) {
-        error_log("Failed to create upload directory: $uploadDir");
-        echo json_encode(['success' => false, 'message' => 'Failed to create upload directory']);
+        error_log("Failed to create products upload directory: $uploadDir. Base directory exists: " . (is_dir($uploadsBaseDir) ? 'yes' : 'no') . ", writable: " . (is_writable($uploadsBaseDir) ? 'yes' : 'no'));
+        echo json_encode(['success' => false, 'message' => 'Failed to create products upload directory. Please contact administrator to create the uploads/products directory with proper permissions (755).']);
         exit;
     }
 }
 
 // Check if directory is writable
 if (!is_writable($uploadDir)) {
-    error_log("Upload directory is not writable: $uploadDir");
-    echo json_encode(['success' => false, 'message' => 'Upload directory is not writable']);
+    error_log("Upload directory is not writable: $uploadDir. Permissions: " . substr(sprintf('%o', fileperms($uploadDir)), -4));
+    echo json_encode(['success' => false, 'message' => 'Upload directory is not writable. Please contact administrator to set write permissions (755) on the uploads/products directory.']);
     exit;
 }
 
