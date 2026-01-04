@@ -269,6 +269,50 @@ if ($usePDF) {
     // Set font
     $pdf->SetFont('helvetica', '', 10);
     
+    // Template-specific PDF styling
+    // Convert hex color to RGB for TCPDF
+    function hexToRgb($hex) {
+        $hex = ltrim($hex, '#');
+        if (strlen($hex) == 3) {
+            $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+        }
+        return [
+            hexdec(substr($hex, 0, 2)),
+            hexdec(substr($hex, 2, 2)),
+            hexdec(substr($hex, 4, 2))
+        ];
+    }
+    
+    $primaryRgb = hexToRgb($invoicePrimaryColor);
+    $lineWidth = 0.5; // Default line width
+    $headerBgColor = $primaryRgb; // Default header background
+    $clientBgColor = [233, 236, 239]; // Default client section background
+    $companyNameStyle = 'B'; // Default font style (Bold)
+    $companyNameSize = 16; // Default font size
+    
+    // Apply template-specific styling
+    if ($invoiceTemplate === 'classic') {
+        // Classic: Thicker lines, darker colors
+        $lineWidth = 0.8;
+        $companyNameStyle = 'B';
+        $companyNameSize = 17;
+    } elseif ($invoiceTemplate === 'minimal') {
+        // Minimal: Thinner lines, lighter colors
+        $lineWidth = 0.3;
+        $headerBgColor = [245, 245, 245]; // Light gray instead of primary color
+        $clientBgColor = [255, 255, 255]; // White (no background)
+        $companyNameStyle = '';
+        $companyNameSize = 15;
+    } elseif ($invoiceTemplate === 'elegant') {
+        // Elegant: Medium lines, primary color accents
+        $lineWidth = 0.6;
+        $companyNameStyle = 'BI'; // Bold Italic
+        $companyNameSize = 16;
+    }
+    // Modern template uses defaults
+    
+    $pdf->SetLineWidth($lineWidth);
+    
     // Get logo path for TCPDF Image() method
     $logoPath = '';
     $logoHeight = 0;
