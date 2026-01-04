@@ -297,7 +297,7 @@ require_once APP_PATH . '/includes/header.php';
                         </div>
                     </div>
                     
-                    <div class="alert alert-info mb-3">
+                    <div class="mb-3 p-3 bg-info bg-opacity-10 border border-info rounded">
                         <strong>Current Balance:</strong> <span id="settleCurrentBalance" class="fw-bold"></span>
                     </div>
                     
@@ -337,7 +337,7 @@ require_once APP_PATH . '/includes/header.php';
                     
                     <div class="mb-3">
                         <label class="form-label">Payment Amount *</label>
-                        <div class="alert alert-light border mb-2" id="settleExpectedPaymentAmount" style="display: none;">
+                        <div class="mb-2 p-2 bg-light border rounded" id="settleExpectedPaymentAmount" style="display: none;">
                             <small class="text-muted d-block mb-1"><strong>Expected Full Payment:</strong></small>
                             <span id="settleExpectedAmountValue" class="fw-bold"></span>
                         </div>
@@ -350,10 +350,10 @@ require_once APP_PATH . '/includes/header.php';
                         <textarea class="form-control" id="settleComment" name="comment" rows="3" placeholder="Optional notes about this payment"></textarea>
                     </div>
                     
-                    <div class="alert alert-warning" id="settleRemainingBalance" style="display: none;">
+                    <div class="mb-3 p-3 bg-warning bg-opacity-10 border border-warning rounded" id="settleRemainingBalance" style="display: none;">
                         <strong>Remaining Balance After Payment:</strong> <span id="settleRemainingAmount" class="fw-bold"></span>
                     </div>
-                    <div class="alert alert-danger" id="settleOverpaymentWarning" style="display: none;">
+                    <div class="mb-3 p-3 bg-danger bg-opacity-10 border border-danger rounded" id="settleOverpaymentWarning" style="display: none;">
                         <strong><i class="bi bi-exclamation-triangle"></i> Overpayment Warning:</strong> 
                         <span id="settleOverpaymentMessage"></span>
                     </div>
