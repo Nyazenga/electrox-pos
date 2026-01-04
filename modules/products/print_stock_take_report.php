@@ -249,6 +249,15 @@ if (!empty($detailedBreakdown)) {
         }
     }
     
+    // Total Amount Row
+    $pdf->SetFont('helvetica', 'B', 9);
+    $pdf->SetFillColor(240, 240, 240);
+    $totalAmountColor = $totalAmount >= 0 ? [0, 128, 0] : [220, 53, 69];
+    $pdf->Cell(163, 8, 'Total Amount Gained/Lost:', 1, 0, 'R', true);
+    $pdf->SetTextColor($totalAmountColor[0], $totalAmountColor[1], $totalAmountColor[2]);
+    $pdf->Cell(29, 8, ($totalAmount >= 0 ? '+' : '') . number_format($totalAmount, 2), 1, 1, 'R', true);
+    $pdf->SetTextColor(0, 0, 0);
+    
     $pdf->Ln(10);
 }
 
