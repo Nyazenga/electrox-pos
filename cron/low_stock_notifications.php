@@ -105,15 +105,20 @@ try {
     // Send email using Mailer class
     try {
         $mailer = new Mailer();
-        $mailSent = $mailer->send($notificationEmail, $subject, nl2br(htmlspecialchars($message)), false);
+        // Send as plain text (not HTML)
+        $mailSent = $mailer->send($notificationEmail, $subject, $message, false);
         
         if ($mailSent) {
             error_log("Low stock notification sent successfully to: $notificationEmail");
+            echo "Low stock notification sent successfully to: $notificationEmail\n";
         } else {
-            error_log("Failed to send low stock notification to: $notificationEmail");
+            $mailerError = $mailer->getMailer()->ErrorInfo;
+            error_log("Failed to send low stock notification to: $notificationEmail - Error: $mailerError");
+            echo "Failed to send low stock notification to: $notificationEmail - Error: $mailerError\n";
         }
     } catch (Exception $e) {
         error_log("Error sending low stock notification: " . $e->getMessage());
+        echo "Error sending low stock notification: " . $e->getMessage() . "\n";
     }
     
 } catch (Exception $e) {

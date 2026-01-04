@@ -121,15 +121,20 @@ try {
     // Send email using Mailer class
     try {
         $mailer = new Mailer();
-        $mailSent = $mailer->send($notificationEmail, $subject, nl2br(htmlspecialchars($message)), false);
+        // Send as plain text (not HTML)
+        $mailSent = $mailer->send($notificationEmail, $subject, $message, false);
         
         if ($mailSent) {
             error_log("Expiry notification sent successfully to: $notificationEmail");
+            echo "Expiry notification sent successfully to: $notificationEmail\n";
         } else {
-            error_log("Failed to send expiry notification to: $notificationEmail");
+            $mailerError = $mailer->getMailer()->ErrorInfo;
+            error_log("Failed to send expiry notification to: $notificationEmail - Error: $mailerError");
+            echo "Failed to send expiry notification to: $notificationEmail - Error: $mailerError\n";
         }
     } catch (Exception $e) {
         error_log("Error sending expiry notification: " . $e->getMessage());
+        echo "Error sending expiry notification: " . $e->getMessage() . "\n";
     }
     
 } catch (Exception $e) {
