@@ -308,9 +308,24 @@ try {
     }
     
 } catch (Exception $e) {
+    if (isset($db) && $db->inTransaction()) {
+        $db->rollbackTransaction();
+    }
+    $errorMessage = $e->getMessage();
+    error_log("Update transfer status error: " . $errorMessage);
+    error_log("Stack trace: " . $e->getTraceAsString());
     ob_end_clean();
-    logError("Update transfer status error: " . $e->getMessage());
-    echo json_encode(['success' => false, 'message' => 'An error occurred: ' . $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => 'An error occurred: ' . $errorMessage]);
+} catch (Error $e) {
+    // Catch fatal errors (PHP 7+)
+    if (isset($db) && $db->inTransaction()) {
+        $db->rollbackTransaction();
+    }
+    $errorMessage = $e->getMessage();
+    error_log("Update transfer status fatal error: " . $errorMessage);
+    error_log("Stack trace: " . $e->getTraceAsString());
+    ob_end_clean();
+    echo json_encode(['success' => false, 'message' => 'System error: ' . $errorMessage]);
 }
 
 
