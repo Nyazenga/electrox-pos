@@ -23,6 +23,14 @@ $customers = $db->getRows("SELECT * FROM customers WHERE status = 'Active' ORDER
 if ($customers === false) $customers = [];
 
 // Get products - handle both General category (product_name) and others (brand/model)
+// Filter by branch_id if available
+$productWhere = "p.status = 'Active'";
+$productParams = [];
+if ($branchId) {
+    $productWhere .= " AND p.branch_id = :branch_id";
+    $productParams[':branch_id'] = $branchId;
+}
+
 $products = $db->getRows("SELECT p.*, 
                          COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
                          pc.name as category_name,
@@ -30,8 +38,8 @@ $products = $db->getRows("SELECT p.*,
                          pc.tax_id as category_tax_id
                          FROM products p
                          LEFT JOIN product_categories pc ON p.category_id = pc.id
-                         WHERE p.status = 'Active' 
-                         ORDER BY COALESCE(p.product_name, p.brand, ''), p.model");
+                         WHERE $productWhere
+                         ORDER BY COALESCE(p.product_name, p.brand, ''), p.model", $productParams);
 if ($products === false) $products = [];
 
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
@@ -183,8 +191,8 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
                 
                 <div class="mb-3">
-                    <label class="form-label">Branch</label>
-                    <select name="branch_id" class="form-select">
+                    <label class="form-label">Branch *</label>
+                    <select name="branch_id" id="branchSelect" class="form-select" required>
                         <option value="">Select Branch</option>
                         <?php foreach ($branches as $branch): ?>
                             <option value="<?= $branch['id'] ?>" <?= $branchId == $branch['id'] ? 'selected' : '' ?>>
@@ -353,11 +361,116 @@ require_once APP_PATH . '/includes/header.php';
 let invoiceItems = [];
 let itemCounter = 0;
 
+// Store initial products for filtering
+let allProducts = <?= json_encode($products) ?>;
+
+// Function to load products by branch
+function loadProductsByBranch(branchId) {
+    if (!branchId) {
+        // Clear products if no branch selected
+        updateProductDropdown([]);
+        return;
+    }
+    
+    fetch('<?= BASE_URL ?>ajax/get_products_by_branch.php?branch_id=' + branchId)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                allProducts = data.products;
+                updateProductDropdown(data.products);
+            } else {
+                console.error('Failed to load products:', data.message);
+                updateProductDropdown([]);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading products:', error);
+            updateProductDropdown([]);
+        });
+}
+
+// Function to update product dropdown
+function updateProductDropdown(products) {
+    const productDropdown = document.getElementById('productDropdown');
+    if (!productDropdown) return;
+    
+    productDropdown.innerHTML = '';
+    
+    if (products.length === 0) {
+        const noProducts = document.createElement('div');
+        noProducts.className = 'dropdown-item text-muted';
+        noProducts.textContent = 'No products available for this branch';
+        productDropdown.appendChild(noProducts);
+        return;
+    }
+    
+    products.forEach(product => {
+        const productDisplayName = product.display_name || 
+            (product.product_name || (product.brand || '') + ' ' + (product.model || '')) || 
+            'Product #' + product.id;
+        
+        const item = document.createElement('a');
+        item.className = 'dropdown-item product-item';
+        item.href = '#';
+        item.setAttribute('data-id', product.id);
+        item.setAttribute('data-name', productDisplayName);
+        item.setAttribute('data-price', product.selling_price || 0);
+        item.setAttribute('data-stock', product.quantity_in_stock || 0);
+        item.setAttribute('data-tax-percent', product.tax_percent || 0);
+        item.setAttribute('data-tax-id', product.tax_id || '');
+        
+        item.innerHTML = productDisplayName + ' - ' + 
+            (product.selling_price ? '$' + parseFloat(product.selling_price).toFixed(2) : '$0.00') + 
+            ' (Stock: ' + (product.quantity_in_stock || 0) + ')' +
+            (product.category_name ? ' <small class="text-muted"> - ' + product.category_name + '</small>' : '');
+        
+        productDropdown.appendChild(item);
+    });
+    
+    // Click handler is already attached via event delegation, no need to re-attach
+}
+
 // Initialize: Disable save button on page load
 document.addEventListener('DOMContentLoaded', function() {
     const saveBtn = document.getElementById('saveInvoiceBtn');
     if (saveBtn) {
         saveBtn.disabled = true;
+    }
+    
+    // Handle branch change
+    const branchSelect = document.getElementById('branchSelect');
+    if (branchSelect) {
+        // Load products for initial branch
+        if (branchSelect.value) {
+            loadProductsByBranch(branchSelect.value);
+        }
+        
+        // Handle branch change
+        branchSelect.addEventListener('change', function() {
+            const branchId = this.value;
+            loadProductsByBranch(branchId);
+            
+            // Clear existing items if branch changes
+            if (invoiceItems.length > 0) {
+                Swal.fire({
+                    title: 'Branch Changed',
+                    text: 'Changing branch will clear all items. Continue?',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Yes, Clear Items',
+                    cancelButtonText: 'Cancel'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        invoiceItems = [];
+                        renderItems();
+                    } else {
+                        // Revert branch selection
+                        this.value = '<?= $branchId ?? '' ?>';
+                        loadProductsByBranch(this.value);
+                    }
+                });
+            }
+        });
     }
 });
 
@@ -407,6 +520,7 @@ if (productSearch && productDropdown) {
         setTimeout(() => productDropdown.style.display = 'none', 300);
     });
     
+    // Use event delegation for dynamically loaded products
     productDropdown.addEventListener('click', function(e) {
         e.preventDefault();
         const item = e.target.closest('.product-item');

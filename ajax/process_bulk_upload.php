@@ -42,29 +42,44 @@ if ($handle === false) {
     exit;
 }
 
+// Check for BOM
+$firstBytes = fread($handle, 3);
+$hasBOM = ($firstBytes === "\xEF\xBB\xBF");
+
+// Always rewind to start
+rewind($handle);
+
 // Skip BOM if present
-$firstLine = fgets($handle);
-if (substr($firstLine, 0, 3) === "\xEF\xBB\xBF") {
-    rewind($handle);
+if ($hasBOM) {
     fseek($handle, 3);
 }
 
 // Read header row
 $headers = fgetcsv($handle);
-if ($headers === false) {
+if ($headers === false || empty($headers)) {
     fclose($handle);
+    error_log("BULK UPLOAD ERROR: Failed to read CSV headers. File: " . $_FILES['csv_file']['name']);
     echo json_encode(['success' => false, 'message' => 'Invalid CSV format. Header row not found.']);
     exit;
 }
 
-// Normalize headers (trim whitespace, handle BOM)
+// Normalize headers (trim whitespace, handle BOM, remove quotes)
 $headers = array_map(function($h) {
-    $h = trim($h);
+    // Remove BOM if present
     if (substr($h, 0, 3) === "\xEF\xBB\xBF") {
         $h = substr($h, 3);
     }
+    // Trim whitespace and remove surrounding quotes
+    $h = trim($h);
+    if ((substr($h, 0, 1) === '"' && substr($h, -1) === '"') || 
+        (substr($h, 0, 1) === "'" && substr($h, -1) === "'")) {
+        $h = substr($h, 1, -1);
+    }
     return trim($h);
 }, $headers);
+
+// Log headers for debugging (only if error occurs)
+error_log("BULK UPLOAD DEBUG: Headers read: " . json_encode($headers));
 
 // Expected headers
 $expectedHeaders = [
@@ -75,16 +90,55 @@ $expectedHeaders = [
     'Quantity in Stock', 'Reorder Level', 'Tax ID', 'Status'
 ];
 
-// Validate headers
+// Validate headers - use case-insensitive matching for robustness
 $headerMap = [];
+$missingHeaders = [];
+$headersLower = array_map('strtolower', $headers);
+
 foreach ($expectedHeaders as $expected) {
+    // First try exact match
     $index = array_search($expected, $headers);
+    
+    // If not found, try case-insensitive match
     if ($index === false) {
-        fclose($handle);
-        echo json_encode(['success' => false, 'message' => "Missing required column: $expected"]);
-        exit;
+        $expectedLower = strtolower($expected);
+        $index = array_search($expectedLower, $headersLower);
     }
-    $headerMap[$expected] = $index;
+    
+    // If still not found, try with trimmed spaces
+    if ($index === false) {
+        foreach ($headers as $i => $h) {
+            if (strcasecmp(trim($h), trim($expected)) === 0) {
+                $index = $i;
+                break;
+            }
+        }
+    }
+    
+    if ($index === false) {
+        $missingHeaders[] = $expected;
+    } else {
+        $headerMap[$expected] = $index;
+    }
+}
+
+// If any headers are missing, return detailed error
+if (!empty($missingHeaders)) {
+    fclose($handle);
+    $missingList = implode(', ', $missingHeaders);
+    $foundHeaders = implode(', ', $headers);
+    error_log("BULK UPLOAD ERROR: Missing headers: $missingList");
+    error_log("BULK UPLOAD ERROR: Found headers: $foundHeaders");
+    echo json_encode([
+        'success' => false, 
+        'message' => "Missing required column(s): $missingList",
+        'debug' => [
+            'expected' => $expectedHeaders,
+            'found' => $headers,
+            'missing' => $missingHeaders
+        ]
+    ]);
+    exit;
 }
 
 // Get all categories and branches for lookup (cache once)

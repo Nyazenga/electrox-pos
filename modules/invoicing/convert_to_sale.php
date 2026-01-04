@@ -14,7 +14,7 @@ if (!$invoiceId) {
 }
 
 $db = Database::getInstance();
-$branchId = $_SESSION['branch_id'] ?? null;
+$primaryDb = Database::getPrimaryInstance();
 
 // Get invoice details
 $invoice = $db->getRow("SELECT * FROM invoices WHERE id = :id AND invoice_type = 'Proforma'", [':id' => $invoiceId]);
@@ -28,6 +28,16 @@ if ($invoice['status'] === 'Paid') {
     $_SESSION['error_message'] = 'This invoice has already been paid and converted to a sale.';
     redirectTo('modules/invoicing/index.php');
 }
+
+// Use invoice's branch_id, not session branch_id
+$invoiceBranchId = $invoice['branch_id'] ?? null;
+if (!$invoiceBranchId) {
+    $_SESSION['error_message'] = 'Invoice does not have a branch assigned. Cannot convert to sale.';
+    redirectTo('modules/invoicing/index.php');
+}
+
+// Update session branch_id to match invoice's branch for fiscalization
+$_SESSION['branch_id'] = $invoiceBranchId;
 
 // Get invoice items
 $invoiceItems = $db->getRows("SELECT * FROM invoice_items WHERE invoice_id = :id", [':id' => $invoiceId]);
@@ -46,20 +56,30 @@ if ($invoice['customer_id']) {
     $customer = $db->getRow("SELECT * FROM customers WHERE id = :id", [':id' => $invoice['customer_id']]);
 }
 
-// Get products and validate stock
+// Get products and validate stock IN THE INVOICE'S BRANCH
 $products = [];
 $stockIssues = [];
 foreach ($invoiceItems as $item) {
     if ($item['product_id']) {
+        // Validate product exists in the invoice's branch
         $product = $db->getRow("SELECT p.*, pc.tax_id as category_tax_id 
                                  FROM products p 
                                  LEFT JOIN product_categories pc ON p.category_id = pc.id 
-                                 WHERE p.id = :id", [':id' => $item['product_id']]);
-        if ($product) {
-            $products[$item['product_id']] = $product;
-            if ($product['quantity_in_stock'] < $item['quantity']) {
-                $stockIssues[] = $product['product_name'] ?? ($product['brand'] . ' ' . $product['model']) . ' (Stock: ' . $product['quantity_in_stock'] . ', Required: ' . $item['quantity'] . ')';
-            }
+                                 WHERE p.id = :id AND p.branch_id = :branch_id", 
+                                 [':id' => $item['product_id'], ':branch_id' => $invoiceBranchId]);
+        if (!$product) {
+            // Product not found in invoice's branch
+            $productName = 'Product ID ' . $item['product_id'];
+            $stockIssues[] = $productName . ' is not available in the invoice branch (Branch ID: ' . $invoiceBranchId . ')';
+            continue;
+        }
+        
+        $products[$item['product_id']] = $product;
+        
+        // Validate stock availability
+        if ($product['quantity_in_stock'] < $item['quantity']) {
+            $productName = $product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? ''));
+            $stockIssues[] = $productName . ' (Stock: ' . $product['quantity_in_stock'] . ', Required: ' . $item['quantity'] . ')';
         }
     }
 }
@@ -89,13 +109,12 @@ foreach ($invoiceItems as $item) {
     $categoryTaxId = $product['category_tax_id'] ?? null;
     $finalTaxId = $productTaxId ?: $categoryTaxId;
     
-    // Get tax percent from fiscal config if available
+    // Get tax percent from fiscal config if available (use invoice's branch)
     $taxPercent = 0;
-    if ($finalTaxId && $branchId) {
-        $primaryDb = Database::getPrimaryInstance();
+    if ($finalTaxId && $invoiceBranchId) {
         $fiscalConfig = $primaryDb->getRow(
             "SELECT applicable_taxes FROM fiscal_config WHERE branch_id = :branch_id LIMIT 1",
-            [':branch_id' => $branchId]
+            [':branch_id' => $invoiceBranchId]
         );
         if ($fiscalConfig && !empty($fiscalConfig['applicable_taxes'])) {
             $applicableTaxes = json_decode($fiscalConfig['applicable_taxes'], true);
@@ -153,10 +172,32 @@ if ($customer) {
 $_SESSION['pos_discount'] = $discount;
 $_SESSION['pos_delivery_cost'] = 0;
 
-// Show warning if stock issues exist
+// Show error if products are not available in invoice's branch
 if (!empty($stockIssues)) {
-    $_SESSION['warning_message'] = 'Some products have insufficient stock: ' . implode(', ', $stockIssues) . '. You can still proceed, but stock will go negative.';
+    $errorMessages = [];
+    $warningMessages = [];
+    
+    foreach ($stockIssues as $issue) {
+        if (strpos($issue, 'is not available in the invoice branch') !== false) {
+            $errorMessages[] = $issue;
+        } else {
+            $warningMessages[] = $issue;
+        }
+    }
+    
+    if (!empty($errorMessages)) {
+        $_SESSION['error_message'] = 'Cannot convert to sale: ' . implode(', ', $errorMessages);
+        redirectTo('modules/invoicing/index.php');
+    }
+    
+    if (!empty($warningMessages)) {
+        $_SESSION['warning_message'] = 'Some products have insufficient stock: ' . implode(', ', $warningMessages) . '. You can still proceed, but stock will go negative.';
+    }
 }
+
+// Ensure session branch_id matches invoice branch for correct fiscalization
+// This ensures the correct device ID is used based on the invoice's branch
+$_SESSION['branch_id'] = $invoiceBranchId;
 
 // Redirect to payment page
 redirectTo('modules/pos/payment.php?from_invoice=1');

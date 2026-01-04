@@ -99,21 +99,37 @@ try {
         }
     }
     
+    // Validate branch_id is required
+    $branchId = $input['branch_id'] ?: ($_SESSION['branch_id'] ?? null);
+    if (!$branchId) {
+        ob_clean();
+        echo json_encode(['success' => false, 'message' => 'Branch is required']);
+        ob_end_flush();
+        exit;
+    }
+    
+    // Format invoice_date properly (ensure it's datetime)
+    $invoiceDate = $input['invoice_date'] ?? date('Y-m-d');
+    if (strlen($invoiceDate) == 10) {
+        // If only date provided, add time
+        $invoiceDate = $invoiceDate . ' ' . date('H:i:s');
+    }
+    
     // Insert invoice
     $invoiceData = [
         'invoice_number' => $invoiceNumber,
         'invoice_type' => $invoiceType,
         'customer_id' => $input['customer_id'] ?: null,
-        'branch_id' => $input['branch_id'] ?: ($_SESSION['branch_id'] ?? null),
+        'branch_id' => $branchId,
         'user_id' => $_SESSION['user_id'],
         'subtotal' => $input['subtotal'] ?? 0,
         'discount_amount' => $input['discount_amount'] ?? 0,
         'tax_amount' => $input['tax_amount'] ?? 0,
         'total_amount' => $input['total_amount'] ?? 0,
         'balance_due' => $input['total_amount'] ?? 0,
-        'invoice_date' => $input['invoice_date'] ?? date('Y-m-d H:i:s'),
+        'invoice_date' => $invoiceDate,
         'due_date' => $dueDate,
-        'status' => 'Pending',
+        'status' => 'Draft', // Use 'Draft' instead of 'Pending' to match enum
         'notes' => $input['notes'] ?? null,
         'terms' => $input['terms'] ?? null
     ];

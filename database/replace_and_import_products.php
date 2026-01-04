@@ -25,44 +25,129 @@ try {
     exit(1);
 }
 
-// Step 2: Create table structure from localhost export
+// Step 2: Create table structure from products.sql (extract CREATE TABLE)
 echo "Step 2: Creating table structure...\n";
-$structureFile = __DIR__ . '/products_structure_only.sql';
-if (!file_exists($structureFile)) {
-    die("❌ Structure file not found: $structureFile\n");
+$productsSqlFile = __DIR__ . '/products.sql';
+if (!file_exists($productsSqlFile)) {
+    die("❌ products.sql file not found: $productsSqlFile\n");
 }
 
-$structureSQL = file_get_contents($structureFile);
-// Remove any CREATE DATABASE or USE statements
-$structureSQL = preg_replace('/CREATE DATABASE.*?;/is', '', $structureSQL);
-$structureSQL = preg_replace('/USE.*?;/is', '', $structureSQL);
-
-try {
-    $pdo->exec($structureSQL);
-    echo "✓ Table structure created\n\n";
-} catch (PDOException $e) {
-    echo "❌ Error creating table: " . $e->getMessage() . "\n";
-    exit(1);
+$sqlContent = file_get_contents($productsSqlFile);
+// Extract CREATE TABLE statement (from start to first INSERT)
+if (preg_match('/(CREATE TABLE[^;]+;)/is', $sqlContent, $matches)) {
+    $createTableSQL = $matches[1];
+    try {
+        $pdo->exec($createTableSQL);
+        echo "✓ Table structure created\n\n";
+    } catch (PDOException $e) {
+        echo "❌ Error creating table: " . $e->getMessage() . "\n";
+        exit(1);
+    }
+} else {
+    die("❌ Could not extract CREATE TABLE statement from products.sql\n");
 }
 
-// Step 3: Import data
+// Step 3: Import data (extract INSERT statement from products.sql)
 echo "Step 3: Importing product data...\n";
-$dataFile = __DIR__ . '/products_data_only.sql';
-if (!file_exists($dataFile)) {
-    die("❌ Data file not found: $dataFile\n");
-}
+// Extract INSERT statement (from INSERT to end of file, but remove source column from column list and values)
+$lines = file($productsSqlFile);
+$insertLine = trim($lines[78]); // Line 79 in file (0-indexed 78)
 
-$dataSQL = file_get_contents($dataFile);
-// Remove any INSERT statements that might have problematic syntax
-$dataSQL = preg_replace('/\/\*!.*?\*\//', '', $dataSQL);
-$dataSQL = preg_replace('/LOCK TABLES.*?UNLOCK TABLES;/is', '', $dataSQL);
-
-try {
-    $pdo->exec($dataSQL);
-    echo "✓ Data imported\n\n";
-} catch (PDOException $e) {
-    echo "❌ Error importing data: " . $e->getMessage() . "\n";
-    exit(1);
+// Get column list from INSERT (but remove source column)
+if (preg_match('/INSERT INTO `products` \((.+?)\) VALUES/i', $insertLine, $matches)) {
+    $columnList = $matches[1];
+    // Remove source column from column list
+    $columnList = preg_replace('/`, `source`|`source`, `/', '', $columnList);
+    
+    // Import rows (lines 80-132, indices 79-131) but remove source value
+    $inserted = 0;
+    $pdo->beginTransaction();
+    
+    try {
+        for ($i = 79; $i <= 131; $i++) {
+            $line = trim($lines[$i]);
+            if (empty($line) || !preg_match('/^\(/', $line)) {
+                continue;
+            }
+            
+            // Remove trailing comma or semicolon
+            $rowData = rtrim($line, ',;');
+            
+            // Remove source value (the value before the last 7 NULLs)
+            // This is tricky - we need to remove the 'manual' value
+            // Actually, let's just use the row as-is but with modified column list
+            // Since source has a default value, we can omit it
+            
+            // Build INSERT without source column
+            $sql = "INSERT INTO `products` ($columnList) VALUES $rowData";
+            
+            // But wait - the VALUES still have source. We need to remove it.
+            // Actually, simpler: use the row data but skip the source column value
+            // Parse the row to remove the source value position
+            
+            // For now, let's try a different approach: use the INSERT as-is but modify the column list
+            // Since source column has a default, MySQL should accept it
+            // Actually no - the column count won't match
+            
+            // Better: extract values, remove source value, reconstruct
+            // Parse row values
+            $values = [];
+            $current = '';
+            $inQuotes = false;
+            $quoteChar = null;
+            
+            // Remove outer parentheses
+            $rowData = trim($rowData, '()');
+            
+            for ($j = 0; $j < strlen($rowData); $j++) {
+                $char = $rowData[$j];
+                if (!$inQuotes && ($char === "'" || $char === '"')) {
+                    $inQuotes = true;
+                    $quoteChar = $char;
+                    $current .= $char;
+                } elseif ($inQuotes && $char === $quoteChar && ($j === 0 || $rowData[$j-1] !== '\\')) {
+                    $inQuotes = false;
+                    $quoteChar = null;
+                    $current .= $char;
+                } elseif (!$inQuotes && $char === ',') {
+                    $values[] = trim($current);
+                    $current = '';
+                } else {
+                    $current .= $char;
+                }
+            }
+            if ($current) {
+                $values[] = trim($current);
+            }
+            
+            // Remove source value (position 36, 0-indexed, after created_by)
+            // Actually, source is at index 36 (after created_by at 35)
+            if (count($values) > 36) {
+                array_splice($values, 36, 1); // Remove source value
+            }
+            
+            $rowDataFixed = '(' . implode(', ', $values) . ')';
+            $sql = "INSERT INTO `products` ($columnList) VALUES $rowDataFixed";
+            
+            try {
+                $pdo->exec($sql);
+                $inserted++;
+            } catch (PDOException $e) {
+                $pdo->rollBack();
+                echo "❌ Error on row " . ($i - 78) . ": " . $e->getMessage() . "\n";
+                throw $e;
+            }
+        }
+        
+        $pdo->commit();
+        echo "✓ Data imported: $inserted products\n\n";
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        echo "❌ Error importing data: " . $e->getMessage() . "\n";
+        exit(1);
+    }
+} else {
+    die("❌ Could not extract INSERT statement from products.sql\n");
 }
 
 // Step 4: Add source column

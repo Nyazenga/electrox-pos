@@ -1,0 +1,111 @@
+Category Name,Branch Name,Product Name,Brand,Model,Color,Storage,Battery Health,SIM Configuration,Serial Number,IMEI,Batch Number,Expiry Date,Weight,Unit of Measure,Manufacturer,Barcode,Description,Specifications,Cost Price,Selling Price,Quantity in Stock,Reorder Level,Tax ID,Status
+General,BELGRAVIA,Sugar White 2kg,,,,,,,,,BATCH001,2027-03-01,2.5,kg,Manufacturer Name,1234567890123,White granulated sugar,2kg pack,5.00,8.00,50,10,1,Active
+General,BELGRAVIA,Rice 2kg White,,,,,,,,,BATCH002,2027-04-15,2.0,kg,Local Producer,2345678901234,Premium white rice,2kg pack,6.00,10.00,75,15,1,Active
+General,BELGRAVIA,Cooking Oil 5L,,,,,,,,,BATCH003,2027-05-20,5.0,L,Oil Company,3456789012345,Vegetable cooking oil,5 liter bottle,12.00,18.00,30,10,1,Active
+General,BELGRAVIA,Tomatoes Fresh 1kg,,,,,,,,,BATCH004,2026-02-10,1.0,kg,Fresh Farms,4567890123456,Fresh red tomatoes,1kg pack,3.50,6.00,100,20,1,Active
+General,BELGRAVIA,Onions Yellow 1kg,,,,,,,,,BATCH005,2026-02-20,1.0,kg,Local Farm,5678901234567,Yellow onions,1kg net,2.50,5.00,80,15,1,Active
+General,BELGRAVIA,Potatoes 2kg,,,,,,,,,BATCH006,2026-03-15,2.0,kg,Farm Fresh,6789012345678,White potatoes,2kg bag,4.00,7.00,60,12,1,Active
+General,BELGRAVIA,Carrots 500g,,,,,,,,,BATCH007,2026-02-25,0.5,kg,Vegetable Co,7890123456789,Fresh carrots,500g pack,2.00,4.00,90,18,1,Active
+General,BELGRAVIA,Cabbage 1kg,,,,,,,,,BATCH008,2026-02-28,1.0,kg,Green Farms,8901234567890,Fresh cabbage,1kg head,3.00,6.00,70,14,1,Active
+General,BELGRAVIA,Beans Red 1kg,,,,,,,,,BATCH009,2027-06-30,1.0,kg,Legume Co,9012345678901,Red kidney beans,1kg pack,5.50,9.00,40,8,1,Active
+General,BELGRAVIA,Maize Meal 2kg,,,,,,,,,BATCH010,2027-07-15,2.0,kg,Milling Co,0123456789012,White maize meal,2kg pack,4.50,8.00,55,11,1,Active
+Smartphones,BELGRAVIA,,Apple,iPhone 15 Pro,Space Gray,256GB,100,Dual SIM,SN-IP15P-001,123456789012345,,,,,,,Latest iPhone with A17 Pro chip,6.1 inch display,1200.00,1500.00,1,0,517,Active
+Smartphones,BELGRAVIA,,Samsung,Galaxy S24 Ultra,Titanium Black,512GB,100,Dual SIM,SN-S24U-001,234567890123456,,,,,,,Premium Android flagship,6.8 inch display,1100.00,1400.00,1,0,517,Active
+Smartphones,BELGRAVIA,,Apple,iPhone 15,Blue,128GB,100,Single SIM,SN-IP15-001,345678901234567,,,,,,,Standard iPhone 15,6.1 inch display,800.00,1000.00,1,0,517,Active
+Smartphones,BELGRAVIA,,Samsung,Galaxy S24,Marble Gray,256GB,98,Dual SIM,SN-S24-001,456789012345678,,,,,,,Mid-range flagship,6.2 inch display,900.00,1150.00,1,0,517,Active
+Smartphones,BELGRAVIA,,Huawei,P50 Pro,Golden Black,256GB,95,Dual SIM,SN-P50P-001,567890123456789,,,,,,,Premium Huawei device,6.6 inch display,700.00,900.00,1,0,517,Active
+Laptops,BELGRAVIA,,Dell,XPS 15,Platinum Silver,1TB SSD,,,SN-DXPS15-001,,,,,,,,Premium laptop,Intel i7 16GB RAM,1800.00,2200.00,1,0,517,Active
+Laptops,BELGRAVIA,,Apple,MacBook Pro M3,Space Gray,512GB SSD,,,SN-MBP-M3-001,,,,,,,,Apple Silicon laptop,14 inch M3 chip,2000.00,2500.00,1,0,517,Active
+Laptops,BELGRAVIA,,HP,Spectre x360,Nightfall Black,512GB SSD,,,SN-HPSP-001,,,,,,,,Convertible laptop,13.5 inch touchscreen,1500.00,1900.00,1,0,517,Active
+Laptops,BELGRAVIA,,Lenovo,ThinkPad X1 Carbon,Black,1TB SSD,,,SN-TPX1-001,,,,,,,,Business laptop,14 inch ultrabook,1600.00,2000.00,1,0,517,Active
+Laptops,BELGRAVIA,,ASUS,ROG Strix,Black,1TB SSD,,,SN-ASUS-ROG-001,,,,,,,,Gaming laptop,15.6 inch RTX 4060,1700.00,2100.00,1,0,517,Active
+Tablets,BELGRAVIA,,Apple,iPad Pro 12.9 inch,Space Gray,256GB,100,,SN-IPAD12-001,,,,,,,,Large iPad Pro,12.9 inch M2 chip,1000.00,1300.00,1,0,517,Active
+Tablets,BELGRAVIA,,Samsung,Galaxy Tab S9,Graphite,256GB,98,,SN-GTAB-S9-001,,,,,,,,Android tablet,11 inch AMOLED,900.00,1150.00,1,0,517,Active
+Tablets,BELGRAVIA,,Apple,iPad Air,Blue,128GB,100,,SN-IPAD-AIR-001,,,,,,,,Mid-range iPad,10.9 inch M1 chip,600.00,800.00,1,0,517,Active
+Tablets,BELGRAVIA,,Microsoft,Surface Pro 9,Platinum,256GB,95,,SN-SURF-P9-001,,,,,,,,2-in-1 tablet,13 inch Windows,1200.00,1500.00,1,0,517,Active
+Tablets,BELGRAVIA,,Samsung,Galaxy Tab S8,Silver,128GB,97,,SN-GTAB-S8-001,,,,,,,,Previous gen tablet,11 inch LCD,700.00,950.00,1,0,517,Active
+Audio Devices,BELGRAVIA,,Apple,AirPods Pro,#45B7D1,,,,SN-AIRPODS-PRO-001,,,,,,,,Noise cancelling earbuds,Active noise cancellation,200.00,280.00,25,10,517,Active
+Audio Devices,BELGRAVIA,,Sony,WH-1000XM5,Black,,,,SN-SONY-XM5-001,,,,,,,,Premium headphones,Industry leading ANC,300.00,400.00,15,8,517,Active
+Audio Devices,BELGRAVIA,,Samsung,Galaxy Buds Pro,Phantom Black,,,,SN-SGBUDS-PRO-001,,,,,,,,Wireless earbuds,Active noise cancellation,150.00,220.00,30,12,517,Active
+Audio Devices,BELGRAVIA,,Bose,QuietComfort 45,Black,,,,SN-BOSE-QC45-001,,,,,,,,Noise cancelling headphones,Comfortable over-ear,280.00,380.00,18,9,517,Active
+Audio Devices,BELGRAVIA,,JBL,Flip 6,Blue,,,,SN-JBL-FLIP6-001,,,,,,,,Portable speaker,Waterproof Bluetooth,80.00,120.00,40,15,517,Active
+Charging Adapters,BELGRAVIA,,Apple,20W USB-C Power Adapter,#34495E,,,,SN-APPLE-20W-001,,,,,,,,Fast charging adapter,USB-C port,15.00,25.00,100,20,517,Active
+Charging Adapters,BELGRAVIA,,Samsung,25W Super Fast Charger,Black,,,,SN-SAM-25W-001,,,,,,,,Super fast charger,USB-C port,12.00,20.00,120,25,517,Active
+Charging Adapters,BELGRAVIA,,Anker,PowerPort III,White,,,,SN-ANKER-PP3-001,,,,,,,,Multi-port charger,2 USB-C 1 USB-A,25.00,40.00,50,10,517,Active
+Charging Adapters,BELGRAVIA,,Belkin,Boost Charge Pro,Black,,,,SN-BELKIN-BCP-001,,,,,,,,Wireless charger,15W MagSafe compatible,35.00,55.00,35,8,517,Active
+Charging Adapters,BELGRAVIA,,UGREEN,100W USB-C Charger,Black,,,,SN-UGREEN-100W-001,,,,,,,,High power charger,4 USB-C ports,45.00,70.00,25,6,517,Active
+Accessories,BELGRAVIA,,Apple,MagSafe Case,Clear,,,,SN-APPLE-CASE-001,,,,,,,,iPhone protective case,MagSafe compatible,30.00,50.00,60,12,517,Active
+Accessories,BELGRAVIA,,Spigen,Tough Armor,Black,,,,SN-SPIGEN-TA-001,,,,,,,,Rugged phone case,Multi-layer protection,20.00,35.00,80,15,517,Active
+Accessories,BELGRAVIA,,ESR,HaloLock Stand,Black,,,,SN-ESR-STAND-001,,,,,,,,MagSafe stand,Adjustable angle,25.00,45.00,45,9,517,Active
+Accessories,BELGRAVIA,,Anker,PowerCore 10000,Black,,,,SN-ANKER-PC10K-001,,,,,,,,Portable power bank,10000mAh capacity,40.00,65.00,55,11,517,Active
+Accessories,BELGRAVIA,,Logitech,MX Master 3S,Graphite,,,,SN-LOGI-MX3S-001,,,,,,,,Premium mouse,Ergonomic design,80.00,120.00,30,8,517,Active
+Wearables,BELGRAVIA,,Apple,Watch Series 9,Midnight,45mm,,,SN-AWATCH-S9-001,,,,,,,,Latest Apple Watch,GPS + Cellular,350.00,450.00,20,10,517,Active
+Wearables,BELGRAVIA,,Samsung,Galaxy Watch 6,Graphite,44mm,,,SN-SGWATCH-6-001,,,,,,,,Android smartwatch,Health tracking,280.00,380.00,25,12,517,Active
+Wearables,BELGRAVIA,,Fitbit,Charge 6,Black,,,,SN-FITBIT-C6-001,,,,,,,,Fitness tracker,Advanced health metrics,120.00,180.00,40,15,517,Active
+Wearables,BELGRAVIA,,Garmin,Forerunner 255,Black,,,,SN-GARMIN-F255-001,,,,,,,,Running watch,GPS + heart rate,250.00,350.00,18,9,517,Active
+Wearables,BELGRAVIA,,Xiaomi,Mi Band 8,Black,,,,SN-XIAOMI-MB8-001,,,,,,,,Budget fitness band,Long battery life,35.00,55.00,60,20,517,Active
+Gaming,BELGRAVIA,,Sony,PlayStation 5,White,,,,SN-PS5-001,,,,,,,,Next-gen console,4K gaming,500.00,650.00,15,5,517,Active
+Gaming,BELGRAVIA,,Microsoft,Xbox Series X,Black,,,,SN-XBOX-X-001,,,,,,,,Powerful console,4K 120fps,480.00,620.00,12,4,517,Active
+Gaming,BELGRAVIA,,Nintendo,Switch OLED,White,,,,SN-NSW-OLED-001,,,,,,,,Handheld console,7 inch OLED screen,320.00,400.00,20,8,517,Active
+Gaming,BELGRAVIA,,Razer,BlackWidow V4,Black,,,,SN-RAZER-BW4-001,,,,,,,,Mechanical keyboard,RGB lighting,150.00,220.00,25,10,517,Active
+Gaming,BELGRAVIA,,SteelSeries,Apex Pro,Black,,,,SN-SS-APEX-001,,,,,,,,Gaming keyboard,Adjustable actuation,180.00,260.00,22,9,517,Active
+Networking,BELGRAVIA,,TP-Link,Archer AX50,Black,,,,SN-TPL-AX50-001,,,,,,,,WiFi 6 router,Dual-band AX3000,80.00,120.00,30,10,517,Active
+Networking,BELGRAVIA,,Netgear,Nighthawk AX6,Black,,,,SN-NG-NH6-001,,,,,,,,High-speed router,AX6000 WiFi 6,150.00,220.00,18,6,517,Active
+Networking,BELGRAVIA,,ASUS,RT-AX86U,Black,,,,SN-ASUS-RT86-001,,,,,,,,Gaming router,AX5700 WiFi 6,200.00,300.00,15,5,517,Active
+Networking,BELGRAVIA,,Ubiquiti,UniFi AP AC Pro,White,,,,SN-UBI-AP-001,,,,,,,,Enterprise access point,802.11ac,120.00,180.00,20,8,517,Active
+Networking,BELGRAVIA,,Eero,Pro 6,White,,,,SN-EERO-P6-001,,,,,,,,Mesh WiFi system,Tri-band AX4200,250.00,380.00,12,4,517,Active
+General,RIDGEWAY,Flour White 2kg,,,,,,,,,BATCH101,2027-03-15,2.0,kg,Baking Co,9876543210987,All-purpose white flour,2kg pack,4.00,7.00,60,12,1,Active
+General,RIDGEWAY,Bread White Loaf,,,,,,,,,BATCH102,2026-02-05,0.5,kg,Bakery,8765432109876,Fresh white bread,500g loaf,2.00,4.00,100,20,1,Active
+General,RIDGEWAY,Milk Fresh 2L,,,,,,,,,BATCH103,2026-02-08,2.0,L,Dairy Farm,7654321098765,Fresh whole milk,2 liter carton,3.50,6.00,80,16,1,Active
+General,RIDGEWAY,Eggs Grade A 12pk,,,,,,,,,BATCH104,2026-02-12,0.6,kg,Egg Farm,6543210987654,Grade A eggs,12 pack,4.50,8.00,70,14,1,Active
+General,RIDGEWAY,Butter 500g,,,,,,,,,BATCH105,2027-04-30,0.5,kg,Dairy Co,5432109876543,Unsalted butter,500g block,5.00,9.00,50,10,1,Active
+General,RIDGEWAY,Cheese Cheddar 250g,,,,,,,,,BATCH106,2027-05-10,0.25,kg,Cheese Co,4321098765432,Mature cheddar,250g block,4.00,7.50,55,11,1,Active
+General,RIDGEWAY,Yogurt Natural 500g,,,,,,,,,BATCH107,2026-02-15,0.5,kg,Yogurt Co,3210987654321,Natural yogurt,500g tub,3.00,5.50,65,13,1,Active
+General,RIDGEWAY,Chicken Whole 1.5kg,,,,,,,,,BATCH108,2026-02-18,1.5,kg,Meat Co,2109876543210,Whole chicken,1.5kg bird,12.00,20.00,25,5,1,Active
+General,RIDGEWAY,Beef Mince 500g,,,,,,,,,BATCH109,2026-02-20,0.5,kg,Butcher,1098765432109,Lean beef mince,500g pack,8.00,14.00,35,7,1,Active
+General,RIDGEWAY,Pork Chops 1kg,,,,,,,,,BATCH110,2026-02-22,1.0,kg,Meat Farm,0987654321098,Pork chops,1kg pack,10.00,18.00,30,6,1,Active
+Smartphones,RIDGEWAY,,Apple,iPhone 14 Pro,Deep Purple,256GB,98,Dual SIM,SN-IP14P-RW-001,987654321098765,,,,,,,Previous gen iPhone,A16 Bionic chip,1000.00,1300.00,1,0,517,Active
+Smartphones,RIDGEWAY,,Samsung,Galaxy S23 Ultra,Phantom Black,512GB,97,Dual SIM,SN-S23U-RW-001,876543210987654,,,,,,,Previous flagship,6.8 inch display,950.00,1250.00,1,0,517,Active
+Smartphones,RIDGEWAY,,Google,Pixel 8 Pro,Obsidian,256GB,100,Single SIM,SN-PIX8P-RW-001,765432109876543,,,,,,,Google flagship,6.7 inch display,850.00,1100.00,1,0,517,Active
+Smartphones,RIDGEWAY,,OnePlus,12 Pro,Silky Black,256GB,99,Dual SIM,SN-OP12P-RW-001,654321098765432,,,,,,,Flagship killer,6.82 inch display,750.00,1000.00,1,0,517,Active
+Smartphones,RIDGEWAY,,Xiaomi,14 Pro,Black,512GB,96,Dual SIM,SN-XM14P-RW-001,543210987654321,,,,,,,Premium Xiaomi,6.73 inch display,700.00,950.00,1,0,517,Active
+Laptops,RIDGEWAY,,HP,Envy 15,Natural Silver,512GB SSD,,,SN-HPE15-RW-001,,,,,,,,Premium HP laptop,15.6 inch OLED,1400.00,1800.00,1,0,517,Active
+Laptops,RIDGEWAY,,Dell,Latitude 9440,Platinum,512GB SSD,,,SN-DL9440-RW-001,,,,,,,,Business laptop,14 inch premium,1300.00,1700.00,1,0,517,Active
+Laptops,RIDGEWAY,,Microsoft,Surface Laptop 5,Platinum,256GB SSD,,,SN-MS-SL5-RW-001,,,,,,,,Windows laptop,13.5 inch touch,1100.00,1450.00,1,0,517,Active
+Laptops,RIDGEWAY,,Acer,Predator Helios,Black,1TB SSD,,,SN-ACER-PH-RW-001,,,,,,,,Gaming laptop,15.6 inch RTX 4070,1600.00,2100.00,1,0,517,Active
+Laptops,RIDGEWAY,,MSI,Stealth 16,Black,1TB SSD,,,SN-MSI-S16-RW-001,,,,,,,,Gaming laptop,16 inch QHD,1500.00,2000.00,1,0,517,Active
+Tablets,RIDGEWAY,,Apple,iPad Mini,Starlight,256GB,100,,SN-IPAD-MINI-RW-001,,,,,,,,Compact iPad,8.3 inch A15 chip,500.00,700.00,1,0,517,Active
+Tablets,RIDGEWAY,,Samsung,Galaxy Tab A9,Silver,64GB,95,,SN-GTAB-A9-RW-001,,,,,,,,Budget tablet,10.5 inch,200.00,300.00,1,0,517,Active
+Tablets,RIDGEWAY,,Lenovo,Tab P11 Pro,Storm Grey,128GB,97,,SN-LEN-TP11-RW-001,,,,,,,,Android tablet,11.5 inch OLED,400.00,600.00,1,0,517,Active
+Tablets,RIDGEWAY,,Amazon,Fire HD 10,Black,32GB,90,,SN-AMZ-FHD10-RW-001,,,,,,,,Budget tablet,10.1 inch,80.00,120.00,1,0,517,Active
+Tablets,RIDGEWAY,,Google,Pixel Tablet,Porcelain,128GB,100,,SN-GPT-RW-001,,,,,,,,Google tablet,11 inch,450.00,650.00,1,0,517,Active
+Audio Devices,RIDGEWAY,,Apple,AirPods Max,Space Gray,,,,SN-AIRPODS-MAX-RW-001,,,,,,,,Over-ear headphones,Active noise cancellation,450.00,600.00,12,6,517,Active
+Audio Devices,RIDGEWAY,,Bose,QuietComfort Earbuds,Black,,,,SN-BOSE-QCE-RW-001,,,,,,,,True wireless earbuds,Noise cancelling,250.00,350.00,20,10,517,Active
+Audio Devices,RIDGEWAY,,Sennheiser,Momentum 4,Black,,,,SN-SENN-M4-RW-001,,,,,,,,Premium headphones,60-hour battery,350.00,480.00,15,8,517,Active
+Audio Devices,RIDGEWAY,,JBL,Charge 5,Blue,,,,SN-JBL-C5-RW-001,,,,,,,,Portable speaker,Waterproof Bluetooth,120.00,180.00,25,12,517,Active
+Audio Devices,RIDGEWAY,,Sony,WF-1000XM5,Black,,,,SN-SONY-WF5-RW-001,,,,,,,,True wireless earbuds,Industry leading ANC,280.00,380.00,18,9,517,Active
+Charging Adapters,RIDGEWAY,,Apple,MagSafe Charger,White,,,,SN-APPLE-MS-RW-001,,,,,,,,Wireless charger,MagSafe compatible,35.00,55.00,40,15,517,Active
+Charging Adapters,RIDGEWAY,,Samsung,Wireless Charger,Black,,,,SN-SAM-WC-RW-001,,,,,,,,Fast wireless charger,15W charging,30.00,50.00,45,18,517,Active
+Charging Adapters,RIDGEWAY,,Anker,PowerCore 20000,Black,,,,SN-ANKER-PC20K-RW-001,,,,,,,,Large power bank,20000mAh capacity,60.00,95.00,30,10,517,Active
+Charging Adapters,RIDGEWAY,,Belkin,Boost Charge,White,,,,SN-BELKIN-BC-RW-001,,,,,,,,Wireless charger,10W charging,25.00,45.00,50,20,517,Active
+Charging Adapters,RIDGEWAY,,UGREEN,65W GaN Charger,Black,,,,SN-UGREEN-65W-RW-001,,,,,,,,Compact charger,GaN technology,35.00,60.00,35,12,517,Active
+Accessories,RIDGEWAY,,Apple,MagSafe Wallet,Black,,,,SN-APPLE-WALLET-RW-001,,,,,,,,iPhone wallet,MagSafe attachment,50.00,80.00,30,10,517,Active
+Accessories,RIDGEWAY,,OtterBox,Defender Series,Black,,,,SN-OTTER-DEF-RW-001,,,,,,,,Rugged case,Multi-layer protection,40.00,70.00,35,12,517,Active
+Accessories,RIDGEWAY,,Mous,Limitless 5.0,Black,,,,SN-MOUS-L5-RW-001,,,,,,,,Premium case,Magnetic compatibility,45.00,75.00,28,9,517,Active
+Accessories,RIDGEWAY,,Anker,PowerLine III,Black,,,,SN-ANKER-PL3-RW-001,,,,,,,,USB-C cable,6ft length,15.00,25.00,60,20,517,Active
+Accessories,RIDGEWAY,,Logitech,MX Keys Mini,Graphite,,,,SN-LOGI-MXK-RW-001,,,,,,,,Compact keyboard,Backlit keys,70.00,110.00,25,8,517,Active
+Wearables,RIDGEWAY,,Apple,Watch Ultra 2,Titanium,49mm,,,SN-AWATCH-U2-RW-001,,,,,,,,Rugged Apple Watch,Action button,650.00,850.00,10,5,517,Active
+Wearables,RIDGEWAY,,Garmin,Fenix 7,Black,,,,SN-GARMIN-F7-RW-001,,,,,,,,Premium sports watch,GPS + maps,550.00,750.00,12,6,517,Active
+Wearables,RIDGEWAY,,Polar,Vantage V3,Black,,,,SN-POLAR-V3-RW-001,,,,,,,,Training watch,Advanced metrics,400.00,580.00,15,8,517,Active
+Wearables,RIDGEWAY,,Suunto,9 Peak Pro,Black,,,,SN-SUUNTO-9PP-RW-001,,,,,,,,Outdoor watch,Long battery life,350.00,500.00,18,9,517,Active
+Wearables,RIDGEWAY,,Amazfit,GTR 4,Black,,,,SN-AMAZ-GTR4-RW-001,,,,,,,,Smartwatch,14-day battery,120.00,180.00,30,15,517,Active
+Gaming,RIDGEWAY,,Sony,PlayStation 5 Slim,White,,,,SN-PS5-SLIM-RW-001,,,,,,,,Slim PS5 console,1TB storage,450.00,600.00,18,6,517,Active
+Gaming,RIDGEWAY,,Microsoft,Xbox Series S,White,,,,SN-XBOX-S-RW-001,,,,,,,,Digital console,512GB storage,280.00,380.00,25,10,517,Active
+Gaming,RIDGEWAY,,Steam,Deck OLED,Black,,,,SN-STEAM-DECK-RW-001,,,,,,,,Handheld PC,7.4 inch OLED,550.00,750.00,15,5,517,Active
+Gaming,RIDGEWAY,,Razer,DeathAdder V3,Black,,,,SN-RAZER-DA3-RW-001,,,,,,,,Gaming mouse,30K DPI sensor,80.00,120.00,35,12,517,Active
+Gaming,RIDGEWAY,,Corsair,K70 RGB TKL,Black,,,,SN-CORS-K70-RW-001,,,,,,,,Mechanical keyboard,Tenkeyless design,140.00,200.00,22,9,517,Active
+Networking,RIDGEWAY,,TP-Link,Deco XE75,White,,,,SN-TPL-DECO-RW-001,,,,,,,,Mesh WiFi system,AXE5400 WiFi 6E,200.00,300.00,15,6,517,Active
+Networking,RIDGEWAY,,Netgear,Orbi RBK753,Black,,,,SN-NG-ORBI-RW-001,,,,,,,,Tri-band mesh,AX4200 WiFi 6,350.00,500.00,10,4,517,Active
+Networking,RIDGEWAY,,ASUS,ZenWiFi AX6600,White,,,,SN-ASUS-ZW-RW-001,,,,,,,,Mesh system,AX6600 tri-band,280.00,420.00,12,5,517,Active
+Networking,RIDGEWAY,,Google,Nest WiFi Pro,White,,,,SN-GOOGLE-NW-RW-001,,,,,,,,Mesh system,WiFi 6E support,180.00,280.00,20,8,517,Active
+Networking,RIDGEWAY,,Eero,6 Plus,White,,,,SN-EERO-6P-RW-001,,,,,,,,Mesh WiFi,AX3000 dual-band,150.00,230.00,25,10,517,Active
