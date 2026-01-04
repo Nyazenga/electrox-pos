@@ -33,18 +33,12 @@ if (!$sendNotifications) {
 }
 
 try {
-    $db = Database::getInstance();
     $primaryDb = Database::getPrimaryInstance();
-    
-    // Get all branches
-    $branches = $primaryDb->getRows("SELECT * FROM branches WHERE status = 'Active'");
-    if ($branches === false) $branches = [];
     
     $lowStockProducts = [];
     
-    // Get products with low stock from all branches
-    // Query all products at once instead of per-branch to avoid duplicates
-    $products = $db->getRows("SELECT p.*, 
+    // Get products with low stock - products are in primary database
+    $products = $primaryDb->getRows("SELECT p.*, 
                                COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
                                pc.name as category_name,
                                b.branch_name
