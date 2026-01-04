@@ -483,7 +483,7 @@ function submitImageUpload() {
                 }
                 
                 table.DataTable({
-                    order: [[1, 'asc']], // Sort by product code
+                    order: [[12, 'desc']], // Sort by created_at (hidden column) - newest first
                     pageLength: 25,
                     destroy: true,
                     autoWidth: false,
@@ -504,7 +504,8 @@ function submitImageUpload() {
                         null, // Stock
                         null, // Price
                         null, // Status
-                        { orderable: false, searchable: false } // Actions
+                        { orderable: false, searchable: false }, // Actions
+                        { orderable: true, searchable: false, visible: false } // Created Date (hidden, for sorting)
                     ],
                     // Enable client-side search on all columns
                     search: {
