@@ -361,6 +361,7 @@ require_once APP_PATH . '/includes/header.php';
                                 <a href="delete.php?id=<?= $product['id'] ?>" class="btn btn-sm btn-danger delete-btn"><i class="bi bi-trash"></i></a>
                             <?php endif; ?>
                         </td>
+                        <td style="display: none;"><?= $product['created_at'] ?? '' ?></td> <!-- Hidden column for sorting by date created -->
                     </tr>
                 <?php endforeach; ?>
             </tbody>
