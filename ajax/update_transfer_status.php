@@ -98,15 +98,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-error_log("Reading input data..." . PHP_EOL, 3, $logFile);
+writeTransferLog("Reading input data..." . PHP_EOL, $logFile);
 $input = json_decode(file_get_contents('php://input'), true);
-error_log("Input data: " . json_encode($input) . PHP_EOL, 3, $logFile);
+writeTransferLog("Input data: " . json_encode($input) . PHP_EOL, $logFile);
 $transferId = intval($input['transfer_id'] ?? 0);
 $status = trim($input['status'] ?? '');
-error_log("Transfer ID: $transferId, Status: $status" . PHP_EOL, 3, $logFile);
+writeTransferLog("Transfer ID: $transferId, Status: $status" . PHP_EOL, $logFile);
 
 if (!$transferId || !in_array($status, ['Pending', 'Approved', 'InTransit', 'Received', 'Rejected', 'Completed'])) {
-    error_log("Invalid input - Transfer ID: $transferId, Status: $status" . PHP_EOL, 3, $logFile);
+    writeTransferLog("Invalid input - Transfer ID: $transferId, Status: $status" . PHP_EOL, $logFile);
     while (ob_get_level()) {
         ob_end_clean();
     }
@@ -116,11 +116,11 @@ if (!$transferId || !in_array($status, ['Pending', 'Approved', 'InTransit', 'Rec
 }
 
 try {
-    error_log("Getting Database instance..." . PHP_EOL, 3, $logFile);
+    writeTransferLog("Getting Database instance..." . PHP_EOL, $logFile);
     $db = Database::getInstance();
-    error_log("Database instance obtained" . PHP_EOL, 3, $logFile);
+    writeTransferLog("Database instance obtained" . PHP_EOL, $logFile);
     $userId = $_SESSION['user_id'] ?? null;
-    error_log("User ID: " . ($userId ?? 'NULL') . PHP_EOL, 3, $logFile);
+    writeTransferLog("User ID: " . ($userId ?? 'NULL') . PHP_EOL, $logFile);
     
     // Get current transfer status
     $transfer = $db->getRow("SELECT status, from_branch_id, to_branch_id, transfer_number FROM stock_transfers WHERE id = :id", [':id' => $transferId]);
@@ -405,6 +405,10 @@ try {
         $db->rollbackTransaction();
     }
     $errorMessage = $e->getMessage();
+    writeTransferLog("Update transfer status error: " . $errorMessage . PHP_EOL, $logFile);
+    writeTransferLog("Stack trace: " . $e->getTraceAsString() . PHP_EOL, $logFile);
+    writeTransferLog("=== TRANSFER STATUS UPDATE REQUEST FAILED ===" . PHP_EOL, $logFile);
+    // Also log to default error log
     error_log("Update transfer status error: " . $errorMessage);
     error_log("Stack trace: " . $e->getTraceAsString());
     while (ob_get_level()) {
@@ -419,6 +423,10 @@ try {
         $db->rollbackTransaction();
     }
     $errorMessage = $e->getMessage();
+    writeTransferLog("Update transfer status fatal error: " . $errorMessage . PHP_EOL, $logFile);
+    writeTransferLog("Stack trace: " . $e->getTraceAsString() . PHP_EOL, $logFile);
+    writeTransferLog("=== TRANSFER STATUS UPDATE REQUEST FAILED ===" . PHP_EOL, $logFile);
+    // Also log to default error log
     error_log("Update transfer status fatal error: " . $errorMessage);
     error_log("Stack trace: " . $e->getTraceAsString());
     while (ob_get_level()) {
