@@ -14,12 +14,14 @@ require_once APP_PATH . '/includes/db.php';
 require_once APP_PATH . '/includes/settings_functions.php';
 require_once APP_PATH . '/includes/mailer.php';
 
+// Email recipient - use same as fiscal day cron jobs
+$emailRecipient = 'nyazengamd@gmail.com';
+
 // Get notification settings
 $sendNotifications = getSetting('send_expiry_notifications', '0') == '1';
-$notificationEmail = getSetting('expiry_notification_email', '');
 
-if (!$sendNotifications || empty($notificationEmail)) {
-    exit(0); // Notifications disabled or no email configured
+if (!$sendNotifications) {
+    exit(0); // Notifications disabled
 }
 
 try {
@@ -69,72 +71,65 @@ try {
         exit(0); // No expiring products
     }
     
-    // Prepare email content
+    // Prepare email content - use HTML format like fiscal day cron jobs
     $subject = "Product Expiry Alert - " . date('Y-m-d');
-    $message = "Product Expiry Date Notification\n\n";
-    $message .= "The following products are expiring within 3 months:\n\n";
+    
+    // Build HTML email body
+    $body = "<html><body>";
+    $body .= "<h2>Product Expiry Date Notification</h2>";
+    $body .= "<p><strong>Date:</strong> " . date('Y-m-d H:i:s') . "</p>";
+    $body .= "<p>The following " . count($expiringProducts) . " product(s) are expiring within 3 months:</p>";
+    $body .= "<hr>";
     
     $currentBranch = null;
     foreach ($expiringProducts as $product) {
         if ($currentBranch !== $product['branch_name']) {
             $currentBranch = $product['branch_name'];
-            $message .= "\n=== " . ($currentBranch ?: 'All Branches') . " ===\n";
+            if ($currentBranch) {
+                $body .= "<h3>" . htmlspecialchars($currentBranch) . "</h3>";
+            }
         }
         
         $daysUntilExpiry = $product['days_until_expiry'];
-        $urgency = '';
+        $urgencyColor = '#000000';
+        $urgencyText = '';
         if ($daysUntilExpiry <= 30) {
-            $urgency = ' (URGENT - Expires in ' . $daysUntilExpiry . ' days)';
+            $urgencyColor = '#ff0000';
+            $urgencyText = ' (URGENT - Expires in ' . $daysUntilExpiry . ' days)';
         } elseif ($daysUntilExpiry <= 60) {
-            $urgency = ' (Expires in ' . $daysUntilExpiry . ' days)';
+            $urgencyColor = '#ff8800';
+            $urgencyText = ' (Expires in ' . $daysUntilExpiry . ' days)';
         } else {
-            $urgency = ' (Expires in ' . $daysUntilExpiry . ' days)';
+            $urgencyText = ' (Expires in ' . $daysUntilExpiry . ' days)';
         }
         
-        $message .= sprintf(
-            "Product: %s%s\n",
-            $product['display_name'],
-            $urgency
-        );
-        $message .= sprintf(
-            "  Code: %s\n",
-            $product['product_code'] ?: 'N/A'
-        );
-        $message .= sprintf(
-            "  Expiry Date: %s\n",
-            date('Y-m-d', strtotime($product['expiry_date']))
-        );
-        $message .= sprintf(
-            "  Current Stock: %s\n",
-            $product['quantity_in_stock']
-        );
-        $message .= sprintf(
-            "  Category: %s\n",
-            $product['category_name'] ?: 'Uncategorized'
-        );
-        $message .= "\n";
+        $body .= "<div style='border: 1px solid #ccc; padding: 10px; margin: 10px 0;'>";
+        $body .= "<p><strong>Product:</strong> " . htmlspecialchars($product['display_name']) . " <span style='color: {$urgencyColor}; font-weight: bold;'>" . htmlspecialchars($urgencyText) . "</span></p>";
+        $body .= "<p><strong>Code:</strong> " . htmlspecialchars($product['product_code'] ?: 'N/A') . "</p>";
+        $body .= "<p><strong>Expiry Date:</strong> " . htmlspecialchars(date('Y-m-d', strtotime($product['expiry_date']))) . "</p>";
+        $body .= "<p><strong>Current Stock:</strong> " . htmlspecialchars($product['quantity_in_stock']) . "</p>";
+        $body .= "<p><strong>Category:</strong> " . htmlspecialchars($product['category_name'] ?: 'Uncategorized') . "</p>";
+        $body .= "</div>";
     }
     
-    $message .= "\nPlease review and take appropriate action for these items.\n";
-    $message .= "\nGenerated: " . date('Y-m-d H:i:s');
+    $body .= "<hr>";
+    $body .= "<p>Please review and take appropriate action for these items.</p>";
+    $body .= "<p><em>Generated: " . date('Y-m-d H:i:s') . "</em></p>";
+    $body .= "</body></html>";
     
-    // Send email using Mailer class
+    // Send email using Mailer class - use HTML format like fiscal day cron jobs
     try {
         $mailer = new Mailer();
-        // Send as plain text (not HTML)
-        $mailSent = $mailer->send($notificationEmail, $subject, $message, false);
+        $mailSent = $mailer->send($emailRecipient, $subject, $body, true);
         
         if ($mailSent) {
-            error_log("Expiry notification sent successfully to: $notificationEmail");
-            echo "Expiry notification sent successfully to: $notificationEmail\n";
+            error_log("EXPIRY NOTIFICATION CRON: Email sent successfully to {$emailRecipient}");
         } else {
             $mailerError = $mailer->getMailer()->ErrorInfo;
-            error_log("Failed to send expiry notification to: $notificationEmail - Error: $mailerError");
-            echo "Failed to send expiry notification to: $notificationEmail - Error: $mailerError\n";
+            error_log("EXPIRY NOTIFICATION CRON: Failed to send email to {$emailRecipient} - Error: $mailerError");
         }
     } catch (Exception $e) {
-        error_log("Error sending expiry notification: " . $e->getMessage());
-        echo "Error sending expiry notification: " . $e->getMessage() . "\n";
+        error_log("EXPIRY NOTIFICATION CRON: Exception sending email: " . $e->getMessage());
     }
     
 } catch (Exception $e) {

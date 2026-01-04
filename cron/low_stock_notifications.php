@@ -14,12 +14,14 @@ require_once APP_PATH . '/includes/db.php';
 require_once APP_PATH . '/includes/settings_functions.php';
 require_once APP_PATH . '/includes/mailer.php';
 
+// Email recipient - use same as fiscal day cron jobs
+$emailRecipient = 'nyazengamd@gmail.com';
+
 // Get notification settings
 $sendNotifications = getSetting('send_low_stock_notifications', '0') == '1';
-$notificationEmail = getSetting('low_stock_notification_email', '');
 
-if (!$sendNotifications || empty($notificationEmail)) {
-    exit(0); // Notifications disabled or no email configured
+if (!$sendNotifications) {
+    exit(0); // Notifications disabled
 }
 
 try {
@@ -54,61 +56,52 @@ try {
         exit(0); // No low stock products
     }
     
-    // Prepare email content
+    // Prepare email content - use HTML format like fiscal day cron jobs
     $subject = "Low Stock Alert - " . date('Y-m-d');
-    $message = "Low Stock Level Notification\n\n";
-    $message .= "The following products are at or below their reorder levels:\n\n";
+    
+    // Build HTML email body
+    $body = "<html><body>";
+    $body .= "<h2>Low Stock Level Notification</h2>";
+    $body .= "<p><strong>Date:</strong> " . date('Y-m-d H:i:s') . "</p>";
+    $body .= "<p>The following " . count($lowStockProducts) . " product(s) are at or below their reorder levels:</p>";
+    $body .= "<hr>";
     
     $currentBranch = null;
     foreach ($lowStockProducts as $product) {
         if ($currentBranch !== $product['branch_name']) {
             $currentBranch = $product['branch_name'];
-            $message .= "\n=== " . ($currentBranch ?: 'All Branches') . " ===\n";
+            if ($currentBranch) {
+                $body .= "<h3>" . htmlspecialchars($currentBranch) . "</h3>";
+            }
         }
         
-        $message .= sprintf(
-            "Product: %s\n",
-            $product['display_name']
-        );
-        $message .= sprintf(
-            "  Code: %s\n",
-            $product['product_code'] ?: 'N/A'
-        );
-        $message .= sprintf(
-            "  Current Stock: %s\n",
-            $product['quantity_in_stock']
-        );
-        $message .= sprintf(
-            "  Reorder Level: %s\n",
-            $product['reorder_level']
-        );
-        $message .= sprintf(
-            "  Category: %s\n",
-            $product['category_name'] ?: 'Uncategorized'
-        );
-        $message .= "\n";
+        $body .= "<div style='border: 1px solid #ccc; padding: 10px; margin: 10px 0;'>";
+        $body .= "<p><strong>Product:</strong> " . htmlspecialchars($product['display_name']) . "</p>";
+        $body .= "<p><strong>Code:</strong> " . htmlspecialchars($product['product_code'] ?: 'N/A') . "</p>";
+        $body .= "<p><strong>Current Stock:</strong> " . htmlspecialchars($product['quantity_in_stock']) . "</p>";
+        $body .= "<p><strong>Reorder Level:</strong> " . htmlspecialchars($product['reorder_level']) . "</p>";
+        $body .= "<p><strong>Category:</strong> " . htmlspecialchars($product['category_name'] ?: 'Uncategorized') . "</p>";
+        $body .= "</div>";
     }
     
-    $message .= "\nPlease review and restock these items as needed.\n";
-    $message .= "\nGenerated: " . date('Y-m-d H:i:s');
+    $body .= "<hr>";
+    $body .= "<p>Please review and restock these items as needed.</p>";
+    $body .= "<p><em>Generated: " . date('Y-m-d H:i:s') . "</em></p>";
+    $body .= "</body></html>";
     
-    // Send email using Mailer class
+    // Send email using Mailer class - use HTML format like fiscal day cron jobs
     try {
         $mailer = new Mailer();
-        // Send as plain text (not HTML)
-        $mailSent = $mailer->send($notificationEmail, $subject, $message, false);
+        $mailSent = $mailer->send($emailRecipient, $subject, $body, true);
         
         if ($mailSent) {
-            error_log("Low stock notification sent successfully to: $notificationEmail");
-            echo "Low stock notification sent successfully to: $notificationEmail\n";
+            error_log("LOW STOCK NOTIFICATION CRON: Email sent successfully to {$emailRecipient}");
         } else {
             $mailerError = $mailer->getMailer()->ErrorInfo;
-            error_log("Failed to send low stock notification to: $notificationEmail - Error: $mailerError");
-            echo "Failed to send low stock notification to: $notificationEmail - Error: $mailerError\n";
+            error_log("LOW STOCK NOTIFICATION CRON: Failed to send email to {$emailRecipient} - Error: $mailerError");
         }
     } catch (Exception $e) {
-        error_log("Error sending low stock notification: " . $e->getMessage());
-        echo "Error sending low stock notification: " . $e->getMessage() . "\n";
+        error_log("LOW STOCK NOTIFICATION CRON: Exception sending email: " . $e->getMessage());
     }
     
 } catch (Exception $e) {
