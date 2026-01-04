@@ -32,16 +32,18 @@ $emailRecipient = 'nyazengamd@gmail.com';
 
 // Force enable
 $primaryDb = Database::getPrimaryInstance();
+echo "Primary DB instance created\n";
+flush();
+
 $primaryDb->query("INSERT INTO settings (setting_key, value) VALUES ('send_low_stock_notifications', '1') ON DUPLICATE KEY UPDATE value = '1'");
 echo "Settings configured\n";
 flush();
 
-// Get products
-$db = Database::getInstance();
+// Get products - use primary DB like fiscal day cron jobs
 echo "Getting products...\n";
 flush();
 
-$products = $db->getRows("SELECT p.*, 
+$products = $primaryDb->getRows("SELECT p.*, 
                            COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
                            pc.name as category_name,
                            b.branch_name
