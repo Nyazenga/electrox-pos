@@ -228,6 +228,27 @@ function createInvoice() {
 
 
 <script>
+// Display error and warning messages from session
+<?php if (isset($_SESSION['error_message'])): ?>
+    Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: '<?= addslashes($_SESSION['error_message']) ?>',
+        confirmButtonColor: '#d33'
+    });
+    <?php unset($_SESSION['error_message']); ?>
+<?php endif; ?>
+
+<?php if (isset($_SESSION['warning_message'])): ?>
+    Swal.fire({
+        icon: 'warning',
+        title: 'Warning',
+        text: '<?= addslashes($_SESSION['warning_message']) ?>',
+        confirmButtonColor: '#ffc107'
+    });
+    <?php unset($_SESSION['warning_message']); ?>
+<?php endif; ?>
+
 function convertToSale(invoiceId) {
     Swal.fire({
         title: 'Convert to Sale?',

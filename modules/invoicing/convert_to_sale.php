@@ -139,6 +139,27 @@ foreach ($invoiceItems as $item) {
     ];
 }
 
+// Check if cart is empty (all products don't exist or were excluded)
+if (empty($cart)) {
+    $missingProducts = [];
+    foreach ($invoiceItems as $item) {
+        if ($item['product_id']) {
+            $product = $products[$item['product_id']] ?? null;
+            if (!$product) {
+                $missingProducts[] = 'Product ID ' . $item['product_id'];
+            }
+        }
+    }
+    
+    if (!empty($missingProducts)) {
+        $_SESSION['error_message'] = 'Cannot convert to sale: The following products no longer exist in the invoice branch: ' . implode(', ', array_unique($missingProducts)) . '. Please update the invoice or ensure the products are available in the branch.';
+        redirectTo('modules/invoicing/index.php');
+    } else {
+        $_SESSION['error_message'] = 'Cannot convert to sale: No valid products found to convert. All items were excluded.';
+        redirectTo('modules/invoicing/index.php');
+    }
+}
+
 // Warn if manual items were excluded
 if (!empty($manualItems)) {
     $_SESSION['warning_message'] = 'Some manual items (without products) were excluded from conversion: ' . implode(', ', $manualItems) . '. Only items with products can be converted to sales.';
