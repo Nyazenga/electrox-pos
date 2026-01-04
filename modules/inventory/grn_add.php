@@ -251,13 +251,9 @@ require_once APP_PATH . '/includes/header.php';
                     </div>
                 </div>
                 <div class="row mb-3">
-                    <div class="col-md-6">
+                    <div class="col-md-12">
                         <label class="form-label">Quantity *</label>
                         <input type="number" class="form-control" id="item_quantity" min="1" value="1" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Serial Numbers (Optional)</label>
-                        <textarea class="form-control" id="item_serial_numbers" rows="2" placeholder="Enter serial numbers, one per line"></textarea>
                     </div>
                 </div>
                 <div class="row mb-3">
@@ -515,7 +511,6 @@ function confirmAddItem() {
     const productId = document.getElementById('selected_product_id').value;
     const productName = document.getElementById('product_search').value;
     const quantity = parseInt(document.getElementById('item_quantity').value);
-    const serialNumbers = document.getElementById('item_serial_numbers').value;
     const costPrice = parseFloat(document.getElementById('item_cost_price').value);
     const sellingPrice = parseFloat(document.getElementById('item_selling_price').value);
     
@@ -529,7 +524,6 @@ function confirmAddItem() {
         product_id: productId,
         product_name: productName,
         quantity: quantity,
-        serial_numbers: serialNumbers,
         cost_price: costPrice,
         selling_price: sellingPrice,
         total: costPrice * quantity

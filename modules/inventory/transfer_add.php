@@ -369,7 +369,6 @@ function addItem() {
     document.getElementById('product_search').value = '';
     document.getElementById('selected_product_id').value = '';
     document.getElementById('item_quantity').value = '1';
-    document.getElementById('item_serial_numbers').value = '';
     document.getElementById('available_stock_text').textContent = '';
     
     // Ensure products are loaded for current branch
