@@ -1,4 +1,7 @@
 <?php
+// Start output buffering to catch any unexpected output
+ob_start();
+
 require_once dirname(dirname(__FILE__)) . '/config.php';
 require_once APP_PATH . '/includes/session.php';
 require_once APP_PATH . '/includes/db.php';
@@ -6,6 +9,9 @@ require_once APP_PATH . '/includes/auth.php';
 require_once APP_PATH . '/vendor/autoload.php';
 
 initSession();
+
+// Clear any output that might have been generated
+ob_clean();
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -65,6 +71,7 @@ $products = $db->getRows($sql, $params);
 
 if ($products === false) {
     error_log("Barcode generation query failed. SQL: $sql, Params: " . json_encode($params));
+    ob_clean();
     echo json_encode(['success' => false, 'message' => 'Database query failed. Please check error logs.']);
     exit;
 }
@@ -77,6 +84,7 @@ if (empty($products)) {
         $message .= '. Selected products already have barcodes. Check "Replace existing barcodes" to regenerate them.';
     }
     error_log("No products found. SQL: $sql, Params: " . json_encode($params) . ", Replace existing: " . ($replaceExisting ? 'true' : 'false'));
+    ob_clean();
     echo json_encode(['success' => false, 'message' => $message]);
     exit;
 }
@@ -119,12 +127,20 @@ foreach ($products as $product) {
 }
 
 if ($generated === 0) {
+    ob_clean();
     echo json_encode(['success' => false, 'message' => 'Failed to generate any barcodes']);
     exit;
 }
 
 // Generate PDF with barcodes
 try {
+    // Suppress any warnings/errors from TCPDF
+    $oldErrorReporting = error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
+    
+    if (!class_exists('TCPDF')) {
+        throw new Exception('TCPDF class not found. Please ensure TCPDF is installed via Composer.');
+    }
+    
     $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
     $pdf->SetCreator('ELECTROX-POS');
     $pdf->SetAuthor('ELECTROX-POS');
@@ -199,13 +215,33 @@ try {
     
     // Save PDF
     $filename = 'barcodes_' . date('YmdHis') . '.pdf';
-    $filepath = APP_PATH . '/uploads/barcodes/' . $filename;
+    $barcodeDir = APP_PATH . '/uploads/barcodes';
+    $filepath = $barcodeDir . '/' . $filename;
     
-    if (!is_dir(dirname($filepath))) {
-        mkdir(dirname($filepath), 0755, true);
+    // Ensure directory exists
+    if (!is_dir($barcodeDir)) {
+        if (!mkdir($barcodeDir, 0755, true)) {
+            throw new Exception('Failed to create barcodes upload directory');
+        }
+    }
+    
+    // Ensure directory is writable
+    if (!is_writable($barcodeDir)) {
+        throw new Exception('Barcodes upload directory is not writable');
     }
     
     $pdf->Output($filepath, 'F');
+    
+    // Verify file was created
+    if (!file_exists($filepath)) {
+        throw new Exception('PDF file was not created successfully');
+    }
+    
+    // Restore error reporting
+    error_reporting($oldErrorReporting);
+    
+    // Clear any output from TCPDF
+    ob_clean();
     
     echo json_encode([
         'success' => true,
@@ -214,6 +250,12 @@ try {
     ]);
     
 } catch (Exception $e) {
+    // Restore error reporting
+    error_reporting($oldErrorReporting);
+    
+    // Clear any output
+    ob_clean();
+    
     error_log("Barcode PDF generation error: " . $e->getMessage());
     echo json_encode([
         'success' => true,

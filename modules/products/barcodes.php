@@ -344,7 +344,15 @@ function confirmGenerateAll() {
             replace_existing: replaceExisting
         })
     })
-    .then(response => response.json())
+    .then(async response => {
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('Non-JSON response received:', text.substring(0, 200));
+            throw new Error('Server returned non-JSON response. Check console for details.');
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             Swal.fire({
@@ -411,7 +419,15 @@ function confirmGenerateSelected() {
             replace_existing: replaceExisting
         })
     })
-    .then(response => response.json())
+    .then(async response => {
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('Non-JSON response received:', text.substring(0, 200));
+            throw new Error('Server returned non-JSON response. Check console for details.');
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             Swal.fire({
