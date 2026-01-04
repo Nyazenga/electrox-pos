@@ -917,8 +917,8 @@ if ($checkLowStockAtLogin && $isAdministrator && !isset($_SESSION['low_stock_che
         <?php endif; ?>
     </div>
 
-    <!-- Sales Summary - Only show hourly charts for single day view -->
-    <?php if ($startDate === $endDate): ?>
+    <!-- Sales Summary - Only show hourly charts for today's date -->
+    <?php if ($startDate === date('Y-m-d') && $endDate === date('Y-m-d')): ?>
     <div class="row g-3 mb-4">
         <div class="col-lg-8">
             <div class="chart-card-modern">
@@ -1129,8 +1129,8 @@ new Chart(document.getElementById('grossProfitChart'), {
     options: miniChartOptions
 });
 
-<?php if ($startDate === $endDate): ?>
-// Sales Summary Chart - Only show for single day view
+<?php if ($startDate === date('Y-m-d') && $endDate === date('Y-m-d')): ?>
+// Sales Summary Chart - Only show for today's date
 const todayCtx = document.getElementById('todaySalesChart').getContext('2d');
 new Chart(todayCtx, {
     type: 'bar',
@@ -1235,7 +1235,7 @@ new Chart(document.getElementById('deductionChart'), {
     }
 });
 
-// Sales Deduction Chart (Full Width) - Only show for single day view
+// Sales Deduction Chart (Full Width) - Only show for today's date
 const deductionCtx = document.getElementById('todayDeductionChart').getContext('2d');
 new Chart(deductionCtx, {
     type: 'bar',
