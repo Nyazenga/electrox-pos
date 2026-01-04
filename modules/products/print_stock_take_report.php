@@ -199,33 +199,44 @@ if (!empty($detailedBreakdown)) {
     $pdf->SetFont('helvetica', 'B', 10);
     $pdf->Cell(0, 8, 'DETAILED BREAKDOWN', 1, 1, 'L', true);
     
-    // Table Header
+    // Table Header - adjust column widths to fit all columns
     $pdf->SetFillColor(30, 58, 138);
     $pdf->SetTextColor(255, 255, 255);
     $pdf->SetFont('helvetica', 'B', 8);
-    $pdf->Cell(15, 8, '#', 1, 0, 'C', true);
-    $pdf->Cell(30, 8, 'Code', 1, 0, 'L', true);
-    $pdf->Cell(60, 8, 'Product', 1, 0, 'L', true);
-    $pdf->Cell(25, 8, 'Current', 1, 0, 'R', true);
-    $pdf->Cell(25, 8, 'Counted', 1, 0, 'R', true);
-    $pdf->Cell(30, 8, 'Difference', 1, 1, 'R', true);
+    $pdf->Cell(12, 8, '#', 1, 0, 'C', true);
+    $pdf->Cell(25, 8, 'Code', 1, 0, 'L', true);
+    $pdf->Cell(50, 8, 'Product', 1, 0, 'L', true);
+    $pdf->Cell(22, 8, 'Current', 1, 0, 'R', true);
+    $pdf->Cell(22, 8, 'Counted', 1, 0, 'R', true);
+    $pdf->Cell(25, 8, 'Difference', 1, 0, 'R', true);
+    $pdf->Cell(29, 8, 'Amount', 1, 1, 'R', true);
     
     // Table Rows
     $pdf->SetTextColor(0, 0, 0);
     $pdf->SetFont('helvetica', '', 8);
     $pdf->SetFillColor(255, 255, 255);
     
+    $totalAmount = 0;
     foreach ($detailedBreakdown as $index => $item) {
         $difference = floatval($item['difference'] ?? 0);
         $diffColor = $difference >= 0 ? [0, 128, 0] : [220, 53, 69];
         
-        $pdf->Cell(15, 7, ($index + 1), 1, 0, 'C');
-        $pdf->Cell(30, 7, htmlspecialchars(substr($item['product_code'] ?? 'N/A', 0, 12)), 1, 0, 'L');
-        $pdf->Cell(60, 7, htmlspecialchars(substr($item['product_name'] ?? 'N/A', 0, 30)), 1, 0, 'L');
-        $pdf->Cell(25, 7, number_format($item['current_stock'] ?? 0, 2), 1, 0, 'R');
-        $pdf->Cell(25, 7, number_format($item['counted_stock'] ?? 0, 2), 1, 0, 'R');
+        // Get product cost_price
+        $product = $db->getRow("SELECT cost_price FROM products WHERE id = :id", [':id' => intval($item['product_id'] ?? 0)]);
+        $costPrice = $product ? floatval($product['cost_price'] ?? 0) : 0;
+        
+        // Calculate amount gained/lost
+        $amount = $difference * $costPrice;
+        $totalAmount += $amount;
+        
+        $pdf->Cell(12, 7, ($index + 1), 1, 0, 'C');
+        $pdf->Cell(25, 7, htmlspecialchars(substr($item['product_code'] ?? 'N/A', 0, 10)), 1, 0, 'L');
+        $pdf->Cell(50, 7, htmlspecialchars(substr($item['product_name'] ?? 'N/A', 0, 25)), 1, 0, 'L');
+        $pdf->Cell(22, 7, number_format($item['current_stock'] ?? 0, 2), 1, 0, 'R');
+        $pdf->Cell(22, 7, number_format($item['counted_stock'] ?? 0, 2), 1, 0, 'R');
         $pdf->SetTextColor($diffColor[0], $diffColor[1], $diffColor[2]);
-        $pdf->Cell(30, 7, ($difference >= 0 ? '+' : '') . number_format($difference, 2), 1, 1, 'R');
+        $pdf->Cell(25, 7, ($difference >= 0 ? '+' : '') . number_format($difference, 2), 1, 0, 'R');
+        $pdf->Cell(29, 7, ($amount >= 0 ? '+' : '') . number_format($amount, 2), 1, 1, 'R');
         $pdf->SetTextColor(0, 0, 0);
         
         // Add notes if available
