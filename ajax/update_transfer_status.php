@@ -250,11 +250,11 @@ try {
                                     'reorder_level' => $sourceProduct['reorder_level'] ?? 0,
                                     'branch_id' => $toBranchId,
                                     'tax_id' => $sourceProduct['tax_id'] ?? null,
-                                    'quantity_in_stock' => $quantity,
-                                    'status' => $sourceProduct['status'] ?? 'Active',
-                                    'created_by' => $userId,
-                                    'source' => 'transfer',
-                                    'created_at' => date('Y-m-d H:i:s'),
+                                            'quantity_in_stock' => $quantity,
+                                            'status' => $sourceProduct['status'] ?? 'Active',
+                                            'created_by' => $userId,
+                                            'source' => 'manual', // Use 'manual' instead of 'transfer' as enum only accepts 'manual' or 'bulk_upload'
+                                            'created_at' => date('Y-m-d H:i:s'),
                                     'images' => $sourceProduct['images'] ?? null
                                 ];
                                 
