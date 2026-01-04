@@ -132,10 +132,56 @@ try {
                                 'created_at' => date('Y-m-d H:i:s')
                             ]);
                         } else {
-                            // Product doesn't exist in destination branch - create entry or skip
-                            // For now, we'll skip adding to destination if product doesn't exist
-                            // This could be enhanced to create the product entry
-                            error_log("Product ID {$productId} does not exist in destination branch {$toBranchId}");
+                            // Product doesn't exist in destination branch - create new product entry
+                            $sourceProduct = $db->getRow("SELECT * FROM products WHERE id = :id AND branch_id = :branch_id", 
+                                [':id' => $productId, ':branch_id' => $fromBranchId]);
+                            
+                            if ($sourceProduct) {
+                                // Copy source product data and create new entry in destination branch
+                                $newProductData = $sourceProduct;
+                                unset($newProductData['id']); // Remove ID so new one is auto-generated
+                                unset($newProductData['created_at']); // Remove created_at so it gets current timestamp
+                                unset($newProductData['updated_at']); // Remove updated_at
+                                
+                                // Update branch_id and quantity
+                                $newProductData['branch_id'] = $toBranchId;
+                                $newProductData['quantity_in_stock'] = $quantity;
+                                $newProductData['created_by'] = $userId;
+                                $newProductData['source'] = 'transfer';
+                                $newProductData['created_at'] = date('Y-m-d H:i:s');
+                                
+                                // Generate new product code (must be unique)
+                                require_once APP_PATH . '/includes/session.php';
+                                do {
+                                    $newProductCode = generateProductCode();
+                                    $existing = $db->getRow("SELECT id FROM products WHERE product_code = :code", [':code' => $newProductCode]);
+                                } while ($existing);
+                                $newProductData['product_code'] = $newProductCode;
+                                
+                                // Insert new product in destination branch
+                                $newProductId = $db->insert('products', $newProductData);
+                                
+                                if ($newProductId) {
+                                    // Create stock movement record
+                                    $db->insert('stock_movements', [
+                                        'product_id' => $newProductId,
+                                        'branch_id' => $toBranchId,
+                                        'movement_type' => 'Transfer',
+                                        'quantity' => $quantity,
+                                        'previous_quantity' => 0,
+                                        'new_quantity' => $quantity,
+                                        'reference_id' => $transferId,
+                                        'reference_type' => 'Transfer',
+                                        'user_id' => $userId,
+                                        'notes' => 'Transfer In: ' . $transfer['transfer_number'],
+                                        'created_at' => date('Y-m-d H:i:s')
+                                    ]);
+                                } else {
+                                    throw new Exception("Failed to create product in destination branch: " . $db->getLastError());
+                                }
+                            } else {
+                                throw new Exception("Source product not found for product ID: {$productId} in branch {$fromBranchId}");
+                            }
                         }
                     }
                 }
