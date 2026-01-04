@@ -28,9 +28,6 @@ try {
     ];
     $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
     
-    // Force enable notifications
-    $pdo->exec("INSERT INTO settings (setting_key, value) VALUES ('send_expiry_notifications', '1') ON DUPLICATE KEY UPDATE value = '1'");
-    
     // Calculate date 3 months from now
     $threeMonthsFromNow = date('Y-m-d', strtotime('+3 months'));
     $today = date('Y-m-d');

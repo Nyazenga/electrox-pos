@@ -28,9 +28,6 @@ try {
     ];
     $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
     
-    // Force enable notifications
-    $pdo->exec("INSERT INTO settings (setting_key, value) VALUES ('send_low_stock_notifications', '1') ON DUPLICATE KEY UPDATE value = '1'");
-    
     // Get products with low stock
     $stmt = $pdo->query("SELECT p.*, 
                          COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
