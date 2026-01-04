@@ -47,9 +47,15 @@ try {
         // Parse column list
         $columnList = array_map('trim', explode(',', preg_replace('/`/', '', $columns)));
         
-        // Find created_by index
+        // Find created_by index - source should be AFTER created_by
         $createdByIndex = array_search('created_by', $columnList);
-        $sourceIndex = $createdByIndex !== false ? $createdByIndex + 1 : count($columnList);
+        if ($createdByIndex === false) {
+            // If created_by not found, add source at the end
+            $sourceIndex = count($columnList);
+        } else {
+            // Insert source AFTER created_by
+            $sourceIndex = $createdByIndex + 1;
+        }
         
         // Add source to column list
         array_splice($columnList, $sourceIndex, 0, 'source');
@@ -94,14 +100,24 @@ try {
                 $rowValues[] = trim($current);
             }
             
-            // Insert 'manual' at source position
-            if (count($rowValues) <= $sourceIndex - 1) {
-                while (count($rowValues) < $sourceIndex - 1) {
+            // Insert 'manual' at source position (which is AFTER created_by)
+            // Count how many values we have vs how many columns (excluding source)
+            $originalColumnCount = count($columnList) - 1; // -1 because we added source
+            
+            if (count($rowValues) < $originalColumnCount) {
+                // Pad with NULLs up to created_by position, then add source
+                while (count($rowValues) < $createdByIndex + 1) {
                     $rowValues[] = 'NULL';
                 }
-                $rowValues[] = "'manual'";
+                // Now insert source after created_by
+                array_splice($rowValues, $createdByIndex + 1, 0, "'manual'");
+                // Pad remaining if needed
+                while (count($rowValues) < count($columnList)) {
+                    $rowValues[] = 'NULL';
+                }
             } else {
-                array_splice($rowValues, $sourceIndex - 1, 0, "'manual'");
+                // We have enough values, insert 'manual' at source position
+                array_splice($rowValues, $sourceIndex, 0, "'manual'");
             }
             
             $newRows[] = '(' . implode(',', $rowValues) . ')';
