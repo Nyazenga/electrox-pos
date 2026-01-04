@@ -917,15 +917,15 @@ if ($checkLowStockAtLogin && $isAdministrator && !isset($_SESSION['low_stock_che
         <?php endif; ?>
     </div>
 
-    <!-- Sales Summary -->
-    <?php if (true): ?>
+    <!-- Sales Summary - Only show hourly charts for single day view -->
+    <?php if ($startDate === $endDate): ?>
     <div class="row g-3 mb-4">
         <div class="col-lg-8">
             <div class="chart-card-modern">
                 <div class="chart-card-header-modern">
                     <h5 class="chart-title-modern">
                         <i class="bi bi-bar-chart-fill"></i>
-                        <span><?= $startDate === date('Y-m-d') && $endDate === date('Y-m-d') ? 'Today Sales Summary' : 'Sales Summary' ?></span>
+                        <span><?= $startDate === date('Y-m-d') ? 'Today Sales Summary' : 'Sales Summary' ?></span>
                     </h5>
                 </div>
                 <div class="chart-container-modern">
@@ -975,7 +975,7 @@ if ($checkLowStockAtLogin && $isAdministrator && !isset($_SESSION['low_stock_che
                 <div class="chart-card-header-modern">
                     <h6 class="chart-title-modern" style="font-size: 14px;">
                         <i class="bi bi-pie-chart-fill"></i>
-                        <span><?= $startDate === date('Y-m-d') && $endDate === date('Y-m-d') ? 'Today Deductions' : 'Deductions' ?></span>
+                        <span><?= $startDate === date('Y-m-d') ? 'Today Deductions' : 'Deductions' ?></span>
                     </h6>
                 </div>
                 <div style="height: 200px;">
@@ -985,14 +985,14 @@ if ($checkLowStockAtLogin && $isAdministrator && !isset($_SESSION['low_stock_che
         </div>
     </div>
 
-    <!-- Today Sales Deduction Chart (Full Width) -->
+    <!-- Today Sales Deduction Chart (Full Width) - Only show for single day view -->
     <div class="row g-3 mb-4">
         <div class="col-12">
             <div class="chart-card-modern">
                 <div class="chart-card-header-modern">
                     <h5 class="chart-title-modern">
                         <i class="bi bi-graph-down-arrow"></i>
-                        <span><?= $startDate === date('Y-m-d') && $endDate === date('Y-m-d') ? 'Today Sales Deduction Breakdown' : 'Sales Deduction Breakdown' ?></span>
+                        <span><?= $startDate === date('Y-m-d') ? 'Today Sales Deduction Breakdown' : 'Sales Deduction Breakdown' ?></span>
                     </h5>
                 </div>
                 <div class="chart-container-modern">
@@ -1129,8 +1129,8 @@ new Chart(document.getElementById('grossProfitChart'), {
     options: miniChartOptions
 });
 
-<?php if (true): ?>
-// Sales Summary Chart
+<?php if ($startDate === $endDate): ?>
+// Sales Summary Chart - Only show for single day view
 const todayCtx = document.getElementById('todaySalesChart').getContext('2d');
 new Chart(todayCtx, {
     type: 'bar',
@@ -1216,15 +1216,15 @@ new Chart(todayCtx, {
     }
 });
 
-// Deduction Chart (small one in sidebar)
+// Deduction Chart (small one in sidebar) - Only show cash refunds, not discounts
 new Chart(document.getElementById('deductionChart'), {
     type: 'bar',
     data: {
         labels: <?= json_encode(array_map(function($i) { return date('g:i A', mktime($i, 0)); }, range(0, 23))) ?>,
         datasets: [{
-            label: 'Deductions',
-            data: <?= json_encode(array_fill(0, 24, $discount + $cashRefund)) ?>,
-            backgroundColor: 'rgba(239, 68, 68, 0.6)'
+            label: 'Cash Refunds',
+            data: <?= json_encode(array_column($hourlyDeductions, 'refund')) ?>,
+            backgroundColor: 'rgba(244, 63, 94, 0.6)'
         }]
     },
     options: {
@@ -1235,7 +1235,7 @@ new Chart(document.getElementById('deductionChart'), {
     }
 });
 
-// Today Sales Deduction Chart (Full Width - col-md-12)
+// Sales Deduction Chart (Full Width) - Only show for single day view
 const deductionCtx = document.getElementById('todayDeductionChart').getContext('2d');
 new Chart(deductionCtx, {
     type: 'bar',
