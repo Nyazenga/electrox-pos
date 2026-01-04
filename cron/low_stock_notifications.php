@@ -32,32 +32,22 @@ try {
     
     $lowStockProducts = [];
     
-    // Check each branch
-    foreach ($branches as $branch) {
-        // Switch to branch database if multi-tenant, otherwise use same database
-        $branchDb = $db; // For now, using same database
-        
-        // Get products with low stock
-        $products = $branchDb->getRows("SELECT p.*, 
-                                       COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
-                                       pc.name as category_name,
-                                       b.branch_name
-                                       FROM products p
-                                       LEFT JOIN product_categories pc ON p.category_id = pc.id
-                                       LEFT JOIN branches b ON p.branch_id = b.id
-                                       WHERE p.status = 'Active' 
-                                       AND p.quantity_in_stock <= p.reorder_level
-                                       AND p.reorder_level > 0
-                                       AND (p.branch_id = :branch_id OR :branch_id IS NULL)
-                                       ORDER BY p.quantity_in_stock ASC, p.product_name ASC", [
-            ':branch_id' => $branch['id']
-        ]);
-        
-        if ($products !== false && !empty($products)) {
-            foreach ($products as $product) {
-                $lowStockProducts[] = $product;
-            }
-        }
+    // Get products with low stock from all branches
+    // Query all products at once instead of per-branch to avoid duplicates
+    $products = $db->getRows("SELECT p.*, 
+                               COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
+                               pc.name as category_name,
+                               b.branch_name
+                               FROM products p
+                               LEFT JOIN product_categories pc ON p.category_id = pc.id
+                               LEFT JOIN branches b ON p.branch_id = b.id
+                               WHERE p.status = 'Active' 
+                               AND p.quantity_in_stock <= p.reorder_level
+                               AND p.reorder_level > 0
+                               ORDER BY p.quantity_in_stock ASC, p.product_name ASC");
+    
+    if ($products !== false && !empty($products)) {
+        $lowStockProducts = $products;
     }
     
     if (empty($lowStockProducts)) {
