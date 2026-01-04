@@ -171,7 +171,7 @@ try {
                                 ];
                                 
                                 // Generate new product code (must be unique)
-                                require_once APP_PATH . '/includes/session.php';
+                                // Note: generateProductCode() is already available from functions.php included at top
                                 $maxAttempts = 50;
                                 $attempt = 0;
                                 do {
