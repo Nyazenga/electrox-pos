@@ -9,10 +9,16 @@ $auth = Auth::getInstance();
 $auth->requireLogin();
 $auth->requirePermission('transfers.change_status');
 
-header('Content-Type: application/json');
-error_reporting(0);
+// Enable error logging for debugging
+error_reporting(E_ALL);
 ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+
+// Start output buffering
 ob_start();
+
+// Set JSON header early
+header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ob_end_clean();
@@ -171,7 +177,12 @@ try {
                                 ];
                                 
                                 // Generate new product code (must be unique)
-                                // Note: generateProductCode() is already available from functions.php included at top
+                                // Verify function exists before calling
+                                if (!function_exists('generateProductCode')) {
+                                    error_log("ERROR: generateProductCode() function not found");
+                                    throw new Exception("System error: Product code generation function not available");
+                                }
+                                
                                 $maxAttempts = 50;
                                 $attempt = 0;
                                 do {
