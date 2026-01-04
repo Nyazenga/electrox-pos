@@ -20,10 +20,15 @@ require_once APP_PATH . '/includes/mailer.php';
 // Email recipient - use same as fiscal day cron jobs
 $emailRecipient = 'nyazengamd@gmail.com';
 
+// Force enable notifications (same approach as fiscal day cron jobs)
+$primaryDb = Database::getPrimaryInstance();
+$primaryDb->query("INSERT INTO settings (setting_key, value) VALUES ('send_low_stock_notifications', '1') ON DUPLICATE KEY UPDATE value = '1'");
+
 // Get notification settings
 $sendNotifications = getSetting('send_low_stock_notifications', '0') == '1';
 
 if (!$sendNotifications) {
+    error_log("LOW STOCK NOTIFICATION CRON: Notifications disabled, exiting");
     exit(0); // Notifications disabled
 }
 
@@ -56,8 +61,11 @@ try {
     }
     
     if (empty($lowStockProducts)) {
+        error_log("LOW STOCK NOTIFICATION CRON: No low stock products found, exiting");
         exit(0); // No low stock products
     }
+    
+    error_log("LOW STOCK NOTIFICATION CRON: Found " . count($lowStockProducts) . " products with low stock");
     
     // Prepare email content - use HTML format like fiscal day cron jobs
     $subject = "Low Stock Alert - " . date('Y-m-d');
@@ -94,17 +102,22 @@ try {
     
     // Send email using Mailer class - use HTML format like fiscal day cron jobs
     try {
+        error_log("LOW STOCK NOTIFICATION CRON: Attempting to send email to {$emailRecipient}");
         $mailer = new Mailer();
+        error_log("LOW STOCK NOTIFICATION CRON: Mailer object created");
         $mailSent = $mailer->send($emailRecipient, $subject, $body, true);
         
         if ($mailSent) {
             error_log("LOW STOCK NOTIFICATION CRON: Email sent successfully to {$emailRecipient}");
+            echo "LOW STOCK NOTIFICATION CRON: Email sent successfully to {$emailRecipient}\n";
         } else {
             $mailerError = $mailer->getMailer()->ErrorInfo;
             error_log("LOW STOCK NOTIFICATION CRON: Failed to send email to {$emailRecipient} - Error: $mailerError");
+            echo "LOW STOCK NOTIFICATION CRON: Failed to send email - Error: $mailerError\n";
         }
     } catch (Exception $e) {
         error_log("LOW STOCK NOTIFICATION CRON: Exception sending email: " . $e->getMessage());
+        echo "LOW STOCK NOTIFICATION CRON: Exception - " . $e->getMessage() . "\n";
     }
     
 } catch (Exception $e) {
