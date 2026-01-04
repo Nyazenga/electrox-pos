@@ -19,20 +19,28 @@ echo "Step 1: Dropping products table...\n";
 $pdo->exec("DROP TABLE IF EXISTS `products`");
 echo "✓ Dropped\n\n";
 
-// Step 2: Read and execute CREATE TABLE from products.sql
-echo "Step 2: Creating table structure...\n";
+// Step 2: Read and execute CREATE TABLE from products.sql, adding source column
+echo "Step 2: Creating table structure (with source column)...\n";
 $sqlFile = __DIR__ . '/products.sql';
 $lines = file($sqlFile);
 
 $createTableSQL = '';
 $inCreateTable = false;
+$foundCreatedBy = false;
 for ($i = 29; $i < 78; $i++) { // Lines 30-78 (0-indexed 29-77)
     $line = $lines[$i];
     if (preg_match('/CREATE TABLE/i', $line)) {
         $inCreateTable = true;
     }
     if ($inCreateTable) {
-        $createTableSQL .= $line;
+        // Add source column after created_by
+        if (preg_match('/`created_by`/i', $line) && !$foundCreatedBy) {
+            $createTableSQL .= $line;
+            $createTableSQL .= "  `source` enum('manual','bulk_upload') DEFAULT 'manual',\n";
+            $foundCreatedBy = true;
+        } else {
+            $createTableSQL .= $line;
+        }
         if (preg_match('/\);$/', trim($line))) {
             break;
         }
@@ -41,21 +49,9 @@ for ($i = 29; $i < 78; $i++) { // Lines 30-78 (0-indexed 29-77)
 
 try {
     $pdo->exec($createTableSQL);
-    echo "✓ Table created\n\n";
+    echo "✓ Table created with source column\n\n";
 } catch (PDOException $e) {
     die("❌ Error: " . $e->getMessage() . "\n");
-}
-
-// Step 3: Check if source column exists, if not add it before importing data
-echo "Step 3: Checking for source column...\n";
-$stmt = $pdo->query("SHOW COLUMNS FROM products WHERE Field = 'source'");
-$hasSource = $stmt->fetch();
-if (!$hasSource) {
-    echo "  Adding source column to table structure...\n";
-    $pdo->exec("ALTER TABLE `products` ADD COLUMN `source` enum('manual','bulk_upload') DEFAULT 'manual' AFTER `created_by`");
-    echo "✓ Source column added\n\n";
-} else {
-    echo "✓ Source column exists\n\n";
 }
 
 // Step 4: Import data using the INSERT statement from products.sql
