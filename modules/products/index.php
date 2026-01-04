@@ -281,6 +281,7 @@ require_once APP_PATH . '/includes/header.php';
                     <th>Price</th>
                     <th>Status</th>
                     <th>Actions</th>
+                    <th style="display: none;">Created Date</th> <!-- Hidden column for sorting -->
                 </tr>
             </thead>
             <tbody>
