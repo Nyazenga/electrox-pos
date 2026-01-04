@@ -394,15 +394,25 @@ try {
         exit;
         
     } catch (Exception $e) {
-        if ($db->inTransaction()) {
-            $db->rollbackTransaction();
+        try {
+            if ($db->getPdo()->inTransaction()) {
+                $db->rollbackTransaction();
+            }
+        } catch (Exception $rollbackError) {
+            // Ignore rollback errors
         }
         throw $e;
     }
     
 } catch (Exception $e) {
-    if (isset($db) && $db->inTransaction()) {
-        $db->rollbackTransaction();
+    if (isset($db)) {
+        try {
+            if ($db->getPdo()->inTransaction()) {
+                $db->rollbackTransaction();
+            }
+        } catch (Exception $rollbackError) {
+            // Ignore rollback errors
+        }
     }
     $errorMessage = $e->getMessage();
     writeTransferLog("Update transfer status error: " . $errorMessage . PHP_EOL, $logFile);
@@ -419,8 +429,14 @@ try {
     exit;
 } catch (Error $e) {
     // Catch fatal errors (PHP 7+)
-    if (isset($db) && $db->inTransaction()) {
-        $db->rollbackTransaction();
+    if (isset($db)) {
+        try {
+            if ($db->getPdo()->inTransaction()) {
+                $db->rollbackTransaction();
+            }
+        } catch (Exception $rollbackError) {
+            // Ignore rollback errors
+        }
     }
     $errorMessage = $e->getMessage();
     writeTransferLog("Update transfer status fatal error: " . $errorMessage . PHP_EOL, $logFile);
