@@ -21,9 +21,7 @@ ob_start();
 header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    ob_end_clean();
-    echo json_encode(['success' => false, 'message' => 'Invalid request method']);
-    exit;
+    sendErrorResponse('Invalid request method');
 }
 
 $input = json_decode(file_get_contents('php://input'), true);
@@ -31,9 +29,7 @@ $transferId = intval($input['transfer_id'] ?? 0);
 $status = trim($input['status'] ?? '');
 
 if (!$transferId || !in_array($status, ['Pending', 'Approved', 'InTransit', 'Received', 'Rejected', 'Completed'])) {
-    ob_end_clean();
-    echo json_encode(['success' => false, 'message' => 'Invalid input']);
-    exit;
+    sendErrorResponse('Invalid input');
 }
 
 try {
