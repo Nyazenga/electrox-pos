@@ -5,61 +5,44 @@
  * Sends email notifications for products with stock levels at or below reorder level
  */
 
-// Set time limit for long-running script
-set_time_limit(300);
+// Set script execution time limit
+set_time_limit(300); // 5 minutes
 
 // Define APP_PATH before requiring config (same as fiscal day cron jobs)
 define('APP_PATH', dirname(dirname(__FILE__)));
 
-// Include configuration
 require_once APP_PATH . '/config.php';
 require_once APP_PATH . '/includes/db.php';
-require_once APP_PATH . '/includes/settings_functions.php';
+require_once APP_PATH . '/includes/functions.php';
 require_once APP_PATH . '/includes/mailer.php';
 
 // Email recipient - use same as fiscal day cron jobs
 $emailRecipient = 'nyazengamd@gmail.com';
 
-// Force enable notifications (same approach as fiscal day cron jobs)
+// Force enable notifications
 $primaryDb = Database::getPrimaryInstance();
 $primaryDb->query("INSERT INTO settings (setting_key, value) VALUES ('send_low_stock_notifications', '1') ON DUPLICATE KEY UPDATE value = '1'");
 
-// Get notification settings
-$sendNotifications = getSetting('send_low_stock_notifications', '0') == '1';
-
-if (!$sendNotifications) {
-    error_log("LOW STOCK NOTIFICATION CRON: Notifications disabled, exiting");
-    exit(0); // Notifications disabled
-}
-
 try {
-    $primaryDb = Database::getPrimaryInstance();
-    
-    $lowStockProducts = [];
-    
-    // Get products with low stock - products are in primary database
+    // Get products with low stock from primary database
     $products = $primaryDb->getRows("SELECT p.*, 
-                               COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
-                               pc.name as category_name,
-                               b.branch_name
-                               FROM products p
-                               LEFT JOIN product_categories pc ON p.category_id = pc.id
-                               LEFT JOIN branches b ON p.branch_id = b.id
-                               WHERE p.status = 'Active' 
-                               AND p.quantity_in_stock <= p.reorder_level
-                               AND p.reorder_level > 0
-                               ORDER BY p.quantity_in_stock ASC, p.product_name ASC");
+                                       COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
+                                       pc.name as category_name,
+                                       b.branch_name
+                                       FROM products p
+                                       LEFT JOIN product_categories pc ON p.category_id = pc.id
+                                       LEFT JOIN branches b ON p.branch_id = b.id
+                                       WHERE p.status = 'Active' 
+                                       AND p.quantity_in_stock <= p.reorder_level
+                                       AND p.reorder_level > 0
+                                       ORDER BY p.quantity_in_stock ASC, p.product_name ASC");
     
-    if ($products !== false && !empty($products)) {
-        $lowStockProducts = $products;
-    }
-    
-    if (empty($lowStockProducts)) {
-        error_log("LOW STOCK NOTIFICATION CRON: No low stock products found, exiting");
+    if ($products === false || empty($products)) {
+        error_log("LOW STOCK NOTIFICATION CRON: No low stock products found");
         exit(0); // No low stock products
     }
     
-    error_log("LOW STOCK NOTIFICATION CRON: Found " . count($lowStockProducts) . " products with low stock");
+    error_log("LOW STOCK NOTIFICATION CRON: Found " . count($products) . " products with low stock");
     
     // Prepare email content - use HTML format like fiscal day cron jobs
     $subject = "Low Stock Alert - " . date('Y-m-d');
@@ -68,11 +51,11 @@ try {
     $body = "<html><body>";
     $body .= "<h2>Low Stock Level Notification</h2>";
     $body .= "<p><strong>Date:</strong> " . date('Y-m-d H:i:s') . "</p>";
-    $body .= "<p>The following " . count($lowStockProducts) . " product(s) are at or below their reorder levels:</p>";
+    $body .= "<p>The following " . count($products) . " product(s) are at or below their reorder levels:</p>";
     $body .= "<hr>";
     
     $currentBranch = null;
-    foreach ($lowStockProducts as $product) {
+    foreach ($products as $product) {
         if ($currentBranch !== $product['branch_name']) {
             $currentBranch = $product['branch_name'];
             if ($currentBranch) {
@@ -96,26 +79,21 @@ try {
     
     // Send email using Mailer class - use HTML format like fiscal day cron jobs
     try {
-        error_log("LOW STOCK NOTIFICATION CRON: Attempting to send email to {$emailRecipient}");
         $mailer = new Mailer();
-        error_log("LOW STOCK NOTIFICATION CRON: Mailer object created");
         $mailSent = $mailer->send($emailRecipient, $subject, $body, true);
         
         if ($mailSent) {
             error_log("LOW STOCK NOTIFICATION CRON: Email sent successfully to {$emailRecipient}");
-            echo "LOW STOCK NOTIFICATION CRON: Email sent successfully to {$emailRecipient}\n";
         } else {
             $mailerError = $mailer->getMailer()->ErrorInfo;
             error_log("LOW STOCK NOTIFICATION CRON: Failed to send email to {$emailRecipient} - Error: $mailerError");
-            echo "LOW STOCK NOTIFICATION CRON: Failed to send email - Error: $mailerError\n";
         }
     } catch (Exception $e) {
         error_log("LOW STOCK NOTIFICATION CRON: Exception sending email: " . $e->getMessage());
-        echo "LOW STOCK NOTIFICATION CRON: Exception - " . $e->getMessage() . "\n";
     }
     
 } catch (Exception $e) {
-    error_log("Low stock notification cron error: " . $e->getMessage());
+    error_log("LOW STOCK NOTIFICATION CRON: Error: " . $e->getMessage());
 }
 
-
+exit(0);
