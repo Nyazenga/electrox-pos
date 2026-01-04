@@ -1,156 +1,178 @@
 <?php
 /**
- * Simple product restore - reads line 23 from backup and imports with source column
+ * Simple restore script - imports products_clean.sql and adds source column
  */
 
-require_once dirname(dirname(__FILE__)) . '/config.php';
+define('APP_PATH', dirname(dirname(__FILE__)));
+require_once APP_PATH . '/config.php';
 
-$host = DB_HOST;
-$user = DB_USER;
-$pass = DB_PASS;
-$dbname = 'electrox_primary';
+echo "Restoring products...\n\n";
 
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass, [
+    $dsn = "mysql:host=" . DB_HOST . ";dbname=" . PRIMARY_DB_NAME . ";charset=" . DB_CHARSET;
+    $options = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-    ]);
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false,
+    ];
+    $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
     
-    echo "✅ Connected to $dbname\n\n";
+    echo "Connected to database: " . PRIMARY_DB_NAME . "\n";
     
-    // Get columns
-    $stmt = $pdo->query("SHOW COLUMNS FROM products");
-    $columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
-    $columnCount = count($columns);
-    $sourceIndex = array_search('source', $columns);
+    // Ensure source column exists
+    $stmt = $pdo->query("SHOW COLUMNS FROM products WHERE Field = 'source'");
+    if (!$stmt->fetch()) {
+        echo "Adding source column...\n";
+        $pdo->exec("ALTER TABLE `products` ADD COLUMN `source` enum('manual','bulk_upload') DEFAULT 'manual' AFTER `created_by`");
+        $pdo->exec("ALTER TABLE `products` ADD KEY `idx_source` (`source`)");
+        echo "✓ Source column added\n";
+    } else {
+        echo "✓ Source column exists\n";
+    }
     
-    echo "Table has $columnCount columns, source at index: " . ($sourceIndex !== false ? $sourceIndex : 'NOT FOUND') . "\n\n";
-    
-    // Read line 23 from backup
-    $sqlFile = dirname(dirname(__FILE__)) . '/products_backup.sql';
+    // Read and execute SQL file
+    $sqlFile = APP_PATH . '/database/products_clean.sql';
     if (!file_exists($sqlFile)) {
-        die("❌ Backup file not found\n");
+        echo "❌ File not found: $sqlFile\n";
+        exit(1);
     }
     
-    $lines = file($sqlFile);
-    if (!isset($lines[22])) {
-        die("❌ Line 23 not found in backup file\n");
+    echo "Reading SQL file...\n";
+    $sqlContent = file_get_contents($sqlFile);
+    
+    // Remove BOM
+    if (substr($sqlContent, 0, 3) === "\xEF\xBB\xBF") {
+        $sqlContent = substr($sqlContent, 3);
     }
     
-    $insertLine = trim($lines[22]);
-    $insertLine = preg_replace('/\/\*!40000.*/', '', $insertLine);
-    $insertLine = trim($insertLine);
-    
-    echo "✅ Found INSERT statement\n";
-    echo "Length: " . strlen($insertLine) . " chars\n";
-    echo "First 100 chars: " . substr($insertLine, 0, 100) . "...\n\n";
-    
-    // Extract VALUES part - split on "VALUES" (case-insensitive)
-    $parts = preg_split('/VALUES\s+/i', $insertLine, 2);
-    if (count($parts) < 2) {
-        die("❌ Could not split on VALUES. Line preview: " . substr($insertLine, 0, 150) . "...\n");
+    // Modify CREATE TABLE to include source column if not present
+    if (stripos($sqlContent, "`source`") === false && stripos($sqlContent, 'CREATE TABLE') !== false) {
+        echo "Adding source column to CREATE TABLE statement...\n";
+        $sqlContent = preg_replace(
+            "/(`created_by`[^,)]+)(,|\))/i",
+            "$1,\n  `source` enum('manual','bulk_upload') DEFAULT 'manual'$2",
+            $sqlContent
+        );
     }
     
-    $valuesStr = $parts[1]; // Everything after "VALUES "
-    $valuesStr = trim($valuesStr);
-    // Remove trailing ); or comment
-    $valuesStr = preg_replace('/\)\s*;?\s*\/\*.*$/', '', $valuesStr);
-    $valuesStr = rtrim($valuesStr, ');');
-    $valuesStr = rtrim($valuesStr, ')');
-    $valuesStr = trim($valuesStr);
+    // Split into individual statements
+    $statements = array_filter(
+        array_map('trim', explode(';', $sqlContent)),
+        function($stmt) {
+            return !empty($stmt) && !preg_match('/^(--|SET|START|COMMIT)/i', $stmt);
+        }
+    );
     
-    echo "Extracted VALUES string (length: " . strlen($valuesStr) . " chars)\n";
-    
-    // Split into rows
-    $rows = preg_split('/\)\s*,\s*\(/', $valuesStr);
-    $rows[0] = ltrim($rows[0], '(');
-    $rows[count($rows)-1] = rtrim($rows[count($rows)-1], ')');
-    
-    echo "Found " . count($rows) . " product rows\n";
-    echo "Starting import...\n\n";
-    
+    echo "Executing SQL statements...\n";
     $pdo->beginTransaction();
-    $inserted = 0;
-    $skipped = 0;
-    $columnList = '`' . implode('`, `', $columns) . '`';
     
-    foreach ($rows as $idx => $row) {
-        // Simple value parsing
-        $values = [];
-        $current = '';
-        $inQuotes = false;
-        $quote = null;
-        
-        for ($i = 0; $i < strlen($row); $i++) {
-            $c = $row[$i];
-            $prev = $i > 0 ? $row[$i-1] : null;
+    try {
+        foreach ($statements as $statement) {
+            if (stripos($statement, 'DROP TABLE') !== false) {
+                // Skip DROP TABLE - we want to keep existing structure
+                continue;
+            }
             
-            if (!$inQuotes && ($c === '"' || $c === "'")) {
-                $inQuotes = true;
-                $quote = $c;
-                $current .= $c;
-            } elseif ($inQuotes && $c === $quote && $prev !== '\\') {
-                $inQuotes = false;
-                $quote = null;
-                $current .= $c;
-            } elseif (!$inQuotes && $c === ',') {
-                $values[] = trim($current);
-                $current = '';
-            } else {
-                $current .= $c;
+            if (stripos($statement, 'CREATE TABLE') !== false) {
+                // Skip CREATE TABLE - table already exists with source column
+                continue;
             }
-        }
-        if ($current) $values[] = trim($current);
-        
-        // Add 'manual' for source if missing
-        $valueCount = count($values);
-        if ($valueCount < $columnCount) {
-            // Insert 'manual' at source position
-            if ($sourceIndex !== false && $valueCount <= $sourceIndex) {
-                array_splice($values, $sourceIndex, 0, "'manual'");
-            } else {
-                // Pad and add at end
-                while (count($values) < $columnCount - 1) {
-                    $values[] = 'NULL';
+            
+            if (stripos($statement, 'INSERT INTO') !== false) {
+                // Modify INSERT to include source column
+                // Get current columns
+                $stmt = $pdo->query("SHOW COLUMNS FROM products");
+                $columns = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                $columnCount = count($columns);
+                $sourceIndex = array_search('source', $columns);
+                
+                // Extract VALUES part
+                if (preg_match('/VALUES\s*\((.*)\)/is', $statement, $matches)) {
+                    $valuesPart = $matches[1];
+                    
+                    // Count values in first row
+                    $firstRow = preg_split('/\)\s*,\s*\(/', $valuesPart)[0];
+                    $firstRow = trim($firstRow, '()');
+                    $valueCount = substr_count($firstRow, ',') + 1;
+                    
+                    if ($valueCount < $columnCount && $sourceIndex !== false) {
+                        // Need to add source value
+                        // Build column list
+                        $columnList = '`' . implode('`, `', $columns) . '`';
+                        
+                        // Modify INSERT to include all columns
+                        $statement = preg_replace(
+                            '/INSERT\s+INTO\s+`?products`?\s*\([^)]+\)/i',
+                            "INSERT INTO `products` ($columnList)",
+                            $statement
+                        );
+                        
+                        // Add 'manual' to each row's values
+                        $statement = preg_replace_callback(
+                            '/VALUES\s*\(([^)]+)\)/i',
+                            function($match) use ($sourceIndex, $valueCount, $columnCount) {
+                                $values = $match[1];
+                                // Split rows
+                                $rows = preg_split('/\)\s*,\s*\(/', $values);
+                                $newRows = [];
+                                foreach ($rows as $row) {
+                                    $row = trim($row, '()');
+                                    $rowValues = explode(',', $row);
+                                    // Insert 'manual' at source position
+                                    if (count($rowValues) <= $sourceIndex) {
+                                        while (count($rowValues) < $sourceIndex) {
+                                            $rowValues[] = 'NULL';
+                                        }
+                                        $rowValues[] = "'manual'";
+                                    } else {
+                                        array_splice($rowValues, $sourceIndex, 0, "'manual'");
+                                    }
+                                    $newRows[] = '(' . implode(',', $rowValues) . ')';
+                                }
+                                return 'VALUES ' . implode(', ', $newRows);
+                            },
+                            $statement
+                        );
+                    }
                 }
-                $values[] = "'manual'";
-            }
-        } elseif ($valueCount == $columnCount - 1) {
-            // Missing exactly one column (source)
-            $values[] = "'manual'";
-        } else {
-            // Has all columns, ensure source is set
-            if (isset($values[$sourceIndex]) && ($values[$sourceIndex] === 'NULL' || trim($values[$sourceIndex], "'\"") === '')) {
-                $values[$sourceIndex] = "'manual'";
-            }
-        }
-        
-        $sql = "INSERT INTO `products` ($columnList) VALUES (" . implode(',', $values) . ")";
-        
-        try {
-            $pdo->exec($sql);
-            $inserted++;
-            if ($inserted % 10 == 0) echo "Inserted $inserted...\n";
-        } catch (PDOException $e) {
-            if (strpos($e->getMessage(), 'Duplicate') !== false) {
-                $skipped++;
+                
+                try {
+                    $pdo->exec($statement);
+                } catch (PDOException $e) {
+                    // Skip duplicates
+                    if (strpos($e->getMessage(), 'Duplicate entry') === false) {
+                        echo "  ⚠ Error: " . substr($e->getMessage(), 0, 100) . "\n";
+                    }
+                }
             } else {
-                echo "Error row " . ($idx + 1) . ": " . substr($e->getMessage(), 0, 80) . "\n";
+                // Execute other statements
+                try {
+                    $pdo->exec($statement);
+                } catch (PDOException $e) {
+                    // Ignore errors for non-critical statements
+                }
             }
         }
+        
+        $pdo->commit();
+        echo "✓ SQL executed\n";
+        
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        throw $e;
     }
     
-    $pdo->exec("UPDATE products SET source = 'manual' WHERE source IS NULL OR source = ''");
-    $pdo->commit();
+    // Update source values
+    echo "Updating source values...\n";
+    $updated = $pdo->exec("UPDATE `products` SET `source` = 'manual' WHERE `source` IS NULL OR `source` = ''");
+    echo "✓ Updated $updated product(s)\n";
     
-    echo "\n✅ Done! Inserted: $inserted, Skipped: $skipped\n";
-    $stmt = $pdo->query("SELECT COUNT(*) as c FROM products");
-    echo "Total products: " . $stmt->fetch()['c'] . "\n";
+    // Verify
+    $stmt = $pdo->query("SELECT COUNT(*) as total FROM products");
+    $total = $stmt->fetch()['total'];
+    echo "\n✅ Restored $total product(s)!\n";
     
 } catch (Exception $e) {
-    if (isset($pdo) && $pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
     echo "❌ Error: " . $e->getMessage() . "\n";
     exit(1);
 }
-
