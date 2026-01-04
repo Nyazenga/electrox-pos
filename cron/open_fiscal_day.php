@@ -86,6 +86,7 @@ foreach ($branches as $branchDevice) {
         $maxRetries = 3;
         $opened = false;
         $lastError = null;
+        $openResult = null;
         
         for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
             $result['retries'] = $attempt - 1;
@@ -93,8 +94,7 @@ foreach ($branches as $branchDevice) {
             try {
                 $openResult = $fiscalService->openFiscalDay();
                 $result['zimra_response'] = json_encode($openResult, JSON_PRETTY_PRINT);
-                $result['success'] = true;
-                $opened = true;
+                $opened = true; // API call succeeded
                 break;
             } catch (Exception $e) {
                 $lastError = $e->getMessage();
@@ -109,17 +109,39 @@ foreach ($branches as $branchDevice) {
         
         if (!$opened) {
             $result['error'] = "Failed after {$maxRetries} attempts. Last error: {$lastError}";
-        }
-        
-        // Wait a moment for ZIMRA to process
-        sleep(2);
-        
-        // Get status AFTER operation
-        try {
-            $statusAfter = $fiscalService->getFiscalDayStatus();
-            $result['status_after'] = $statusAfter ? json_encode($statusAfter, JSON_PRETTY_PRINT) : 'Could not retrieve status';
-        } catch (Exception $e) {
-            $result['status_after'] = 'Error: ' . $e->getMessage();
+            $result['success'] = false;
+        } else {
+            // Wait for ZIMRA to process and verify status
+            sleep(2);
+            
+            // Get status AFTER operation and verify it's actually opened
+            try {
+                $statusAfter = $fiscalService->getFiscalDayStatus();
+                $result['status_after'] = $statusAfter ? json_encode($statusAfter, JSON_PRETTY_PRINT) : 'Could not retrieve status';
+                
+                // Set success based on actual status
+                if ($statusAfter && isset($statusAfter['fiscalDayStatus'])) {
+                    $status = $statusAfter['fiscalDayStatus'];
+                    if ($status === 'FiscalDayOpened') {
+                        $result['success'] = true;
+                    } else {
+                        $result['success'] = false;
+                        // Check if there's a message explaining why it didn't open
+                        if (isset($openResult['message'])) {
+                            $result['error'] = $openResult['message'];
+                        } else {
+                            $result['error'] = "Fiscal day did not open successfully. Status: $status";
+                        }
+                    }
+                } else {
+                    $result['success'] = false;
+                    $result['error'] = "Could not determine fiscal day status after open operation";
+                }
+            } catch (Exception $e) {
+                $result['status_after'] = 'Error: ' . $e->getMessage();
+                $result['success'] = false;
+                $result['error'] = "Could not verify open status: " . $e->getMessage();
+            }
         }
         
     } catch (Exception $e) {

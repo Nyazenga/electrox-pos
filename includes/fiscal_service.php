@@ -68,39 +68,22 @@ class FiscalService {
             true // Use test environment
         );
         
-        // Load certificate using CertificateStorage (handles decryption)
+        // CRITICAL: Always load certificate using CertificateStorage (single source of truth)
+        // This ensures consistency with receipt submission and fiscal day closing
         require_once APP_PATH . '/includes/certificate_storage.php';
         $certData = CertificateStorage::loadCertificate($this->deviceId);
         
-        if ($certData) {
-            error_log("FISCAL SERVICE: Certificate loaded from CertificateStorage for device {$this->deviceId}");
-            $this->api->setCertificate($certData['certificate'], $certData['privateKey']);
-            // Update device record with decrypted key for backward compatibility
-            $this->device['certificate_pem'] = $certData['certificate'];
-            $this->device['private_key_pem'] = $certData['privateKey'];
-        } elseif ($this->device['certificate_pem'] && $this->device['private_key_pem']) {
-            error_log("FISCAL SERVICE: Certificate not in CertificateStorage, trying fallback from device record");
-            // Fallback: try to decrypt if it's encrypted
-            $privateKey = $this->device['private_key_pem'];
-            
-            // Check if it's encrypted (base64 encoded, doesn't start with -----BEGIN)
-            if (strpos($privateKey, '-----BEGIN') === false) {
-                // Try to decrypt
-                try {
-                    $privateKey = CertificateStorage::decryptPrivateKey($privateKey);
-                    error_log("FISCAL SERVICE: Successfully decrypted private key from device record");
-                } catch (Exception $e) {
-                    // If decryption fails, it might be plain text already
-                    error_log("FISCAL SERVICE: Warning: Could not decrypt private key, using as-is: " . $e->getMessage());
-                }
-            } else {
-                error_log("FISCAL SERVICE: Private key appears to be unencrypted, using as-is");
-            }
-            
-            $this->api->setCertificate($this->device['certificate_pem'], $privateKey);
-        } else {
-            error_log("FISCAL SERVICE: WARNING - No certificate found for device {$this->deviceId}. Certificate-based endpoints will fail.");
+        if (!$certData || !$certData['certificate'] || !$certData['privateKey']) {
+            error_log("FISCAL SERVICE: ERROR - No certificate found in CertificateStorage for device {$this->deviceId}");
+            throw new Exception("Certificate not found for device {$this->deviceId}. Please ensure the device is registered and certificate is stored in CertificateStorage.");
         }
+        
+        error_log("FISCAL SERVICE: Certificate loaded from CertificateStorage for device {$this->deviceId}");
+        $this->api->setCertificate($certData['certificate'], $certData['privateKey']);
+        
+        // Update device record in memory for backward compatibility (don't save to DB - CertificateStorage is source of truth)
+        $this->device['certificate_pem'] = $certData['certificate'];
+        $this->device['private_key_pem'] = $certData['privateKey'];
     }
     
     /**
@@ -1578,7 +1561,7 @@ class FiscalService {
         $this->api->setCertificate($certificatePem, $privateKeyPem);
         $writeLog("API client certificate updated");
         
-        // Also update device record for consistency
+        // Update device record in memory for consistency (don't save to DB - CertificateStorage is source of truth)
         $this->device['certificate_pem'] = $certificatePem;
         $this->device['private_key_pem'] = $privateKeyPem;
         

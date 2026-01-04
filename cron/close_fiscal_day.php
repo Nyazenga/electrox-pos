@@ -86,6 +86,7 @@ foreach ($branches as $branchDevice) {
         $maxRetries = 3;
         $closed = false;
         $lastError = null;
+        $closeResult = null;
         
         for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
             $result['retries'] = $attempt - 1;
@@ -93,8 +94,7 @@ foreach ($branches as $branchDevice) {
             try {
                 $closeResult = $fiscalService->closeFiscalDay();
                 $result['zimra_response'] = json_encode($closeResult, JSON_PRETTY_PRINT);
-                $result['success'] = true;
-                $closed = true;
+                $closed = true; // API call succeeded
                 break;
             } catch (Exception $e) {
                 $lastError = $e->getMessage();
@@ -109,17 +109,65 @@ foreach ($branches as $branchDevice) {
         
         if (!$closed) {
             $result['error'] = "Failed after {$maxRetries} attempts. Last error: {$lastError}";
-        }
-        
-        // Wait a moment for ZIMRA to process
-        sleep(2);
-        
-        // Get status AFTER operation
-        try {
-            $statusAfter = $fiscalService->getFiscalDayStatus();
-            $result['status_after'] = $statusAfter ? json_encode($statusAfter, JSON_PRETTY_PRINT) : 'Could not retrieve status';
-        } catch (Exception $e) {
-            $result['status_after'] = 'Error: ' . $e->getMessage();
+            $result['success'] = false;
+        } else {
+            // Wait for ZIMRA to process the close request (can take a few seconds)
+            // Check status multiple times to verify it actually closed
+            $maxStatusChecks = 10;
+            $statusCheckInterval = 3; // seconds
+            $actuallyClosed = false;
+            
+            for ($check = 1; $check <= $maxStatusChecks; $check++) {
+                sleep($statusCheckInterval);
+                try {
+                    $statusAfter = $fiscalService->getFiscalDayStatus();
+                    if ($statusAfter && isset($statusAfter['fiscalDayStatus'])) {
+                        $status = $statusAfter['fiscalDayStatus'];
+                        if ($status === 'FiscalDayClosed') {
+                            $actuallyClosed = true;
+                            $result['status_after'] = json_encode($statusAfter, JSON_PRETTY_PRINT);
+                            break;
+                        } elseif ($status === 'FiscalDayCloseFailed') {
+                            // Close failed - check for error code
+                            $errorCode = $statusAfter['fiscalDayClosingErrorCode'] ?? 'Unknown error';
+                            $result['error'] = "Fiscal day close failed on ZIMRA: $errorCode";
+                            $result['status_after'] = json_encode($statusAfter, JSON_PRETTY_PRINT);
+                            $actuallyClosed = false;
+                            break;
+                        }
+                        // Still processing (FiscalDayCloseInitiated) - continue waiting
+                    }
+                } catch (Exception $e) {
+                    error_log("FISCAL DAY CLOSE CRON: Error checking status (attempt $check): " . $e->getMessage());
+                }
+            }
+            
+            // Set success based on actual status, not just API call success
+            if ($actuallyClosed) {
+                $result['success'] = true;
+            } else {
+                // Check final status one more time
+                try {
+                    $statusAfter = $fiscalService->getFiscalDayStatus();
+                    $result['status_after'] = $statusAfter ? json_encode($statusAfter, JSON_PRETTY_PRINT) : 'Could not retrieve status';
+                    if ($statusAfter && isset($statusAfter['fiscalDayStatus']) && $statusAfter['fiscalDayStatus'] === 'FiscalDayClosed') {
+                        $result['success'] = true;
+                    } else {
+                        $result['success'] = false;
+                        if (!isset($result['error'])) {
+                            $status = $statusAfter['fiscalDayStatus'] ?? 'Unknown';
+                            $errorCode = $statusAfter['fiscalDayClosingErrorCode'] ?? '';
+                            $result['error'] = "Fiscal day did not close successfully. Status: $status" . ($errorCode ? " ($errorCode)" : "");
+                        }
+                    }
+                } catch (Exception $e) {
+                    $result['status_after'] = 'Error: ' . $e->getMessage();
+                    $result['success'] = false;
+                    if (!isset($result['error'])) {
+                        $result['error'] = "Could not verify close status: " . $e->getMessage();
+                    }
+                }
+            }
         }
         
     } catch (Exception $e) {
