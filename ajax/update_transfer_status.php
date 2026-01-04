@@ -137,24 +137,50 @@ try {
                                 [':id' => $productId, ':branch_id' => $fromBranchId]);
                             
                             if ($sourceProduct) {
-                                // Copy source product data and create new entry in destination branch
-                                $newProductData = $sourceProduct;
-                                unset($newProductData['id']); // Remove ID so new one is auto-generated
-                                unset($newProductData['created_at']); // Remove created_at so it gets current timestamp
-                                unset($newProductData['updated_at']); // Remove updated_at
-                                
-                                // Update branch_id and quantity
-                                $newProductData['branch_id'] = $toBranchId;
-                                $newProductData['quantity_in_stock'] = $quantity;
-                                $newProductData['created_by'] = $userId;
-                                $newProductData['source'] = 'transfer';
-                                $newProductData['created_at'] = date('Y-m-d H:i:s');
+                                // Build new product data - only copy relevant fields
+                                $newProductData = [
+                                    'product_code' => '',
+                                    'category_id' => $sourceProduct['category_id'] ?? null,
+                                    'product_name' => $sourceProduct['product_name'] ?? null,
+                                    'brand' => $sourceProduct['brand'] ?? null,
+                                    'model' => $sourceProduct['model'] ?? null,
+                                    'color' => $sourceProduct['color'] ?? null,
+                                    'storage' => $sourceProduct['storage'] ?? null,
+                                    'sim_configuration' => $sourceProduct['sim_configuration'] ?? null,
+                                    'serial_number' => $sourceProduct['serial_number'] ?? null,
+                                    'imei' => $sourceProduct['imei'] ?? null,
+                                    'battery_health' => $sourceProduct['battery_health'] ?? null,
+                                    'expiry_date' => $sourceProduct['expiry_date'] ?? null,
+                                    'weight' => $sourceProduct['weight'] ?? null,
+                                    'unit_of_measure' => $sourceProduct['unit_of_measure'] ?? null,
+                                    'manufacturer' => $sourceProduct['manufacturer'] ?? null,
+                                    'barcode' => $sourceProduct['barcode'] ?? null,
+                                    'description' => $sourceProduct['description'] ?? null,
+                                    'specifications' => $sourceProduct['specifications'] ?? null,
+                                    'cost_price' => $sourceProduct['cost_price'] ?? 0,
+                                    'selling_price' => $sourceProduct['selling_price'] ?? 0,
+                                    'reorder_level' => $sourceProduct['reorder_level'] ?? 0,
+                                    'branch_id' => $toBranchId,
+                                    'tax_id' => $sourceProduct['tax_id'] ?? null,
+                                    'quantity_in_stock' => $quantity,
+                                    'status' => $sourceProduct['status'] ?? 'Active',
+                                    'created_by' => $userId,
+                                    'source' => 'transfer',
+                                    'created_at' => date('Y-m-d H:i:s'),
+                                    'images' => $sourceProduct['images'] ?? null
+                                ];
                                 
                                 // Generate new product code (must be unique)
                                 require_once APP_PATH . '/includes/session.php';
+                                $maxAttempts = 50;
+                                $attempt = 0;
                                 do {
                                     $newProductCode = generateProductCode();
                                     $existing = $db->getRow("SELECT id FROM products WHERE product_code = :code", [':code' => $newProductCode]);
+                                    $attempt++;
+                                    if ($attempt >= $maxAttempts) {
+                                        throw new Exception("Failed to generate unique product code after {$maxAttempts} attempts");
+                                    }
                                 } while ($existing);
                                 $newProductData['product_code'] = $newProductCode;
                                 
