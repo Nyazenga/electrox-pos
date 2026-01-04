@@ -343,10 +343,20 @@ if ($usePDF) {
         }
     }
     
-    // Company name on left
+    // Company name on left - Template-specific styling
     $pdf->SetXY(15, $startY);
-    $pdf->SetFont('helvetica', 'B', 16);
+    if ($invoiceTemplate === 'classic') {
+        $pdf->SetTextColor($primaryRgb[0], $primaryRgb[1], $primaryRgb[2]);
+    } elseif ($invoiceTemplate === 'minimal') {
+        $pdf->SetTextColor(50, 50, 50);
+    } elseif ($invoiceTemplate === 'elegant') {
+        $pdf->SetTextColor($primaryRgb[0], $primaryRgb[1], $primaryRgb[2]);
+    } else {
+        $pdf->SetTextColor(0, 0, 0);
+    }
+    $pdf->SetFont('helvetica', $companyNameStyle, $companyNameSize);
     $pdf->Cell(95, 8, htmlspecialchars($companyName), 0, 1, 'L');
+    $pdf->SetTextColor(0, 0, 0); // Reset to black
     
     // Company address on left
     $pdf->SetFont('helvetica', '', 9);
@@ -408,12 +418,22 @@ if ($usePDF) {
     // Meta HTML for compatibility
     $metaHtml = '';
     
-    // Client Details Section
-    $pdf->SetFillColor(233, 236, 239);
+    // Client Details Section - Template-specific styling
+    if ($invoiceTemplate === 'minimal') {
+        $pdf->SetFillColor(245, 245, 245);
+        $pdf->SetTextColor(50, 50, 50);
+    } elseif ($invoiceTemplate === 'elegant') {
+        $pdf->SetFillColor($primaryRgb[0], $primaryRgb[1], $primaryRgb[2]);
+        $pdf->SetTextColor(255, 255, 255);
+    } else {
+        $pdf->SetFillColor(233, 236, 239);
+        $pdf->SetTextColor(0, 0, 0);
+    }
     $pdf->SetFont('helvetica', 'B', 10);
     $pdf->Cell(0, 8, 'CLIENT DETAILS', 1, 1, 'L', true);
     $pdf->SetFont('helvetica', '', 9);
-    $pdf->SetFillColor(248, 249, 250);
+    $pdf->SetFillColor($clientBgColor[0], $clientBgColor[1], $clientBgColor[2]);
+    $pdf->SetTextColor(0, 0, 0); // Reset text color
     
     // Client Name
     $pdf->Cell(95, 8, 'Client Name: ' . htmlspecialchars($clientName), 1, 0, 'L', true);
@@ -465,9 +485,17 @@ if ($usePDF) {
     // Client HTML for compatibility
     $clientHtml = '';
     
-    // Items Table Header
-    $pdf->SetFillColor(30, 58, 138); // Dark blue
-    $pdf->SetTextColor(255, 255, 255);
+    // Items Table Header - Template-specific styling
+    if ($invoiceTemplate === 'minimal') {
+        $pdf->SetFillColor(245, 245, 245); // Light gray
+        $pdf->SetTextColor(50, 50, 50); // Dark gray text
+    } elseif ($invoiceTemplate === 'elegant') {
+        $pdf->SetFillColor($primaryRgb[0], $primaryRgb[1], $primaryRgb[2]); // Primary color
+        $pdf->SetTextColor(255, 255, 255); // White text
+    } else {
+        $pdf->SetFillColor(30, 58, 138); // Dark blue (default/modern/classic)
+        $pdf->SetTextColor(255, 255, 255); // White text
+    }
     $pdf->SetFont('helvetica', 'B', 9);
     $pdf->Cell(63, 10, 'Description', 1, 0, 'L', true);
     $pdf->Cell(18, 10, 'Quantity', 1, 0, 'C', true);
@@ -591,13 +619,25 @@ if ($usePDF) {
         $pdf->Ln(8);
     }
     
-    // Banking Details
+    // Banking Details - Template-specific styling
     if ($bankName && $bankAccount) {
-        $pdf->SetFillColor(233, 236, 239);
+        if ($invoiceTemplate === 'minimal') {
+            $pdf->SetFillColor(250, 250, 250);
+        } elseif ($invoiceTemplate === 'elegant') {
+            $pdf->SetFillColor(255, 255, 255);
+        } else {
+            $pdf->SetFillColor(233, 236, 239);
+        }
         $pdf->SetFont('helvetica', 'B', 9);
         $pdf->Cell(0, 8, 'Nostro Banking Details', 1, 1, 'L', true);
         $pdf->SetFont('helvetica', '', 8);
-        $pdf->SetFillColor(248, 249, 250);
+        if ($invoiceTemplate === 'minimal') {
+            $pdf->SetFillColor(255, 255, 255);
+        } elseif ($invoiceTemplate === 'elegant') {
+            $pdf->SetFillColor(250, 250, 250);
+        } else {
+            $pdf->SetFillColor(248, 249, 250);
+        }
         $pdf->Cell(45, 8, 'Company:', 1, 0, 'L', true);
         $pdf->Cell(45, 8, htmlspecialchars($companyName), 1, 0, 'L');
         $pdf->Cell(45, 8, 'Account No.:', 1, 0, 'L', true);
