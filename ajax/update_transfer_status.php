@@ -3,17 +3,57 @@
 ob_start();
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
-error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE & ~E_DEPRECATED);
+error_reporting(E_ALL);
+
+// Set custom error log file
+$logFile = dirname(dirname(__FILE__)) . '/logs/transfer_status_error.log';
+$logDir = dirname($logFile);
+if (!is_dir($logDir)) {
+    @mkdir($logDir, 0755, true);
+}
+
+// Log start of request
+error_log("=== TRANSFER STATUS UPDATE REQUEST STARTED ===" . PHP_EOL, 3, $logFile);
+error_log("Timestamp: " . date('Y-m-d H:i:s') . PHP_EOL, 3, $logFile);
+error_log("Request Method: " . ($_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN') . PHP_EOL, 3, $logFile);
 
 // Suppress any output from includes
-@require_once dirname(dirname(__FILE__)) . '/config.php';
-@require_once APP_PATH . '/includes/db.php';
-@require_once APP_PATH . '/includes/auth.php';
-@require_once APP_PATH . '/includes/functions.php';
+try {
+    error_log("Loading config.php..." . PHP_EOL, 3, $logFile);
+    @require_once dirname(dirname(__FILE__)) . '/config.php';
+    error_log("config.php loaded successfully" . PHP_EOL, 3, $logFile);
+    
+    error_log("Loading db.php..." . PHP_EOL, 3, $logFile);
+    @require_once APP_PATH . '/includes/db.php';
+    error_log("db.php loaded successfully" . PHP_EOL, 3, $logFile);
+    
+    error_log("Loading auth.php..." . PHP_EOL, 3, $logFile);
+    @require_once APP_PATH . '/includes/auth.php';
+    error_log("auth.php loaded successfully" . PHP_EOL, 3, $logFile);
+    
+    error_log("Loading functions.php..." . PHP_EOL, 3, $logFile);
+    @require_once APP_PATH . '/includes/functions.php';
+    error_log("functions.php loaded successfully" . PHP_EOL, 3, $logFile);
+} catch (Exception $e) {
+    error_log("ERROR loading includes: " . $e->getMessage() . PHP_EOL, 3, $logFile);
+    error_log("Stack trace: " . $e->getTraceAsString() . PHP_EOL, 3, $logFile);
+    ob_clean();
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Initialization error: ' . $e->getMessage()]);
+    exit;
+} catch (Error $e) {
+    error_log("FATAL ERROR loading includes: " . $e->getMessage() . PHP_EOL, 3, $logFile);
+    error_log("Stack trace: " . $e->getTraceAsString() . PHP_EOL, 3, $logFile);
+    ob_clean();
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Fatal error: ' . $e->getMessage()]);
+    exit;
+}
 
 // Clear any output that might have been generated
 ob_clean();
 header('Content-Type: application/json');
+error_log("Headers set, starting authentication..." . PHP_EOL, 3, $logFile);
 
 try {
     initSession();
@@ -55,11 +95,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+error_log("Reading input data..." . PHP_EOL, 3, $logFile);
 $input = json_decode(file_get_contents('php://input'), true);
+error_log("Input data: " . json_encode($input) . PHP_EOL, 3, $logFile);
 $transferId = intval($input['transfer_id'] ?? 0);
 $status = trim($input['status'] ?? '');
+error_log("Transfer ID: $transferId, Status: $status" . PHP_EOL, 3, $logFile);
 
 if (!$transferId || !in_array($status, ['Pending', 'Approved', 'InTransit', 'Received', 'Rejected', 'Completed'])) {
+    error_log("Invalid input - Transfer ID: $transferId, Status: $status" . PHP_EOL, 3, $logFile);
     while (ob_get_level()) {
         ob_end_clean();
     }
@@ -69,8 +113,11 @@ if (!$transferId || !in_array($status, ['Pending', 'Approved', 'InTransit', 'Rec
 }
 
 try {
+    error_log("Getting Database instance..." . PHP_EOL, 3, $logFile);
     $db = Database::getInstance();
+    error_log("Database instance obtained" . PHP_EOL, 3, $logFile);
     $userId = $_SESSION['user_id'] ?? null;
+    error_log("User ID: " . ($userId ?? 'NULL') . PHP_EOL, 3, $logFile);
     
     // Get current transfer status
     $transfer = $db->getRow("SELECT status, from_branch_id, to_branch_id, transfer_number FROM stock_transfers WHERE id = :id", [':id' => $transferId]);
