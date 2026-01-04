@@ -5,45 +5,48 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 error_reporting(E_ALL);
 
-// Set custom error log file
-$logFile = dirname(dirname(__FILE__)) . '/logs/transfer_status_error.log';
-$logDir = dirname($logFile);
-if (!is_dir($logDir)) {
-    @mkdir($logDir, 0755, true);
+// Helper function to write to log file
+function writeTransferLog($message, $logFile) {
+    $logDir = dirname($logFile);
+    if (!is_dir($logDir)) {
+        @mkdir($logDir, 0755, true);
+    }
+    @file_put_contents($logFile, $message, FILE_APPEND);
 }
 
-// Log start of request
-error_log("=== TRANSFER STATUS UPDATE REQUEST STARTED ===" . PHP_EOL, 3, $logFile);
-error_log("Timestamp: " . date('Y-m-d H:i:s') . PHP_EOL, 3, $logFile);
-error_log("Request Method: " . ($_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN') . PHP_EOL, 3, $logFile);
+// Set custom error log file path (use absolute path from __DIR__)
+$logFile = dirname(dirname(__FILE__)) . '/logs/transfer_status_error.log';
+writeTransferLog("=== TRANSFER STATUS UPDATE REQUEST STARTED ===" . PHP_EOL, $logFile);
+writeTransferLog("Timestamp: " . date('Y-m-d H:i:s') . PHP_EOL, $logFile);
+writeTransferLog("Request Method: " . ($_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN') . PHP_EOL, $logFile);
 
 // Suppress any output from includes
 try {
-    error_log("Loading config.php..." . PHP_EOL, 3, $logFile);
+    writeTransferLog("Loading config.php..." . PHP_EOL, $logFile);
     @require_once dirname(dirname(__FILE__)) . '/config.php';
-    error_log("config.php loaded successfully" . PHP_EOL, 3, $logFile);
+    writeTransferLog("config.php loaded successfully" . PHP_EOL, $logFile);
     
-    error_log("Loading db.php..." . PHP_EOL, 3, $logFile);
+    writeTransferLog("Loading db.php..." . PHP_EOL, $logFile);
     @require_once APP_PATH . '/includes/db.php';
-    error_log("db.php loaded successfully" . PHP_EOL, 3, $logFile);
+    writeTransferLog("db.php loaded successfully" . PHP_EOL, $logFile);
     
-    error_log("Loading auth.php..." . PHP_EOL, 3, $logFile);
+    writeTransferLog("Loading auth.php..." . PHP_EOL, $logFile);
     @require_once APP_PATH . '/includes/auth.php';
-    error_log("auth.php loaded successfully" . PHP_EOL, 3, $logFile);
+    writeTransferLog("auth.php loaded successfully" . PHP_EOL, $logFile);
     
-    error_log("Loading functions.php..." . PHP_EOL, 3, $logFile);
+    writeTransferLog("Loading functions.php..." . PHP_EOL, $logFile);
     @require_once APP_PATH . '/includes/functions.php';
-    error_log("functions.php loaded successfully" . PHP_EOL, 3, $logFile);
+    writeTransferLog("functions.php loaded successfully" . PHP_EOL, $logFile);
 } catch (Exception $e) {
-    error_log("ERROR loading includes: " . $e->getMessage() . PHP_EOL, 3, $logFile);
-    error_log("Stack trace: " . $e->getTraceAsString() . PHP_EOL, 3, $logFile);
+    writeTransferLog("ERROR loading includes: " . $e->getMessage() . PHP_EOL, $logFile);
+    writeTransferLog("Stack trace: " . $e->getTraceAsString() . PHP_EOL, $logFile);
     ob_clean();
     header('Content-Type: application/json');
     echo json_encode(['success' => false, 'message' => 'Initialization error: ' . $e->getMessage()]);
     exit;
 } catch (Error $e) {
-    error_log("FATAL ERROR loading includes: " . $e->getMessage() . PHP_EOL, 3, $logFile);
-    error_log("Stack trace: " . $e->getTraceAsString() . PHP_EOL, 3, $logFile);
+    writeTransferLog("FATAL ERROR loading includes: " . $e->getMessage() . PHP_EOL, $logFile);
+    writeTransferLog("Stack trace: " . $e->getTraceAsString() . PHP_EOL, $logFile);
     ob_clean();
     header('Content-Type: application/json');
     echo json_encode(['success' => false, 'message' => 'Fatal error: ' . $e->getMessage()]);
@@ -53,7 +56,7 @@ try {
 // Clear any output that might have been generated
 ob_clean();
 header('Content-Type: application/json');
-error_log("Headers set, starting authentication..." . PHP_EOL, 3, $logFile);
+writeTransferLog("Headers set, starting authentication..." . PHP_EOL, $logFile);
 
 try {
     initSession();
