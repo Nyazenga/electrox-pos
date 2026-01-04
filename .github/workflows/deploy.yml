@@ -170,39 +170,42 @@ jobs:
             echo "✓ Deployment verification passed"
           ENDSSH
 
-      - name: Sync database structure
-        env:
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
-        run: |
-          echo "Synchronizing database structure..."
-          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} << 'ENDSSH'
-            set -e
-            echo "=== Database Structure Sync Started ==="
-            
-            # Check if SQL files exist
-            if [ ! -f "${{ env.DEPLOY_PATH }}/electrox_primary.sql" ] || [ ! -f "${{ env.DEPLOY_PATH }}/electrox_base.sql" ]; then
-              echo "⚠ SQL files not found. Skipping database sync."
-              echo "Note: Export databases locally and commit .sql files to enable auto-sync"
-              exit 0
-            fi
-            
-            # Run database sync script
-            if [ -f "${{ env.DEPLOY_PATH }}/scripts/update_live_server_db.php" ]; then
-              echo "Running database structure synchronization..."
-              php "${{ env.DEPLOY_PATH }}/scripts/update_live_server_db.php"
-              
-              if [ $? -eq 0 ]; then
-                echo "✓ Database structure synchronized successfully"
-              else
-                echo "✗ Database sync failed! Check logs for details"
-                exit 1
-              fi
-            else
-              echo "⚠ Database sync script not found. Skipping."
-            fi
-            
-            echo "=== Database Structure Sync Completed ==="
-          ENDSSH
+      # Database structure sync DISABLED to prevent overwriting custom columns like 'source'
+      # The update_live_server_db.php script was restoring structure from backups that don't include all columns
+      # TODO: Update SQL backup files to include 'source' column before re-enabling this step
+      # - name: Sync database structure
+      #   env:
+      #     SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+      #   run: |
+      #     echo "Synchronizing database structure..."
+      #     sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} << 'ENDSSH'
+      #       set -e
+      #       echo "=== Database Structure Sync Started ==="
+      #       
+      #       # Check if SQL files exist
+      #       if [ ! -f "${{ env.DEPLOY_PATH }}/electrox_primary.sql" ] || [ ! -f "${{ env.DEPLOY_PATH }}/electrox_base.sql" ]; then
+      #         echo "⚠ SQL files not found. Skipping database sync."
+      #         echo "Note: Export databases locally and commit .sql files to enable auto-sync"
+      #         exit 0
+      #       fi
+      #       
+      #       # Run database sync script
+      #       if [ -f "${{ env.DEPLOY_PATH }}/scripts/update_live_server_db.php" ]; then
+      #         echo "Running database structure synchronization..."
+      #         php "${{ env.DEPLOY_PATH }}/scripts/update_live_server_db.php"
+      #         
+      #         if [ $? -eq 0 ]; then
+      #           echo "✓ Database structure synchronized successfully"
+      #         else
+      #           echo "✗ Database sync failed! Check logs for details"
+      #           exit 1
+      #         fi
+      #       else
+      #         echo "⚠ Database sync script not found. Skipping."
+      #       fi
+      #       
+      #       echo "=== Database Structure Sync Completed ==="
+      #     ENDSSH
 
       - name: Test site accessibility
         run: |
