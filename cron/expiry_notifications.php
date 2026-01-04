@@ -20,31 +20,27 @@ require_once APP_PATH . '/includes/mailer.php';
 // Email recipient - use same as fiscal day cron jobs
 $emailRecipient = 'nyazengamd@gmail.com';
 
+// Force enable notifications
+$primaryDb = Database::getPrimaryInstance();
+$primaryDb->query("INSERT INTO settings (setting_key, value) VALUES ('send_expiry_notifications', '1') ON DUPLICATE KEY UPDATE value = '1'");
+
 // Get notification settings
 $sendNotifications = getSetting('send_expiry_notifications', '0') == '1';
 
 if (!$sendNotifications) {
+    error_log("EXPIRY NOTIFICATION CRON: Notifications disabled, exiting");
     exit(0); // Notifications disabled
 }
 
 try {
-    $db = Database::getInstance();
     $primaryDb = Database::getPrimaryInstance();
     
     // Calculate date 3 months from now
     $threeMonthsFromNow = date('Y-m-d', strtotime('+3 months'));
     $today = date('Y-m-d');
     
-    // Get all branches
-    $branches = $primaryDb->getRows("SELECT * FROM branches WHERE status = 'Active'");
-    if ($branches === false) $branches = [];
-    
-    $expiringProducts = [];
-    
-    // Check each branch
-    foreach ($branches as $branch) {
-        // Get products expiring within 3 months
-        $products = $db->getRows("SELECT p.*, 
+    // Get products expiring within 3 months from primary database
+    $products = $primaryDb->getRows("SELECT p.*, 
                                  COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
                                  pc.name as category_name,
                                  b.branch_name,
