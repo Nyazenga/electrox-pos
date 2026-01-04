@@ -13,28 +13,6 @@ $pageTitle = 'POS Settings';
 $db = Database::getInstance();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Handle receipt logo upload
-    if (isset($_FILES['receipt_logo']) && $_FILES['receipt_logo']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = APP_PATH . '/assets/uploads/receipts/';
-        if (!is_dir($uploadDir)) {
-            mkdir($uploadDir, 0755, true);
-        }
-        
-        $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-        $fileType = $_FILES['receipt_logo']['type'];
-        
-        if (in_array($fileType, $allowedTypes)) {
-            $extension = pathinfo($_FILES['receipt_logo']['name'], PATHINFO_EXTENSION);
-            $fileName = 'receipt_logo_' . time() . '.' . $extension;
-            $filePath = $uploadDir . $fileName;
-            
-            if (move_uploaded_file($_FILES['receipt_logo']['tmp_name'], $filePath)) {
-                $logoPath = '/assets/uploads/receipts/' . $fileName;
-                setSetting('pos_receipt_logo', $logoPath);
-            }
-        }
-    }
-    
     foreach ($_POST as $key => $value) {
         if (strpos($key, 'setting_') === 0) {
             $settingKey = str_replace('setting_', '', $key);
@@ -45,7 +23,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $settings = [
-    'pos_receipt_logo' => getSetting('pos_receipt_logo', ''),
     'pos_receipt_header' => getSetting('pos_receipt_header', 'Thank you for shopping with us!'),
     'pos_receipt_footer' => getSetting('pos_receipt_footer', 'Visit us again!'),
     'pos_default_tax_rate' => getSetting('pos_default_tax_rate', '15'),
@@ -67,31 +44,12 @@ require_once APP_PATH . '/includes/header.php';
 <div class="card">
     <div class="card-header">POS Configuration</div>
     <div class="card-body">
-        <form method="POST" enctype="multipart/form-data">
-            <!-- Receipt Logo -->
-            <div class="mb-4">
-                <label class="form-label fw-bold">Receipt Logo</label>
-                <?php 
-                $receiptLogoPath = $settings['pos_receipt_logo'];
-                $receiptLogoUrl = '';
-                $receiptLogoFullPath = '';
-                if ($receiptLogoPath) {
-                    $receiptLogoUrl = BASE_URL . ltrim($receiptLogoPath, '/');
-                    $receiptLogoFullPath = APP_PATH . '/' . ltrim($receiptLogoPath, '/');
-                }
-                ?>
-                <?php if ($receiptLogoPath && file_exists($receiptLogoFullPath)): ?>
-                    <div class="mb-3">
-                        <p class="text-muted mb-2">Current Logo:</p>
-                        <img src="<?= htmlspecialchars($receiptLogoUrl) ?>" alt="Receipt Logo" style="max-width: 200px; max-height: 100px; border: 1px solid #ddd; padding: 5px; border-radius: 4px;" onerror="this.style.display='none';">
-                    </div>
-                <?php else: ?>
-                    <p class="text-muted mb-2">No logo uploaded</p>
-                <?php endif; ?>
-                <input type="file" name="receipt_logo" class="form-control" accept="image/jpeg,image/png,image/gif,image/webp">
-                <small class="text-muted">Upload a logo to display on receipts (JPEG, PNG, GIF, or WebP)</small>
-            </div>
-            
+        <!-- Receipt Logo Note -->
+        <div class="alert alert-info mb-4">
+            <i class="bi bi-info-circle"></i> <strong>Receipt Logo:</strong> To upload or configure the receipt logo, please use the <a href="<?= BASE_URL ?>modules/pos/customize.php" class="alert-link">POS Customization</a> page.
+        </div>
+        
+        <form method="POST">
             <div class="mb-3">
                 <label>Receipt Header Text</label>
                 <input type="text" name="setting_pos_receipt_header" value="<?= escapeHtml($settings['pos_receipt_header']) ?>" class="form-control">
