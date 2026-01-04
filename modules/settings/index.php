@@ -11,7 +11,12 @@ $auth->requirePermission('settings.view');
 $pageTitle = 'Settings';
 
 $currentPage = $_GET['page'] ?? 'company';
-$validPages = ['company', 'general', 'payment_terms', 'pos', 'inventory', 'financial', 'fiscalization'];
+$validPages = ['company', 'general', 'payment_terms', 'inventory', 'financial', 'fiscalization'];
+// Redirect POS settings to customize page
+if (isset($_GET['page']) && $_GET['page'] === 'pos') {
+    header('Location: ' . BASE_URL . 'modules/pos/customize.php');
+    exit;
+}
 if (!in_array($currentPage, $validPages)) {
     $currentPage = 'company';
 }
@@ -105,7 +110,7 @@ require_once APP_PATH . '/includes/header.php';
                 <i class="bi bi-calendar-check"></i>
                 <span>Payment Terms</span>
             </a>
-            <a class="nav-link <?= $currentPage == 'pos' ? 'active' : '' ?>" href="index.php?page=pos">
+            <a class="nav-link" href="<?= BASE_URL ?>modules/pos/customize.php">
                 <i class="bi bi-cart"></i>
                 <span>POS Configuration</span>
             </a>
