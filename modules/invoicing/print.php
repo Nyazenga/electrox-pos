@@ -73,6 +73,7 @@ require_once APP_PATH . '/includes/settings_functions.php';
 $defaultTaxRate = getDefaultTaxRate();
 
 // Get invoice customizations
+$invoiceTemplate = getSetting('invoice_template', 'modern'); // Get template selection
 $invoiceLogo = getSetting('invoice_logo', getSetting('company_logo', ''));
 // If no logo setting found, try to find the most recent invoice_logo file
 if (empty($invoiceLogo)) {
