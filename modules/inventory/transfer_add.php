@@ -94,7 +94,7 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">To Branch *</label>
-                    <select class="form-select" name="to_branch_id" required>
+                    <select class="form-select" name="to_branch_id" id="to_branch_id" required>
                         <option value="">Select Branch</option>
                         <?php foreach ($branches as $branch): ?>
                             <option value="<?= $branch['id'] ?>" <?= $branchId == $branch['id'] ? 'disabled' : '' ?>>
@@ -205,7 +205,31 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Update from branch ID when changed
     document.getElementById('from_branch_id').addEventListener('change', function() {
-        fromBranchId = this.value;
+        const newFromBranchId = this.value;
+        fromBranchId = newFromBranchId;
+        
+        // Update To Branch dropdown - disable the selected From Branch and enable others
+        const toBranchSelect = document.getElementById('to_branch_id');
+        const toBranchOptions = toBranchSelect.querySelectorAll('option');
+        
+        toBranchOptions.forEach(option => {
+            if (option.value === '') {
+                // Skip the "Select Branch" option
+                return;
+            }
+            if (option.value === newFromBranchId) {
+                // Disable the selected From Branch
+                option.disabled = true;
+                // If this was selected, clear the selection
+                if (toBranchSelect.value === newFromBranchId) {
+                    toBranchSelect.value = '';
+                }
+            } else {
+                // Enable all other branches
+                option.disabled = false;
+            }
+        });
+        
         // Clear items when branch changes
         transferItems = [];
         renderItems();
