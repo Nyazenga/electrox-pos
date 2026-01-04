@@ -739,9 +739,126 @@ if ($usePDF) {
             margin: 0 auto;
             padding: 20px;
             background: white;
+        }
+        
+        /* Template-specific styles */
+        <?php if ($invoiceTemplate === 'modern'): ?>
+        /* Modern Template - Current default style with borders and shadow */
+        .invoice-container {
             border: 2px solid #000;
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
         }
+        <?php elseif ($invoiceTemplate === 'classic'): ?>
+        /* Classic Template - Traditional, clean borders */
+        .invoice-container {
+            border: 1px solid #333;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .invoice-header {
+            border-bottom: 3px solid #333 !important;
+        }
+        .company-details-left h2 {
+            color: #1a1a1a;
+            border-bottom: 2px solid #333;
+            padding-bottom: 8px;
+            display: inline-block;
+        }
+        <?php elseif ($invoiceTemplate === 'minimal'): ?>
+        /* Minimal Template - Clean, minimal design */
+        .invoice-container {
+            border: none;
+            box-shadow: none;
+            padding: 15px;
+        }
+        .invoice-header {
+            border-bottom: 1px solid #ddd !important;
+        }
+        .company-details-left h2 {
+            color: #333;
+            font-weight: 300;
+        }
+        .invoice-meta-section {
+            border-bottom: 1px solid #ddd !important;
+        }
+        .client-section {
+            background: transparent !important;
+            border: 1px solid #ddd !important;
+        }
+        table {
+            border: 1px solid #ddd !important;
+        }
+        table thead {
+            background: #f5f5f5 !important;
+            color: #333 !important;
+        }
+        table thead th {
+            background-color: #f5f5f5 !important;
+            color: #333 !important;
+            border: 1px solid #ddd !important;
+            text-shadow: none !important;
+        }
+        .summary-row {
+            border-bottom: 1px solid #ddd !important;
+        }
+        .summary-row.total {
+            border-top: 1px solid #333 !important;
+            border-bottom: 1px solid #333 !important;
+        }
+        .terms-section,
+        .banking-section {
+            border-top: 1px solid #ddd !important;
+            border: 1px solid #ddd !important;
+            background: transparent !important;
+        }
+        <?php elseif ($invoiceTemplate === 'elegant'): ?>
+        /* Elegant Template - Sophisticated, refined design */
+        .invoice-container {
+            border: 1px solid #ccc;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            background: #fafafa;
+        }
+        .invoice-header {
+            border-bottom: 2px solid <?= escapeHtml($invoicePrimaryColor) ?> !important;
+            padding-bottom: 20px;
+        }
+        .company-details-left h2 {
+            color: <?= escapeHtml($invoicePrimaryColor) ?>;
+            font-style: italic;
+            letter-spacing: 1px;
+        }
+        .invoice-meta-section {
+            border-bottom: 2px solid <?= escapeHtml($invoicePrimaryColor) ?> !important;
+            background: #fff;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .client-section {
+            background: linear-gradient(to bottom, #fff, #f8f9fa) !important;
+            border: 2px solid <?= escapeHtml($invoicePrimaryColor) ?> !important;
+            border-radius: 4px;
+        }
+        table {
+            border: 2px solid <?= escapeHtml($invoicePrimaryColor) ?> !important;
+        }
+        .summary-section {
+            background: #fff;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .terms-section,
+        .banking-section {
+            border: 1px solid #ddd !important;
+            background: #fff !important;
+            border-radius: 4px;
+        }
+        <?php else: ?>
+        /* Default to Modern if template not recognized */
+        .invoice-container {
+            border: 2px solid #000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        <?php endif; ?>
         
         .invoice-header {
             display: flex;
