@@ -913,11 +913,24 @@ class FiscalService {
         @file_put_contents($logFile, $logMessage, FILE_APPEND);
         error_log("FISCAL_SERVICE: Logged receiptData to $logFile before signature generation");
         
-        // CRITICAL: Ensure we're using the same certificate as closeFiscalDay
-        // Reload from CertificateStorage to ensure consistency
+        // CRITICAL: Always reload certificate from CertificateStorage (single source of truth)
+        // This ensures we're using the same certificate that was used for fiscal day opening/closing
         require_once APP_PATH . '/includes/certificate_storage.php';
         $certDataForReceipt = CertificateStorage::loadCertificate($this->deviceId);
-        $privateKeyForReceipt = null;
+        
+        if (!$certDataForReceipt || !$certDataForReceipt['certificate'] || !$certDataForReceipt['privateKey']) {
+            error_log("SUBMIT RECEIPT: ERROR - Could not load certificate from CertificateStorage");
+            throw new Exception("Certificate not found for device {$this->deviceId}. Please ensure the device is registered.");
+        }
+        
+        $privateKeyForReceipt = $certDataForReceipt['privateKey'];
+        $certificateForReceipt = $certDataForReceipt['certificate'];
+        
+        // CRITICAL: Validate certificate before using it for receipt submission
+        $this->validateCertificateForOperation($certificateForReceipt, $privateKeyForReceipt, 'receipt_submission');
+        
+        // Update API client to use the fresh certificate
+        $this->api->setCertificate($certificateForReceipt, $privateKeyForReceipt);
         
         $writeLog = function($message) {
             $logFile = APP_PATH . '/logs/error.log';
@@ -931,54 +944,39 @@ class FiscalService {
             error_log("SUBMIT RECEIPT: $message");
         };
         
-        if ($certDataForReceipt && $certDataForReceipt['privateKey']) {
-            $privateKeyForReceipt = $certDataForReceipt['privateKey'];
-            $certificateForReceipt = $certDataForReceipt['certificate'];
-            
-            // CRITICAL: Validate certificate before using it for receipt submission
-            $this->validateCertificateForOperation($certificateForReceipt, $privateKeyForReceipt, 'receipt_submission');
-            
-            // Update API client to use the fresh certificate
-            $this->api->setCertificate($certificateForReceipt, $privateKeyForReceipt);
-            
-            // Log certificate details for comparison
-            $certFingerprintReceipt = null;
-            $certSubjectReceipt = null;
-            if ($certificateForReceipt) {
-                $cert = openssl_x509_read($certificateForReceipt);
-                if ($cert) {
-                    $certDetails = openssl_x509_parse($cert);
-                    $certFingerprintReceipt = openssl_x509_fingerprint($cert, 'sha256', false);
-                    $certSubjectReceipt = $certDetails['subject']['CN'] ?? 'N/A';
-                }
+        // Log certificate details for comparison
+        $certFingerprintReceipt = null;
+        $certSubjectReceipt = null;
+        if ($certificateForReceipt) {
+            $cert = openssl_x509_read($certificateForReceipt);
+            if ($cert) {
+                $certDetails = openssl_x509_parse($cert);
+                $certFingerprintReceipt = openssl_x509_fingerprint($cert, 'sha256', false);
+                $certSubjectReceipt = $certDetails['subject']['CN'] ?? 'N/A';
             }
-            
-            $keyFingerprintReceipt = null;
-            $key = openssl_pkey_get_private($privateKeyForReceipt);
-            if ($key) {
-                $keyDetails = openssl_pkey_get_details($key);
-                if (isset($keyDetails['key'])) {
-                    $keyFingerprintReceipt = hash('sha256', $keyDetails['key']);
-                }
-            }
-            
-            $writeLog("========== CERTIFICATE LOADED FOR RECEIPT SUBMISSION ==========");
-            $writeLog("Certificate Subject: " . ($certSubjectReceipt ?? 'N/A'));
-            $writeLog("Certificate Fingerprint (SHA256): " . ($certFingerprintReceipt ?? 'N/A'));
-            $writeLog("Private Key Fingerprint (SHA256 of public key): " . ($keyFingerprintReceipt ?? 'N/A'));
-            $writeLog("Certificate Length: " . strlen($certificateForReceipt) . " bytes");
-            $writeLog("Private Key Length: " . strlen($privateKeyForReceipt) . " bytes");
-            $writeLog("Certificate First 50 chars: " . substr($certificateForReceipt, 0, 50));
-            $writeLog("Certificate Last 50 chars: " . substr($certificateForReceipt, -50));
-            $writeLog("Private Key First 50 chars: " . substr($privateKeyForReceipt, 0, 50));
-            $writeLog("Private Key Last 50 chars: " . substr($privateKeyForReceipt, -50));
-            $writeLog("API client certificate updated");
-            $writeLog("================================================");
-        } else {
-            // Fallback to device record
-            $privateKeyForReceipt = $this->device['private_key_pem'];
-            $writeLog("WARNING - Using certificate from device record (not CertificateStorage)");
         }
+        
+        $keyFingerprintReceipt = null;
+        $key = openssl_pkey_get_private($privateKeyForReceipt);
+        if ($key) {
+            $keyDetails = openssl_pkey_get_details($key);
+            if (isset($keyDetails['key'])) {
+                $keyFingerprintReceipt = hash('sha256', $keyDetails['key']);
+            }
+        }
+        
+        $writeLog("========== CERTIFICATE LOADED FOR RECEIPT SUBMISSION ==========");
+        $writeLog("Certificate Subject: " . ($certSubjectReceipt ?? 'N/A'));
+        $writeLog("Certificate Fingerprint (SHA256): " . ($certFingerprintReceipt ?? 'N/A'));
+        $writeLog("Private Key Fingerprint (SHA256 of public key): " . ($keyFingerprintReceipt ?? 'N/A'));
+        $writeLog("Certificate Length: " . strlen($certificateForReceipt) . " bytes");
+        $writeLog("Private Key Length: " . strlen($privateKeyForReceipt) . " bytes");
+        $writeLog("Certificate First 50 chars: " . substr($certificateForReceipt, 0, 50));
+        $writeLog("Certificate Last 50 chars: " . substr($certificateForReceipt, -50));
+        $writeLog("Private Key First 50 chars: " . substr($privateKeyForReceipt, 0, 50));
+        $writeLog("Private Key Last 50 chars: " . substr($privateKeyForReceipt, -50));
+        $writeLog("API client certificate updated");
+        $writeLog("================================================");
         
         // Generate receipt signature AFTER all fixes are applied
         // Signature must be generated on the FINAL payload structure that will be sent to ZIMRA
