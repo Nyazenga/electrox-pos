@@ -349,25 +349,13 @@ class ZimraSignature {
      * We'll follow the official ZIMRA documentation (which matches the example).
      */
     private static function buildTaxesString($receiptTaxes, $currency = 'ZWL') {
-        // Sort taxes by taxID ascending, then by taxCode alphabetically (empty comes before A)
-        // Documentation: "Taxes are ordered by taxID in ascending order and taxCode in alphabetical 
-        // order (if taxCode is empty it is ordered before A letter)."
+        // Sort taxes by taxID ascending only (matching Python implementation)
+        // Python library (line 204): sorted(receiptTaxes, key=lambda x: (x['taxID']))
+        // ZIMRA Documentation Example 2 (line 4388) shows format without taxCode
         usort($receiptTaxes, function($a, $b) {
             $taxIdA = intval($a['taxID'] ?? 0);
             $taxIdB = intval($b['taxID'] ?? 0);
-            if ($taxIdA !== $taxIdB) {
-                return $taxIdA - $taxIdB;
-            }
-            // If taxID is same, sort by taxCode (empty comes before any letter)
-            $taxCodeA = $a['taxCode'] ?? '';
-            $taxCodeB = $b['taxCode'] ?? '';
-            if ($taxCodeA === '' && $taxCodeB !== '') {
-                return -1; // Empty comes first
-            }
-            if ($taxCodeA !== '' && $taxCodeB === '') {
-                return 1; // Empty comes first
-            }
-            return strcmp($taxCodeA, $taxCodeB);
+            return $taxIdA - $taxIdB;
         });
         
         // Log tax sorting order
@@ -376,9 +364,9 @@ class ZimraSignature {
             $logDir = dirname($logFile);
             if (is_dir($logDir) || @mkdir($logDir, 0755, true)) {
                 $timestamp = date('Y-m-d H:i:s');
-                $logMessage = "[$timestamp] TAX SORTING (ZIMRA Documentation Format): Taxes ordered by taxID (ascending), then taxCode (alphabetical, empty first):\n";
+                $logMessage = "[$timestamp] TAX SORTING (Python Library Format): Taxes ordered by taxID (ascending) only:\n";
                 foreach ($receiptTaxes as $idx => $tax) {
-                    $logMessage .= "[$timestamp]   Tax[$idx]: taxID=" . ($tax['taxID'] ?? 'N/A') . ", taxCode='" . ($tax['taxCode'] ?? '') . "', taxPercent=" . ($tax['taxPercent'] ?? 'N/A') . "\n";
+                    $logMessage .= "[$timestamp]   Tax[$idx]: taxID=" . ($tax['taxID'] ?? 'N/A') . ", taxPercent=" . ($tax['taxPercent'] ?? 'N/A') . "\n";
                 }
                 @file_put_contents($logFile, $logMessage, FILE_APPEND);
             }
@@ -386,15 +374,12 @@ class ZimraSignature {
         
         $taxStrings = [];
         foreach ($receiptTaxes as $tax) {
-            // ZIMRA Documentation format: taxCode || taxPercent || taxAmount || salesAmountWithTax
-            // Documentation Section 13.2.1: "taxCode || taxPercent || taxAmount || salesAmountWithTax"
-            // For 5% Non-VAT Withholding Tax (taxID 514), taxCode is null/empty (per Panier documentation)
-            // Include taxCode as empty string for 5% tax to maintain format consistency
+            // Python implementation format: taxPercent || taxAmount || salesAmountWithTax (NO taxCode)
+            // Python library (line 207): f"{float(tax['taxPercent']):.2f}{int(tax['taxAmount']*100)}{int(tax['salesAmountWithTax']*100)}"
+            // ZIMRA Documentation Example 2 (line 4388) also shows format without taxCode: "07000.000100014.50535"
+            // This was working BEFORE we added taxCode - match Python implementation exactly
             
-            // 1. taxCode (empty string if not present - this includes 5% tax which has null/empty taxCode)
-            $taxCode = $tax['taxCode'] ?? '';
-            
-            // 2. taxPercent - format with exactly 2 decimal places
+            // 1. taxPercent - format with exactly 2 decimal places
             // Documentation: "In case taxPercent is not an integer there should be dot between the integer and fractional part."
             // "In case taxPercent is an integer there should be value of tax percent, dot and two zeros sent."
             // Examples: 15 -> 15.00, 14.5 -> 14.50, 15.5 -> 15.50
@@ -415,9 +400,9 @@ class ZimraSignature {
             $salesAmountFloat = floatval($tax['salesAmountWithTax'] ?? 0);
             $salesCents = self::toCents($salesAmountFloat, $currency);
             
-            // Format: taxCode || taxPercent || taxAmount || salesAmountWithTax (ZIMRA Documentation)
-            // For 5% tax (taxID 514), taxCode is empty string (null from ZIMRA)
-            $taxString = $taxCode . $percent . strval($amountCents) . strval($salesCents);
+            // Format: taxPercent || taxAmount || salesAmountWithTax (NO taxCode - matching Python implementation)
+            // This was working BEFORE we added taxCode - match Python implementation exactly
+            $taxString = $percent . strval($amountCents) . strval($salesCents);
             $taxStrings[] = $taxString;
             
             // Log tax string construction for debugging (matching ZIMRA documentation format)
@@ -426,9 +411,8 @@ class ZimraSignature {
                 $logDir = dirname($logFile);
                 if (is_dir($logDir) || @mkdir($logDir, 0755, true)) {
                     $timestamp = date('Y-m-d H:i:s');
-                    $logMessage = "[$timestamp] TAX STRING CONSTRUCTION (ZIMRA Documentation Format):\n";
-                    $logMessage .= "[$timestamp]   Format: taxCode || taxPercent (2 decimals) || taxAmount (cents) || salesAmountWithTax (cents)\n";
-                    $logMessage .= "[$timestamp]   taxCode: '$taxCode' (from " . ($tax['taxCode'] ?? 'N/A') . ")\n";
+                    $logMessage = "[$timestamp] TAX STRING CONSTRUCTION (Python Library Format):\n";
+                    $logMessage .= "[$timestamp]   Format: taxPercent (2 decimals) || taxAmount (cents) || salesAmountWithTax (cents) - NO taxCode\n";
                     $logMessage .= "[$timestamp]   taxPercent: '$percent' (from " . ($tax['taxPercent'] ?? 'N/A') . ", formatted with 2 decimal places)\n";
                     $logMessage .= "[$timestamp]   taxAmount: '$amountCents' (from " . ($tax['taxAmount'] ?? 'N/A') . " " . $currency . ", intval(value * 100))\n";
                     $logMessage .= "[$timestamp]   salesAmountWithTax: '$salesCents' (from " . ($tax['salesAmountWithTax'] ?? 'N/A') . " " . $currency . ", intval(value * 100))\n";
