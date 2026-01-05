@@ -521,6 +521,10 @@ class ZimraSignature {
                 $logMessage .= "[$timestamp] Signature string length: " . strlen($signatureString) . " characters\n";
                 @file_put_contents($logFile, $logMessage, FILE_APPEND);
             }
+            // Also log to nginx error log
+            error_log("FISCAL DAY SIGNATURE: deviceID=" . ($fiscalDayData['deviceID'] ?? 'N/A') . ", fiscalDayNo=" . ($fiscalDayData['fiscalDayNo'] ?? 'N/A'));
+            error_log("FISCAL DAY SIGNATURE: COMPLETE SIGNATURE STRING: " . $signatureString);
+            error_log("FISCAL DAY SIGNATURE: Signature string length: " . strlen($signatureString) . " characters");
         }
         
         // Generate SHA-256 hash according to Section 13.1: Hash = SHA-256(x1|| x2||…||xn)
@@ -537,6 +541,9 @@ class ZimraSignature {
                 $logMessage .= "[$timestamp] Hash length: " . strlen($hash) . " bytes (32 bytes for SHA-256)\n";
                 @file_put_contents($logFile, $logMessage, FILE_APPEND);
             }
+            // Also log to nginx error log
+            error_log("FISCAL DAY SIGNATURE: Generated hash (base64): " . $hashBase64);
+            error_log("FISCAL DAY SIGNATURE: Hash length: " . strlen($hash) . " bytes");
         }
         
         $privateKey = openssl_pkey_get_private($privateKeyPem);
@@ -564,6 +571,14 @@ class ZimraSignature {
                 }
                 @file_put_contents($logFile, $logMessage, FILE_APPEND);
             }
+            // Also log to nginx error log
+            $keyTypeMsg = "Key type: $keyType";
+            if ($keyType === 'RSA') {
+                $keyTypeMsg .= " (" . ($keyDetails['bits'] ?? 'unknown') . " bits)";
+            } elseif ($keyType === 'ECC') {
+                $keyTypeMsg .= " (curve: " . ($keyDetails['ec']['curve_name'] ?? 'unknown') . ")";
+            }
+            error_log("FISCAL DAY SIGNATURE: $keyTypeMsg");
         }
         
         $signature = '';
@@ -587,6 +602,9 @@ class ZimraSignature {
                 $logMessage .= "[$timestamp] ========== END FISCAL DAY DEVICE SIGNATURE GENERATION ==========\n";
                 @file_put_contents($logFile, $logMessage, FILE_APPEND);
             }
+            // Also log to nginx error log
+            error_log("FISCAL DAY SIGNATURE: Final device signature (base64): " . $signatureBase64);
+            error_log("FISCAL DAY SIGNATURE: ========== END FISCAL DAY DEVICE SIGNATURE GENERATION ==========");
         }
         
         return [
@@ -647,6 +665,17 @@ class ZimraSignature {
                 }
                 $logMessage .= "[$timestamp] ====================================================\n";
                 @file_put_contents($logFile, $logMessage, FILE_APPEND);
+            }
+            // Also log to nginx error log
+            error_log("COUNTERS SORTING: Total counters: " . count($sortedCounters));
+            foreach ($sortedCounters as $idx => $counter) {
+                $type = $counter['fiscalCounterType'] ?? 'N/A';
+                $priority = self::getCounterTypePriority($type);
+                $currency = $counter['fiscalCounterCurrency'] ?? 'N/A';
+                $taxID = isset($counter['fiscalCounterTaxID']) ? $counter['fiscalCounterTaxID'] : 'N/A';
+                $moneyType = $counter['fiscalCounterMoneyType'] ?? 'N/A';
+                $value = $counter['fiscalCounterValue'] ?? 'N/A';
+                error_log("COUNTERS SORTING: [$idx] Type: $type (priority: $priority) | Currency: $currency | TaxID: $taxID | MoneyType: $moneyType | Value: $value");
             }
         }
         
@@ -832,6 +861,8 @@ class ZimraSignature {
                     $logMessage .= "[$timestamp]   Counter String: $counterString\n";
                     @file_put_contents($logFile, $logMessage, FILE_APPEND);
                 }
+                // Also log to nginx error log
+                error_log("FISCAL DAY COUNTER STRING: Type=$type, Currency=$currency, TaxPercent/MoneyType='$percentOrMoneyType', Value=$valueFloat -> $valueCents cents, Counter String: $counterString");
             }
         }
         
@@ -848,6 +879,9 @@ class ZimraSignature {
                 $logMessage .= "[$timestamp] Length: " . strlen($result) . " characters\n";
                 @file_put_contents($logFile, $logMessage, FILE_APPEND);
             }
+            // Also log to nginx error log
+            error_log("FISCAL DAY COUNTERS STRING: COMPLETE COUNTERS STRING: " . $result);
+            error_log("FISCAL DAY COUNTERS STRING: Length: " . strlen($result) . " characters");
         }
         
         return $result;
