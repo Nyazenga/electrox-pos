@@ -45,7 +45,13 @@ function getApplicableTaxesForBranch($primaryDb, $branchId) {
     }
     
     $taxes = json_decode($config['applicable_taxes'], true);
-    return is_array($taxes) ? $taxes : [];
+    if (!is_array($taxes)) {
+        return [];
+    }
+    
+    // Filter out 5% Non-VAT Withholding Tax - it should NOT be fiscalized
+    require_once APP_PATH . '/includes/fiscal_helper.php';
+    return filterOut5PercentTax($taxes);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

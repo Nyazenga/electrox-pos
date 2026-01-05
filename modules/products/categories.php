@@ -23,9 +23,14 @@ function getAllApplicableTaxes($primaryDb) {
     $allTaxes = [];
     $seenTaxIds = [];
     
+    require_once APP_PATH . '/includes/fiscal_helper.php';
+    
     foreach ($configs as $config) {
         $taxes = json_decode($config['applicable_taxes'], true);
         if (is_array($taxes)) {
+            // Filter out 5% Non-VAT Withholding Tax - it should NOT be fiscalized
+            $taxes = filterOut5PercentTax($taxes);
+            
             foreach ($taxes as $tax) {
                 $taxId = $tax['taxID'] ?? null;
                 if ($taxId && !in_array($taxId, $seenTaxIds)) {

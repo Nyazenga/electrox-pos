@@ -55,6 +55,10 @@ try {
         exit;
     }
     
+    // Filter out 5% Non-VAT Withholding Tax - it should NOT be fiscalized
+    require_once APP_PATH . '/includes/fiscal_helper.php';
+    $taxes = filterOut5PercentTax($taxes);
+    
     // Return taxes with proper structure
     echo json_encode([
         'success' => true,
