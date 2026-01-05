@@ -119,6 +119,7 @@ if (!empty($rawResponse['applicableTaxes']) && is_array($rawResponse['applicable
         echo "  taxID: " . (isset($tax['taxID']) ? $tax['taxID'] : 'NOT PROVIDED') . "\n";
         echo "  taxPercent: " . (isset($tax['taxPercent']) ? $tax['taxPercent'] : 'NOT PROVIDED') . " (type: " . (isset($tax['taxPercent']) ? gettype($tax['taxPercent']) : 'N/A') . ")\n";
         echo "  taxName: " . (isset($tax['taxName']) ? $tax['taxName'] : 'NOT PROVIDED') . "\n";
+        echo "  taxCode: " . (isset($tax['taxCode']) ? $tax['taxCode'] : 'NOT PROVIDED') . "\n";
         if (isset($tax['taxValidFrom'])) {
             echo "  taxValidFrom: " . $tax['taxValidFrom'] . "\n";
         }
