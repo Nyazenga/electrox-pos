@@ -624,22 +624,53 @@ class ZimraSignature {
      * PUBLIC method for use in fiscal_service.php
      */
     public static function sortCountersForZimra($counters) {
-        // Make a copy to avoid modifying the original
+        // Make a copy to avoid modifying the original (PHP arrays are copied by value)
         $sortedCounters = $counters;
         self::sortCountersInternal($sortedCounters);
+        
+        // Log sorting for debugging
+        if (defined('APP_PATH')) {
+            $logFile = APP_PATH . '/logs/error.log';
+            $logDir = dirname($logFile);
+            if (is_dir($logDir) || @mkdir($logDir, 0755, true)) {
+                $timestamp = date('Y-m-d H:i:s');
+                $logMessage = "[$timestamp] ========== COUNTERS SORTING (MATCHING PYTHON) ==========\n";
+                $logMessage .= "[$timestamp] Total counters: " . count($sortedCounters) . "\n";
+                foreach ($sortedCounters as $idx => $counter) {
+                    $type = $counter['fiscalCounterType'] ?? 'N/A';
+                    $priority = self::getCounterTypePriority($type);
+                    $currency = $counter['fiscalCounterCurrency'] ?? 'N/A';
+                    $taxID = isset($counter['fiscalCounterTaxID']) ? $counter['fiscalCounterTaxID'] : 'N/A';
+                    $moneyType = $counter['fiscalCounterMoneyType'] ?? 'N/A';
+                    $value = $counter['fiscalCounterValue'] ?? 'N/A';
+                    $logMessage .= "[$timestamp] [$idx] Type: $type (priority: $priority) | Currency: $currency | TaxID: $taxID | MoneyType: $moneyType | Value: $value\n";
+                }
+                $logMessage .= "[$timestamp] ====================================================\n";
+                @file_put_contents($logFile, $logMessage, FILE_APPEND);
+            }
+        }
+        
         return $sortedCounters;
     }
     
     /**
      * Internal sorting function - extracted to be reusable
+     * CRITICAL: This MUST match Python implementation exactly:
+     * - Type priority: 1=SaleByTax, 2=SaleTaxByTax, 3=CreditNoteByTax, 4=CreditNoteTaxByTax,
+     *   5=DebitNoteByTax, 6=DebitNoteTaxByTax, 7=BalanceByMoneyType
+     * - Then: currency (alphabetical), taxID/moneyType
      */
     private static function sortCountersInternal(&$counters) {
         usort($counters, function($a, $b) {
-            // 1. Sort by fiscalCounterType (ascending)
-            $typeA = strtoupper($a['fiscalCounterType'] ?? '');
-            $typeB = strtoupper($b['fiscalCounterType'] ?? '');
-            if ($typeA !== $typeB) {
-                return strcmp($typeA, $typeB);
+            // 1. Sort by fiscalCounterType using NUMERIC PRIORITY (like Python, NOT alphabetical)
+            $typeA = $a['fiscalCounterType'] ?? '';
+            $typeB = $b['fiscalCounterType'] ?? '';
+            
+            $priorityA = self::getCounterTypePriority($typeA);
+            $priorityB = self::getCounterTypePriority($typeB);
+            
+            if ($priorityA !== $priorityB) {
+                return $priorityA - $priorityB;
             }
             
             // 2. Sort by currency (alphabetical ascending)
@@ -655,7 +686,6 @@ class ZimraSignature {
             
             if ($hasTaxIDA || $hasTaxIDB) {
                 // Tax counter - sort by taxID numerically
-                // CRITICAL FIX: Treat null as 0 for consistent sorting
                 $taxIDA = $hasTaxIDA ? intval($a['fiscalCounterTaxID']) : 0;
                 $taxIDB = $hasTaxIDB ? intval($b['fiscalCounterTaxID']) : 0;
                 if ($taxIDA !== $taxIDB) {
@@ -664,18 +694,16 @@ class ZimraSignature {
                 
                 // If same taxID, sort by taxPercent (for cases where same taxID has different percents)
                 // CRITICAL: Handle null (exempt) vs 0 (zero-rated) vs > 0 (tax)
-                // Exempt (null) should come first, then 0, then positive values
                 $percentA = $a['fiscalCounterTaxPercent'] ?? null;
                 $percentB = $b['fiscalCounterTaxPercent'] ?? null;
                 
                 if ($percentA === null && $percentB === null) {
-                    // Both exempt - use a stable secondary sort (e.g., by value)
+                    // Both exempt - use value as tiebreaker for stability
                     $valueA = floatval($a['fiscalCounterValue'] ?? 0);
                     $valueB = floatval($b['fiscalCounterValue'] ?? 0);
                     if (abs($valueA - $valueB) > 0.001) {
                         return $valueA < $valueB ? -1 : 1;
                     }
-                    // If values are equal, maintain order (stable sort)
                     return 0;
                 } elseif ($percentA === null) {
                     return -1; // Exempt comes before any value
@@ -713,6 +741,31 @@ class ZimraSignature {
                 return 0;
             }
         });
+    }
+    
+    /**
+     * Get numeric priority for counter type (matches Python implementation)
+     */
+    private static function getCounterTypePriority($type) {
+        $typeUpper = strtoupper($type ?? '');
+        switch ($typeUpper) {
+            case 'SALEBYTAX':
+                return 1;
+            case 'SALETAXBYTAX':
+                return 2;
+            case 'CREDITNOTEBYTAX':
+                return 3;
+            case 'CREDITNOTETAXBYTAX':
+                return 4;
+            case 'DEBITNOTEBYTAX':
+                return 5;
+            case 'DEBITNOTETAXBYTAX':
+                return 6;
+            case 'BALANCEBYMONEYTYPE':
+                return 7;
+            default:
+                return 99; // Unknown types go last
+        }
     }
     
     /**

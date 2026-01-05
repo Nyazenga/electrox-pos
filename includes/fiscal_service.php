@@ -1483,12 +1483,28 @@ class FiscalService {
         // Calculate fiscal day counters
         $counters = $this->calculateFiscalDayCounters($fiscalDay['id']);
         
+        // Log original counters BEFORE sorting
+        $writeLog("========== ORIGINAL COUNTERS (BEFORE SORTING) ==========");
+        $writeLog("Total counters: " . count($counters));
+        foreach ($counters as $idx => $counter) {
+            $writeLog("[$idx] " . json_encode($counter));
+        }
+        $writeLog("================================================");
+        
         // CRITICAL FIX: Sort counters BEFORE signature generation AND API call
         // This ensures the counters sent to ZIMRA are in the EXACT same order as used in the signature
         // ZIMRA sorts counters by: type → currency → taxID → moneyType before verifying signature
-        // We MUST match their sorting order EXACTLY
+        // We MUST match their sorting order EXACTLY (using numeric type priorities like Python)
         require_once APP_PATH . '/includes/zimra_signature.php';
         $counters = ZimraSignature::sortCountersForZimra($counters);
+        
+        // Log sorted counters AFTER sorting
+        $writeLog("========== SORTED COUNTERS (AFTER SORTING - MATCHING PYTHON) ==========");
+        $writeLog("Total counters: " . count($counters));
+        foreach ($counters as $idx => $counter) {
+            $writeLog("[$idx] " . json_encode($counter));
+        }
+        $writeLog("================================================");
         
         // Generate fiscal day signature
         $fiscalDayData = [
@@ -1620,6 +1636,18 @@ class FiscalService {
         );
         
         $receiptCounter = $lastReceipt ? $lastReceipt['receipt_counter'] : 0;
+        
+        // Log the EXACT payload that will be sent to ZIMRA
+        $writeLog("========== PAYLOAD TO BE SENT TO ZIMRA ==========");
+        $payloadToLog = [
+            'deviceID' => $this->deviceId,
+            'fiscalDayNo' => $fiscalDay['fiscal_day_no'],
+            'fiscalDayCounters' => $counters,
+            'fiscalDayDeviceSignature' => $deviceSignature,
+            'receiptCounter' => $receiptCounter
+        ];
+        $writeLog(json_encode($payloadToLog, JSON_PRETTY_PRINT));
+        $writeLog("================================================");
         
         // Prepare request data for logging
         $requestData = [
