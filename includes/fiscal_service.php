@@ -1480,6 +1480,19 @@ class FiscalService {
             throw new Exception('No open fiscal day to close. ' . $statusMsg . '. Please check ZIMRA status first or contact support.');
         }
         
+        // Define logging function
+        $writeLog = function($message) {
+            $logFile = APP_PATH . '/logs/error.log';
+            $logDir = dirname($logFile);
+            if (!is_dir($logDir)) {
+                @mkdir($logDir, 0755, true);
+            }
+            $timestamp = date('Y-m-d H:i:s');
+            $logMessage = "[$timestamp] CLOSE FISCAL DAY: $message" . PHP_EOL;
+            @file_put_contents($logFile, $logMessage, FILE_APPEND);
+            error_log("CLOSE FISCAL DAY: $message");
+        };
+        
         // Calculate fiscal day counters
         $counters = $this->calculateFiscalDayCounters($fiscalDay['id']);
         
@@ -1552,18 +1565,6 @@ class FiscalService {
                 }
             }
         }
-        
-        $writeLog = function($message) {
-            $logFile = APP_PATH . '/logs/error.log';
-            $logDir = dirname($logFile);
-            if (!is_dir($logDir)) {
-                @mkdir($logDir, 0755, true);
-            }
-            $timestamp = date('Y-m-d H:i:s');
-            $logMessage = "[$timestamp] CLOSE FISCAL DAY: $message" . PHP_EOL;
-            @file_put_contents($logFile, $logMessage, FILE_APPEND);
-            error_log("CLOSE FISCAL DAY: $message");
-        };
         
         $writeLog("========== CERTIFICATE LOADED FOR FISCAL DAY CLOSE ==========");
         $writeLog("Certificate Subject: " . ($certSubject ?? 'N/A'));
