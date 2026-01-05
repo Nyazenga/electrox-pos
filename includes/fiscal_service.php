@@ -1483,6 +1483,13 @@ class FiscalService {
         // Calculate fiscal day counters
         $counters = $this->calculateFiscalDayCounters($fiscalDay['id']);
         
+        // CRITICAL FIX: Sort counters BEFORE signature generation AND API call
+        // This ensures the counters sent to ZIMRA are in the EXACT same order as used in the signature
+        // ZIMRA sorts counters by: type → currency → taxID → moneyType before verifying signature
+        // We MUST match their sorting order EXACTLY
+        require_once APP_PATH . '/includes/zimra_signature.php';
+        $counters = ZimraSignature::sortCountersForZimra($counters);
+        
         // Generate fiscal day signature
         $fiscalDayData = [
             'deviceID' => $this->deviceId,

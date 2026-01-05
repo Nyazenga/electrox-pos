@@ -619,19 +619,21 @@ class ZimraSignature {
     }
     
     /**
-     * Build counters string for signature
-     * According to ZIMRA documentation Section 13.3.1:
-     * - Sort by: fiscalCounterType (asc), currency (asc), fiscalCounterTaxID (asc) / fiscalCounterMoneyType (asc)
-     * - Format: fiscalCounterType || fiscalCounterCurrency || fiscalCounterTaxPercent/fiscalCounterMoneyType || fiscalCounterValue
-     * - All text in UPPER CASE
-     * - Amounts in cents
-     * - taxPercent: empty if exempt, "0.00" if 0, "15.00" if 15, "14.50" if 14.5
+     * Sort counters according to ZIMRA specification
+     * This MUST be called before sending counters to ZIMRA to ensure the JSON and signature match
+     * PUBLIC method for use in fiscal_service.php
      */
-    private static function buildCountersString($counters) {
-        // Sort counters according to documentation:
-        // 1. fiscalCounterType (ascending order)
-        // 2. fiscalCounterCurrency (alphabetical ascending order)
-        // 3. fiscalCounterTaxID (ascending order) for tax counters OR fiscalCounterMoneyType (ascending order) for money type counters
+    public static function sortCountersForZimra($counters) {
+        // Make a copy to avoid modifying the original
+        $sortedCounters = $counters;
+        self::sortCountersInternal($sortedCounters);
+        return $sortedCounters;
+    }
+    
+    /**
+     * Internal sorting function - extracted to be reusable
+     */
+    private static function sortCountersInternal(&$counters) {
         usort($counters, function($a, $b) {
             // 1. Sort by fiscalCounterType (ascending)
             $typeA = strtoupper($a['fiscalCounterType'] ?? '');
@@ -711,6 +713,20 @@ class ZimraSignature {
                 return 0;
             }
         });
+    }
+    
+    /**
+     * Build counters string for signature
+     * According to ZIMRA documentation Section 13.3.1:
+     * - Sort by: fiscalCounterType (asc), currency (asc), fiscalCounterTaxID (asc) / fiscalCounterMoneyType (asc)
+     * - Format: fiscalCounterType || fiscalCounterCurrency || fiscalCounterTaxPercent/fiscalCounterMoneyType || fiscalCounterValue
+     * - All text in UPPER CASE
+     * - Amounts in cents
+     * - taxPercent: empty if exempt, "0.00" if 0, "15.00" if 15, "14.50" if 14.5
+     */
+    private static function buildCountersString($counters) {
+        // Sort counters first using the internal sorting function
+        self::sortCountersInternal($counters);
         
         $counterStrings = [];
         foreach ($counters as $counter) {

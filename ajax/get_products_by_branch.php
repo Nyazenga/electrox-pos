@@ -27,6 +27,16 @@ try {
     $db = Database::getInstance();
     $primaryDb = Database::getPrimaryInstance();
     
+    // Verify branch exists
+    $branch = $db->getRow("SELECT * FROM branches WHERE id = :branch_id", [':branch_id' => $branchId]);
+    if (!$branch) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Branch not found'
+        ]);
+        exit;
+    }
+    
     // Get products for the branch
     $products = $db->getRows("SELECT p.*, 
                              COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
@@ -40,6 +50,9 @@ try {
                              [':branch_id' => $branchId]);
     
     if ($products === false) $products = [];
+    
+    // Log for debugging (remove in production)
+    error_log("get_products_by_branch: branch_id=$branchId, found " . count($products) . " products");
     
     // Get applicable taxes from fiscal_config
     $applicableTaxes = [];
@@ -92,9 +105,15 @@ try {
     }
     unset($product);
     
+    // Log for debugging
+    error_log("get_products_by_branch: branch_id=$branchId, branch_name=" . ($branch['branch_name'] ?? 'N/A') . ", products_count=" . count($products));
+    
     echo json_encode([
         'success' => true,
-        'products' => $products
+        'products' => $products,
+        'branch_id' => $branchId,
+        'branch_name' => $branch['branch_name'] ?? '',
+        'count' => count($products)
     ]);
     
 } catch (Exception $e) {

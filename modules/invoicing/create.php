@@ -23,24 +23,22 @@ $customers = $db->getRows("SELECT * FROM customers WHERE status = 'Active' ORDER
 if ($customers === false) $customers = [];
 
 // Get products - handle both General category (product_name) and others (brand/model)
-// Filter by branch_id if available
-$productWhere = "p.status = 'Active'";
-$productParams = [];
+// IMPORTANT: Only load products if branch is selected - otherwise leave empty
+// Products will be loaded dynamically when branch is selected
+$products = [];
 if ($branchId) {
-    $productWhere .= " AND p.branch_id = :branch_id";
-    $productParams[':branch_id'] = $branchId;
+    $products = $db->getRows("SELECT p.*, 
+                             COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
+                             pc.name as category_name,
+                             p.tax_id as product_tax_id,
+                             pc.tax_id as category_tax_id
+                             FROM products p
+                             LEFT JOIN product_categories pc ON p.category_id = pc.id
+                             WHERE p.status = 'Active' AND p.branch_id = :branch_id
+                             ORDER BY COALESCE(p.product_name, p.brand, ''), p.model", 
+                             [':branch_id' => $branchId]);
+    if ($products === false) $products = [];
 }
-
-$products = $db->getRows("SELECT p.*, 
-                         COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
-                         pc.name as category_name,
-                         p.tax_id as product_tax_id,
-                         pc.tax_id as category_tax_id
-                         FROM products p
-                         LEFT JOIN product_categories pc ON p.category_id = pc.id
-                         WHERE $productWhere
-                         ORDER BY COALESCE(p.product_name, p.brand, ''), p.model", $productParams);
-if ($products === false) $products = [];
 
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
 if ($branches === false) $branches = [];
@@ -242,29 +240,40 @@ require_once APP_PATH . '/includes/header.php';
                            placeholder="Type to search products..."
                            autocomplete="off">
                     <div class="dropdown-menu position-absolute w-100 product-search-dropdown" id="productDropdown" style="display: none;">
-                        <?php foreach ($products as $product): 
-                            // Use display_name which handles both General (product_name) and others (brand + model)
-                            $productDisplayName = $product['display_name'] ?? ($product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')));
-                            if (empty($productDisplayName)) {
-                                $productDisplayName = 'Product #' . $product['id'];
-                            }
-                        ?>
-                            <a class="dropdown-item product-item" 
-                               href="#" 
-                               data-id="<?= $product['id'] ?>"
-                               data-name="<?= escapeHtml($productDisplayName) ?>"
-                               data-price="<?= $product['selling_price'] ?>"
-                               data-stock="<?= $product['quantity_in_stock'] ?>"
-                               data-tax-percent="<?= $product['tax_percent'] ?? 0 ?>"
-                               data-tax-id="<?= $product['tax_id'] ?? '' ?>">
-                                <?= escapeHtml($productDisplayName) ?> - 
-                                <?= formatCurrency($product['selling_price']) ?> 
-                                (Stock: <?= $product['quantity_in_stock'] ?>)
-                                <?php if (!empty($product['category_name'])): ?>
-                                    <small class="text-muted"> - <?= escapeHtml($product['category_name']) ?></small>
+                        <!-- Products will be loaded dynamically via JavaScript based on selected branch -->
+                        <?php if (empty($products)): ?>
+                            <div class="dropdown-item text-muted">
+                                <?php if ($branchId): ?>
+                                    No products available for selected branch
+                                <?php else: ?>
+                                    Please select a branch to view products
                                 <?php endif; ?>
-                            </a>
-                        <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <?php foreach ($products as $product): 
+                                // Use display_name which handles both General (product_name) and others (brand + model)
+                                $productDisplayName = $product['display_name'] ?? ($product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')));
+                                if (empty($productDisplayName)) {
+                                    $productDisplayName = 'Product #' . $product['id'];
+                                }
+                            ?>
+                                <a class="dropdown-item product-item" 
+                                   href="#" 
+                                   data-id="<?= $product['id'] ?>"
+                                   data-name="<?= escapeHtml($productDisplayName) ?>"
+                                   data-price="<?= $product['selling_price'] ?>"
+                                   data-stock="<?= $product['quantity_in_stock'] ?>"
+                                   data-tax-percent="<?= $product['tax_percent'] ?? 0 ?>"
+                                   data-tax-id="<?= $product['tax_id'] ?? '' ?>">
+                                    <?= escapeHtml($productDisplayName) ?> - 
+                                    <?= formatCurrency($product['selling_price']) ?> 
+                                    (Stock: <?= $product['quantity_in_stock'] ?>)
+                                    <?php if (!empty($product['category_name'])): ?>
+                                        <small class="text-muted"> - <?= escapeHtml($product['category_name']) ?></small>
+                                    <?php endif; ?>
+                                </a>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -366,34 +375,83 @@ let allProducts = <?= json_encode($products) ?>;
 
 // Function to load products by branch
 function loadProductsByBranch(branchId) {
+    console.log('Loading products for branch_id:', branchId);
+    
     if (!branchId) {
         // Clear products if no branch selected
+        console.log('No branch ID provided, clearing products');
         updateProductDropdown([]);
         return;
     }
     
+    // Show loading indicator
+    const productSearch = document.getElementById('productSearch');
+    if (productSearch) {
+        productSearch.placeholder = 'Loading products...';
+        productSearch.disabled = true;
+    }
+    
     fetch('<?= BASE_URL ?>ajax/get_products_by_branch.php?branch_id=' + branchId)
-        .then(response => response.json())
+        .then(response => {
+            console.log('Response status:', response.status);
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
         .then(data => {
-            if (data.success) {
+            console.log('Products loaded response:', data);
+            console.log('Response success:', data.success);
+            console.log('Products count:', data.products ? data.products.length : 0);
+            console.log('Branch ID:', data.branch_id);
+            console.log('Branch Name:', data.branch_name);
+            
+            if (data.success && Array.isArray(data.products)) {
                 allProducts = data.products;
+                console.log('✓ Updating dropdown with', data.products.length, 'products for branch', branchId, '(' + (data.branch_name || '') + ')');
                 updateProductDropdown(data.products);
+                
+                // Show success message if products loaded
+                if (data.products.length > 0) {
+                    console.log('✓ Products loaded successfully');
+                } else {
+                    console.log('⚠ No products found for this branch');
+                }
             } else {
-                console.error('Failed to load products:', data.message);
+                console.error('✗ Failed to load products:', data.message || 'Invalid response');
+                console.error('Response data:', data);
                 updateProductDropdown([]);
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire('Error', 'Failed to load products: ' + (data.message || 'Unknown error'), 'error');
+                }
             }
         })
         .catch(error => {
             console.error('Error loading products:', error);
             updateProductDropdown([]);
+            if (typeof Swal !== 'undefined') {
+                Swal.fire('Error', 'Failed to load products. Please try again.', 'error');
+            }
+        })
+        .finally(() => {
+            // Restore search input
+            if (productSearch) {
+                productSearch.placeholder = 'Type to search products...';
+                productSearch.disabled = false;
+            }
         });
 }
 
 // Function to update product dropdown
 function updateProductDropdown(products) {
     const productDropdown = document.getElementById('productDropdown');
-    if (!productDropdown) return;
+    if (!productDropdown) {
+        console.error('✗ Product dropdown element not found!');
+        return;
+    }
     
+    console.log('updateProductDropdown called with', products.length, 'products');
+    // Clear existing content (including PHP-rendered products)
     productDropdown.innerHTML = '';
     
     if (products.length === 0) {
@@ -401,6 +459,7 @@ function updateProductDropdown(products) {
         noProducts.className = 'dropdown-item text-muted';
         noProducts.textContent = 'No products available for this branch';
         productDropdown.appendChild(noProducts);
+        console.log('✓ Dropdown updated: No products message');
         return;
     }
     
@@ -427,6 +486,7 @@ function updateProductDropdown(products) {
         productDropdown.appendChild(item);
     });
     
+    console.log('✓ Dropdown updated with', products.length, 'product items');
     // Click handler is already attached via event delegation, no need to re-attach
 }
 
@@ -440,15 +500,42 @@ document.addEventListener('DOMContentLoaded', function() {
     // Handle branch change
     const branchSelect = document.getElementById('branchSelect');
     if (branchSelect) {
-        // Load products for initial branch
-        if (branchSelect.value) {
-            loadProductsByBranch(branchSelect.value);
+        // Store initial branch ID
+        let currentBranchId = branchSelect.value;
+        
+        // Load initial products if branch is already selected
+        if (currentBranchId) {
+            console.log('Initial branch selected:', currentBranchId);
+            console.log('Initial products from PHP:', allProducts.length);
+            // Products are already loaded from PHP for initial branch, just populate dropdown
+            if (allProducts.length > 0) {
+                console.log('Populating dropdown with initial products');
+                updateProductDropdown(allProducts);
+            } else {
+                console.log('No initial products, loading via AJAX');
+                // If no products from PHP, load via AJAX (might be a different branch selected)
+                loadProductsByBranch(currentBranchId);
+            }
+        } else {
+            // No branch selected initially, clear products
+            console.log('No initial branch selected, clearing products');
+            updateProductDropdown([]);
         }
         
         // Handle branch change
         branchSelect.addEventListener('change', function() {
-            const branchId = this.value;
-            loadProductsByBranch(branchId);
+            const newBranchId = this.value;
+            const previousBranchId = currentBranchId;
+            
+            console.log('Branch changed from', previousBranchId, 'to', newBranchId);
+            
+            // If no branch selected, clear products immediately
+            if (!newBranchId) {
+                console.log('Branch cleared, clearing products');
+                updateProductDropdown([]);
+                currentBranchId = '';
+                return;
+            }
             
             // Clear existing items if branch changes
             if (invoiceItems.length > 0) {
@@ -463,12 +550,28 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (result.isConfirmed) {
                         invoiceItems = [];
                         renderItems();
+                        // Update current branch ID
+                        currentBranchId = newBranchId;
+                        // Load products for new branch AFTER clearing items
+                        console.log('Loading products for new branch:', newBranchId);
+                        loadProductsByBranch(newBranchId);
                     } else {
                         // Revert branch selection
-                        this.value = '<?= $branchId ?? '' ?>';
-                        loadProductsByBranch(this.value);
+                        console.log('Reverting to previous branch:', previousBranchId);
+                        this.value = previousBranchId || '';
+                        // Reload products for previous branch
+                        if (previousBranchId) {
+                            loadProductsByBranch(previousBranchId);
+                        } else {
+                            updateProductDropdown([]);
+                        }
                     }
                 });
+            } else {
+                // No items to clear, just load products for new branch immediately
+                currentBranchId = newBranchId;
+                console.log('No items to clear, loading products for new branch:', newBranchId);
+                loadProductsByBranch(newBranchId);
             }
         });
     }
@@ -503,41 +606,52 @@ if (customerSearch && customerDropdown) {
     });
 }
 
-// Product search
-const productSearch = document.getElementById('productSearch');
-const productDropdown = document.getElementById('productDropdown');
-
-if (productSearch && productDropdown) {
-    productSearch.addEventListener('input', function() {
-        filterDropdown(this.value, productDropdown, '.product-item');
-    });
+// Product search - moved inside DOMContentLoaded to ensure elements exist
+document.addEventListener('DOMContentLoaded', function() {
+    const productSearch = document.getElementById('productSearch');
+    const productDropdown = document.getElementById('productDropdown');
+    const branchSelect = document.getElementById('branchSelect');
     
-    productSearch.addEventListener('focus', function() {
-        productDropdown.style.display = 'block';
-    });
-    
-    productSearch.addEventListener('blur', function() {
-        setTimeout(() => productDropdown.style.display = 'none', 300);
-    });
-    
-    // Use event delegation for dynamically loaded products
-    productDropdown.addEventListener('click', function(e) {
-        e.preventDefault();
-        const item = e.target.closest('.product-item');
-        if (item) {
-            addProductItem({
-                product_id: item.dataset.id,
-                description: item.dataset.name,
-                unit_price: parseFloat(item.dataset.price),
-                stock: parseInt(item.dataset.stock),
-                tax_percent: parseFloat(item.dataset.taxPercent || 0),
-                tax_id: item.dataset.taxId || null
-            });
-            productSearch.value = '';
-            productDropdown.style.display = 'none';
-        }
-    });
-}
+    if (productSearch && productDropdown) {
+        productSearch.addEventListener('input', function() {
+            filterDropdown(this.value, productDropdown, '.product-item');
+        });
+        
+        productSearch.addEventListener('focus', function() {
+            // Check if branch is selected before showing dropdown
+            if (branchSelect && !branchSelect.value) {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire('Warning', 'Please select a branch first to view products', 'warning');
+                }
+                this.blur();
+                return;
+            }
+            productDropdown.style.display = 'block';
+        });
+        
+        productSearch.addEventListener('blur', function() {
+            setTimeout(() => productDropdown.style.display = 'none', 300);
+        });
+        
+        // Use event delegation for dynamically loaded products
+        productDropdown.addEventListener('click', function(e) {
+            e.preventDefault();
+            const item = e.target.closest('.product-item');
+            if (item) {
+                addProductItem({
+                    product_id: item.dataset.id,
+                    description: item.dataset.name,
+                    unit_price: parseFloat(item.dataset.price),
+                    stock: parseInt(item.dataset.stock),
+                    tax_percent: parseFloat(item.dataset.taxPercent || 0),
+                    tax_id: item.dataset.taxId || null
+                });
+                productSearch.value = '';
+                productDropdown.style.display = 'none';
+            }
+        });
+    }
+});
 
 function filterDropdown(searchTerm, dropdown, itemSelector) {
     const items = dropdown.querySelectorAll(itemSelector);
