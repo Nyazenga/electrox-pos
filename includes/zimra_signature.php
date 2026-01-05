@@ -710,49 +710,25 @@ class ZimraSignature {
             }
             
             // 3. Determine if these are tax counters or money type counters
+            // CRITICAL: Python implementation only sorts by taxID, NOT by taxPercent
+            // See Python line 770: x.get('fiscalCounterTaxID', '')
             $hasTaxIDA = isset($a['fiscalCounterTaxID']) && $a['fiscalCounterTaxID'] !== null;
             $hasTaxIDB = isset($b['fiscalCounterTaxID']) && $b['fiscalCounterTaxID'] !== null;
             
             if ($hasTaxIDA || $hasTaxIDB) {
-                // Tax counter - sort by taxID numerically
+                // Tax counter - sort by taxID numerically only (like Python, NOT by taxPercent)
                 $taxIDA = $hasTaxIDA ? intval($a['fiscalCounterTaxID']) : 0;
                 $taxIDB = $hasTaxIDB ? intval($b['fiscalCounterTaxID']) : 0;
                 if ($taxIDA !== $taxIDB) {
                     return $taxIDA - $taxIDB;
                 }
-                
-                // If same taxID, sort by taxPercent (for cases where same taxID has different percents)
-                // CRITICAL: Handle null (exempt) vs 0 (zero-rated) vs > 0 (tax)
-                $percentA = $a['fiscalCounterTaxPercent'] ?? null;
-                $percentB = $b['fiscalCounterTaxPercent'] ?? null;
-                
-                if ($percentA === null && $percentB === null) {
-                    // Both exempt - use value as tiebreaker for stability
-                    $valueA = floatval($a['fiscalCounterValue'] ?? 0);
-                    $valueB = floatval($b['fiscalCounterValue'] ?? 0);
-                    if (abs($valueA - $valueB) > 0.001) {
-                        return $valueA < $valueB ? -1 : 1;
-                    }
-                    return 0;
-                } elseif ($percentA === null) {
-                    return -1; // Exempt comes before any value
-                } elseif ($percentB === null) {
-                    return 1; // Exempt comes before any value
-                } else {
-                    // Both have values - compare numerically
-                    $percentAFloat = floatval($percentA);
-                    $percentBFloat = floatval($percentB);
-                    if (abs($percentAFloat - $percentBFloat) > 0.001) {
-                        return $percentAFloat < $percentBFloat ? -1 : 1;
-                    }
-                    // If percents are equal, use value as tiebreaker for stability
-                    $valueA = floatval($a['fiscalCounterValue'] ?? 0);
-                    $valueB = floatval($b['fiscalCounterValue'] ?? 0);
-                    if (abs($valueA - $valueB) > 0.001) {
-                        return $valueA < $valueB ? -1 : 1;
-                    }
-                    return 0;
+                // If same taxID, use value as tiebreaker for stability (Python doesn't sort by taxPercent)
+                $valueA = floatval($a['fiscalCounterValue'] ?? 0);
+                $valueB = floatval($b['fiscalCounterValue'] ?? 0);
+                if (abs($valueA - $valueB) > 0.001) {
+                    return $valueA < $valueB ? -1 : 1;
                 }
+                return 0;
             } else {
                 // Money type counter - sort by moneyType alphabetically
                 $moneyA = strtoupper($a['fiscalCounterMoneyType'] ?? '');
