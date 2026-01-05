@@ -243,6 +243,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['fiscal_error'] = $error;
         }
     }
+    
+    // Redirect after form processing to prevent double output
+    // Only redirect if this file is being accessed directly (not included)
+    if (!defined('SETTINGS_INDEX_INCLUDED')) {
+        header('Location: ' . BASE_URL . 'modules/settings/index.php?page=fiscalization');
+        exit;
+    }
 }
 
 // Get device info for each branch from PRIMARY database
