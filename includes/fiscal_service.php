@@ -1913,7 +1913,8 @@ class FiscalService {
             
             // Add tax-related fields for "byTax" counters
             if (strpos($counterType, 'ByTax') !== false) {
-                $counter['fiscalCounterTaxID'] = $taxID > 0 ? $taxID : null;
+                // CRITICAL: Always set taxID (use 0 for exempt) to ensure stable sorting
+                $counter['fiscalCounterTaxID'] = isset($taxID) ? max(0, intval($taxID)) : 0;
                 // CRITICAL: For exempt (taxPercentKey === 'exempt'), taxPercent must be null
                 // Documentation: "In case of exempt, this field must not be provided"
                 if ($taxPercent !== null && $taxPercent !== 'exempt') {

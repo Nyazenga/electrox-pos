@@ -647,14 +647,19 @@ class ZimraSignature {
                 return strcmp($currA, $currB);
             }
             
-            // 3. Sort by taxID (numeric ascending) for tax counters, or moneyType (ascending) for money type counters
-            if (isset($a['fiscalCounterTaxID']) || isset($b['fiscalCounterTaxID'])) {
+            // 3. Determine if these are tax counters or money type counters
+            $hasTaxIDA = isset($a['fiscalCounterTaxID']) && $a['fiscalCounterTaxID'] !== null;
+            $hasTaxIDB = isset($b['fiscalCounterTaxID']) && $b['fiscalCounterTaxID'] !== null;
+            
+            if ($hasTaxIDA || $hasTaxIDB) {
                 // Tax counter - sort by taxID numerically
-                $taxIDA = intval($a['fiscalCounterTaxID'] ?? 0);
-                $taxIDB = intval($b['fiscalCounterTaxID'] ?? 0);
+                // CRITICAL FIX: Treat null as 0 for consistent sorting
+                $taxIDA = $hasTaxIDA ? intval($a['fiscalCounterTaxID']) : 0;
+                $taxIDB = $hasTaxIDB ? intval($b['fiscalCounterTaxID']) : 0;
                 if ($taxIDA !== $taxIDB) {
                     return $taxIDA - $taxIDB;
                 }
+                
                 // If same taxID, sort by taxPercent (for cases where same taxID has different percents)
                 // CRITICAL: Handle null (exempt) vs 0 (zero-rated) vs > 0 (tax)
                 // Exempt (null) should come first, then 0, then positive values
@@ -662,7 +667,14 @@ class ZimraSignature {
                 $percentB = $b['fiscalCounterTaxPercent'] ?? null;
                 
                 if ($percentA === null && $percentB === null) {
-                    // Both exempt - equal
+                    // Both exempt - use a stable secondary sort (e.g., by value)
+                    $valueA = floatval($a['fiscalCounterValue'] ?? 0);
+                    $valueB = floatval($b['fiscalCounterValue'] ?? 0);
+                    if (abs($valueA - $valueB) > 0.001) {
+                        return $valueA < $valueB ? -1 : 1;
+                    }
+                    // If values are equal, maintain order (stable sort)
+                    return 0;
                 } elseif ($percentA === null) {
                     return -1; // Exempt comes before any value
                 } elseif ($percentB === null) {
@@ -674,15 +686,30 @@ class ZimraSignature {
                     if (abs($percentAFloat - $percentBFloat) > 0.001) {
                         return $percentAFloat < $percentBFloat ? -1 : 1;
                     }
+                    // If percents are equal, use value as tiebreaker for stability
+                    $valueA = floatval($a['fiscalCounterValue'] ?? 0);
+                    $valueB = floatval($b['fiscalCounterValue'] ?? 0);
+                    if (abs($valueA - $valueB) > 0.001) {
+                        return $valueA < $valueB ? -1 : 1;
+                    }
+                    return 0;
                 }
             } else {
                 // Money type counter - sort by moneyType alphabetically
                 $moneyA = strtoupper($a['fiscalCounterMoneyType'] ?? '');
                 $moneyB = strtoupper($b['fiscalCounterMoneyType'] ?? '');
-                return strcmp($moneyA, $moneyB);
+                $moneyCmp = strcmp($moneyA, $moneyB);
+                if ($moneyCmp !== 0) {
+                    return $moneyCmp;
+                }
+                // If same money type, use value as tiebreaker for stability
+                $valueA = floatval($a['fiscalCounterValue'] ?? 0);
+                $valueB = floatval($b['fiscalCounterValue'] ?? 0);
+                if (abs($valueA - $valueB) > 0.001) {
+                    return $valueA < $valueB ? -1 : 1;
+                }
+                return 0;
             }
-            
-            return 0;
         });
         
         $counterStrings = [];
