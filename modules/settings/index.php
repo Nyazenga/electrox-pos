@@ -131,6 +131,8 @@ require_once APP_PATH . '/includes/header.php';
     
     <div class="settings-content">
         <?php
+        // Define constant to indicate this file is being included
+        define('SETTINGS_INDEX_INCLUDED', true);
         $pageFile = $currentPage . '.php';
         if (file_exists(__DIR__ . '/' . $pageFile)) {
             include $pageFile;

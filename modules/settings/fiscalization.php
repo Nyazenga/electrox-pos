@@ -1015,5 +1015,10 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<?php require_once APP_PATH . '/includes/footer.php'; ?>
+<?php 
+// Only include footer if this file is being accessed directly (not included by index.php)
+if (!defined('SETTINGS_INDEX_INCLUDED')) {
+    require_once APP_PATH . '/includes/footer.php';
+}
+?>
 
