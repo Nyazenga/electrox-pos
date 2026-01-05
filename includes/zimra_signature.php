@@ -771,15 +771,16 @@ class ZimraSignature {
     /**
      * Build counters string for signature
      * According to ZIMRA documentation Section 13.3.1:
-     * - Sort by: fiscalCounterType (asc), currency (asc), fiscalCounterTaxID (asc) / fiscalCounterMoneyType (asc)
+     * - Counters MUST be pre-sorted by caller (use sortCountersForZimra() first)
      * - Format: fiscalCounterType || fiscalCounterCurrency || fiscalCounterTaxPercent/fiscalCounterMoneyType || fiscalCounterValue
      * - All text in UPPER CASE
      * - Amounts in cents
      * - taxPercent: empty if exempt, "0.00" if 0, "15.00" if 15, "14.50" if 14.5
      */
     private static function buildCountersString($counters) {
-        // Sort counters first using the internal sorting function
-        self::sortCountersInternal($counters);
+        // CRITICAL: Counters should already be sorted by caller (fiscal_service.php calls sortCountersForZimra first)
+        // DO NOT re-sort here - it could change the order and break signature validation
+        // The counters passed here should be in the EXACT same order as sent to ZIMRA API
         
         $counterStrings = [];
         foreach ($counters as $counter) {
