@@ -69,10 +69,8 @@ function mapApplicableTaxes($applicableTaxesRaw, $hasTaxID = false) {
             $taxCode = 'C'; // Zero rate
         } elseif ($taxPercent == 15 || $taxPercent == 15.5) {
             $taxCode = 'A'; // Standard VAT (15% or 15.5%)
-        } elseif ($taxPercent == 5 && (strpos($taxName, 'withholding') !== false || strpos($taxName, 'non-vat') !== false)) {
-            $taxCode = ''; // 5% Non-VAT Withholding Tax - taxCode should be empty (not provided)
         } elseif ($taxPercent < 15 && $taxPercent > 0) {
-            $taxCode = 'B'; // Reduced rate (for other reduced rates, not 5% withholding)
+            $taxCode = 'B'; // Reduced rate (including 5% Non-VAT Withholding Tax)
         }
         
         // CRITICAL: Preserve null for exempt taxes (don't convert to 0)
