@@ -386,19 +386,13 @@ class ZimraSignature {
         
         $taxStrings = [];
         foreach ($receiptTaxes as $tax) {
-            // CRITICAL: Python implementation does NOT include taxCode in signature
-            // Python format: taxPercent || taxAmount || salesAmountWithTax (NO taxCode)
-            // However, ZIMRA documentation shows taxCode in examples for some taxes
-            // For 5% Non-VAT Withholding Tax (taxID 514), taxCode should NOT be included (match Python)
+            // ZIMRA Documentation format: taxCode || taxPercent || taxAmount || salesAmountWithTax
+            // Documentation Section 13.2.1: "taxCode || taxPercent || taxAmount || salesAmountWithTax"
+            // For 5% Non-VAT Withholding Tax (taxID 514), taxCode is null/empty (per Panier documentation)
+            // Include taxCode as empty string for 5% tax to maintain format consistency
             
-            $taxID = intval($tax['taxID'] ?? 0);
-            $taxPercentValue = isset($tax['taxPercent']) ? floatval($tax['taxPercent']) : null;
-            
-            // For 5% Non-VAT Withholding Tax (taxID 514), omit taxCode from signature (match Python implementation)
-            $includeTaxCode = !($taxID == 514 && $taxPercentValue == 5);
-            
-            // 1. taxCode (empty string if not present, or omit entirely for 5% tax)
-            $taxCode = $includeTaxCode ? ($tax['taxCode'] ?? '') : '';
+            // 1. taxCode (empty string if not present - this includes 5% tax which has null/empty taxCode)
+            $taxCode = $tax['taxCode'] ?? '';
             
             // 2. taxPercent - format with exactly 2 decimal places
             // Documentation: "In case taxPercent is not an integer there should be dot between the integer and fractional part."
@@ -421,8 +415,8 @@ class ZimraSignature {
             $salesAmountFloat = floatval($tax['salesAmountWithTax'] ?? 0);
             $salesCents = self::toCents($salesAmountFloat, $currency);
             
-            // Format: taxCode || taxPercent || taxAmount || salesAmountWithTax
-            // For 5% tax: taxPercent || taxAmount || salesAmountWithTax (no taxCode, matching Python)
+            // Format: taxCode || taxPercent || taxAmount || salesAmountWithTax (ZIMRA Documentation)
+            // For 5% tax (taxID 514), taxCode is empty string (null from ZIMRA)
             $taxString = $taxCode . $percent . strval($amountCents) . strval($salesCents);
             $taxStrings[] = $taxString;
             
