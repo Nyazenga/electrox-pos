@@ -105,15 +105,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $isUniqueProduct = true;
     }
     
-    // CRITICAL: Unique products (with serial/IMEI) must always have qty=1
-    // They cannot be increased through editing - each is a unique item
+    // CRITICAL: Unique products (with serial/IMEI) must have qty between 0 and 1
+    // They cannot exceed 1 - each is a unique item
     $quantityInStock = intval($_POST['quantity_in_stock'] ?? $product['quantity_in_stock'] ?? 0);
     $reorderLevel = intval($_POST['reorder_level'] ?? $product['reorder_level'] ?? 0);
     if ($isUniqueProduct) {
-        // Force qty=1 for unique products - cannot be changed
-        $quantityInStock = 1;
-        // Force reorder_level=0 for unique products (can't reorder unique items)
-        $reorderLevel = 0;
+        // Validate qty for unique products - must be 0 or 1 (max 1)
+        if ($quantityInStock > 1) {
+            $quantityInStock = 1; // Cap at 1 if exceeded
+        }
+        // Validate reorder_level for unique products - must be 0 (cannot reorder unique items)
+        if ($reorderLevel > 0) {
+            $reorderLevel = 0; // Force to 0 if exceeded
+        }
     }
     
     $data = [
@@ -335,10 +339,10 @@ require_once APP_PATH . '/includes/header.php';
                     }
                     ?>
                     <input type="number" class="form-control" name="quantity_in_stock" id="quantityInStock" 
-                           value="<?= $isUniqueProduct ? 1 : $product['quantity_in_stock'] ?>" 
-                           <?= $isUniqueProduct ? 'readonly style="background-color: #e9ecef; cursor: not-allowed;"' : '' ?>>
+                           value="<?= $product['quantity_in_stock'] ?>" 
+                           <?= $isUniqueProduct ? 'readonly style="background-color: #e9ecef; cursor: not-allowed;" min="0" max="1"' : '' ?>>
                     <?php if ($isUniqueProduct): ?>
-                        <small class="text-muted">Unique products (smartphones/laptops) must have quantity = 1. Cannot be changed.</small>
+                        <small class="text-muted">Unique products (smartphones/laptops) must have quantity between 0 and 1. Cannot exceed 1.</small>
                     <?php endif; ?>
                 </div>
             </div>
@@ -396,9 +400,9 @@ require_once APP_PATH . '/includes/header.php';
                     }
                     ?>
                     <input type="number" class="form-control" name="reorder_level" id="reorderLevel" 
-                           value="<?= $isUniqueProduct ? 0 : $product['reorder_level'] ?>" 
+                           value="<?= $product['reorder_level'] ?>" 
                            min="0"
-                           <?= $isUniqueProduct ? 'readonly style="background-color: #e9ecef; cursor: not-allowed;"' : '' ?>>
+                           <?= $isUniqueProduct ? 'readonly style="background-color: #e9ecef; cursor: not-allowed;" max="0"' : '' ?>>
                     <?php if ($isUniqueProduct): ?>
                         <small class="text-muted">Unique products cannot be reordered. Reorder level must be 0.</small>
                     <?php endif; ?>
@@ -547,21 +551,23 @@ function updateDynamicFields(categoryName) {
     const quantityInput = document.getElementById('quantityInStock');
     if (quantityInput) {
         if (isUniqueProduct) {
-            // Unique products must have qty=1 always
-            quantityInput.value = 1;
+            // Unique products: keep current value but make readonly and enforce max=1
             quantityInput.readOnly = true;
             quantityInput.style.backgroundColor = '#e9ecef';
             quantityInput.style.cursor = 'not-allowed';
+            quantityInput.setAttribute('min', '0');
+            quantityInput.setAttribute('max', '1');
             // Update help text if exists
             const helpText = quantityInput.nextElementSibling;
             if (helpText && helpText.tagName === 'SMALL') {
-                helpText.textContent = 'Unique products (smartphones/laptops) must have quantity = 1. Cannot be changed.';
+                helpText.textContent = 'Unique products (smartphones/laptops) must have quantity between 0 and 1. Cannot exceed 1.';
                 helpText.className = 'text-muted';
             }
         } else {
             quantityInput.readOnly = false;
             quantityInput.style.backgroundColor = '';
             quantityInput.style.cursor = '';
+            quantityInput.removeAttribute('max');
         }
     }
     
@@ -569,11 +575,12 @@ function updateDynamicFields(categoryName) {
     const reorderLevelInput = document.getElementById('reorderLevel');
     if (reorderLevelInput) {
         if (isUniqueProduct) {
-            // Unique products must have reorder_level=0 (can't reorder unique items)
-            reorderLevelInput.value = 0;
+            // Unique products: keep current value but make readonly and enforce max=0
             reorderLevelInput.readOnly = true;
             reorderLevelInput.style.backgroundColor = '#e9ecef';
             reorderLevelInput.style.cursor = 'not-allowed';
+            reorderLevelInput.setAttribute('min', '0');
+            reorderLevelInput.setAttribute('max', '0');
             // Update help text if exists
             const helpText = reorderLevelInput.nextElementSibling;
             if (helpText && helpText.tagName === 'SMALL') {
@@ -584,6 +591,7 @@ function updateDynamicFields(categoryName) {
             reorderLevelInput.readOnly = false;
             reorderLevelInput.style.backgroundColor = '';
             reorderLevelInput.style.cursor = '';
+            reorderLevelInput.removeAttribute('max');
         }
     }
     

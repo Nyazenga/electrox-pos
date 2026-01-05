@@ -388,9 +388,10 @@ function updateStock($productId, $quantity, $branchId = null, $movementType = 'A
             $product = ['quantity_in_stock' => 0];
         }
         
-        // CRITICAL: Products with serial/IMEI must always have qty=1
+        // CRITICAL: Products with serial/IMEI are unique products
         // They cannot be increased through stock updates
-        if (productHasSerialOrImei($product, $db)) {
+        $isUniqueProduct = productHasSerialOrImei($product, $db);
+        if ($isUniqueProduct) {
             // Only allow setting to 1 or 0 (sold/available)
             // Don't allow quantity increases - these are unique products
             if ($quantity > 0) {
@@ -398,9 +399,12 @@ function updateStock($productId, $quantity, $branchId = null, $movementType = 'A
                 logError("Attempted to increase stock for unique product (ID: $productId) with serial/IMEI. Quantity must remain 1.");
                 return false;
             }
-            // Allow decreasing (selling) - set to 0 when sold
+            // Allow decreasing (selling) - for unique products, when sold (quantity < 0), we DELETE the product
+            // This is handled separately in the sale processing code - updateStock should not be called for unique products when selling
             if ($quantity < 0) {
-                $newQuantity = 0; // Product sold
+                // This should not happen - unique products should be deleted directly, not through updateStock
+                logError("Warning: updateStock called for unique product (ID: $productId) with negative quantity. Product should be deleted instead.");
+                return false;
             } else {
                 $newQuantity = 1; // Product available
             }

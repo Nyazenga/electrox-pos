@@ -14,10 +14,76 @@ if (!$id) {
 }
 
 $db = Database::getInstance();
-$product = $db->getRow("SELECT p.*, pc.name as category_name, b.branch_name FROM products p LEFT JOIN product_categories pc ON p.category_id = pc.id LEFT JOIN branches b ON p.branch_id = b.id WHERE p.id = :id", [':id' => $id]);
+$primaryDb = Database::getPrimaryInstance();
+
+// Get product with category tax_id
+$product = $db->getRow(
+    "SELECT p.*, pc.name as category_name, pc.tax_id as category_tax_id, b.branch_name 
+     FROM products p 
+     LEFT JOIN product_categories pc ON p.category_id = pc.id 
+     LEFT JOIN branches b ON p.branch_id = b.id 
+     WHERE p.id = :id", 
+    [':id' => $id]
+);
 
 if (!$product) {
     redirectTo('modules/products/index.php');
+}
+
+// Get all applicable taxes for tax display
+function getAllApplicableTaxes($primaryDb) {
+    $configs = $primaryDb->getRows(
+        "SELECT DISTINCT applicable_taxes FROM fiscal_config WHERE applicable_taxes IS NOT NULL AND applicable_taxes != ''"
+    );
+    
+    $allTaxes = [];
+    $seenTaxIds = [];
+    
+    require_once APP_PATH . '/includes/fiscal_helper.php';
+    
+    foreach ($configs as $config) {
+        $taxes = json_decode($config['applicable_taxes'], true);
+        if (is_array($taxes)) {
+            // Filter out 5% Non-VAT Withholding Tax - it should NOT be fiscalized
+            $taxes = filterOut5PercentTax($taxes);
+            
+            foreach ($taxes as $tax) {
+                $taxId = $tax['taxID'] ?? null;
+                if ($taxId && !in_array($taxId, $seenTaxIds)) {
+                    $allTaxes[] = $tax;
+                    $seenTaxIds[] = $taxId;
+                }
+            }
+        }
+    }
+    
+    return $allTaxes;
+}
+
+$allTaxes = getAllApplicableTaxes($primaryDb);
+
+// Get tax info for display
+$productTaxId = $product['tax_id'] ?? null;
+$categoryTaxId = $product['category_tax_id'] ?? null;
+$displayTax = null;
+$taxSource = '';
+
+if ($productTaxId) {
+    foreach ($allTaxes as $tax) {
+        if (($tax['taxID'] ?? null) == $productTaxId) {
+            $displayTax = $tax;
+            $taxSource = 'Product';
+            break;
+        }
+    }
+} elseif ($categoryTaxId) {
+    foreach ($allTaxes as $tax) {
+        if (($tax['taxID'] ?? null) == $categoryTaxId) {
+            $displayTax = $tax;
+            $taxSource = 'Category';
+            break;
+        }
+    }
 }
 
 $productDisplayName = !empty($product['product_name']) ? $product['product_name'] : ($product['brand'] . ' ' . $product['model']);
@@ -198,6 +264,18 @@ require_once APP_PATH . '/includes/header.php';
                     </div>
                     <div class="col-md-6">
                         <strong>Barcode:</strong> <?= escapeHtml($product['barcode'] ?? 'N/A') ?>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Tax / Charges:</strong> 
+                        <?php if ($displayTax): ?>
+                            <span class="badge bg-info" title="Tax from: <?= $taxSource ?>">
+                                <?= escapeHtml($displayTax['taxName'] ?? 'Tax') ?> (<?= $displayTax['taxPercent'] !== null ? number_format($displayTax['taxPercent'], 2) : 'Exempt' ?>%)
+                            </span>
+                        <?php else: ?>
+                            <span class="text-muted">Auto</span>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php if ($product['description']): ?>

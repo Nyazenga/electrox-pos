@@ -512,13 +512,48 @@ try {
             throw new Exception('Failed to create sale item: ' . $db->getLastError());
         }
         
-        // Update stock within the same transaction
-        if (function_exists('updateStock')) {
+        // Handle stock update - unique products get DELETED when sold, not just stock reduced
+        if (function_exists('productHasSerialOrImei') && productHasSerialOrImei($product, $db)) {
+            // Unique product: DELETE it when sold (it's no longer in inventory)
+            $previousQuantity = (int)($product['quantity_in_stock'] ?? 0);
+            
+            // Create stock movement record before deletion (for audit trail)
             try {
-                updateStock($item['id'], -$item['quantity'], $branchId, 'Sale', true);
-            } catch (Exception $stockError) {
-                // Log stock update error but don't fail the sale
-                error_log("Stock update error for product {$item['id']}: " . $stockError->getMessage());
+                $db->insert('stock_movements', [
+                    'product_id' => $item['id'],
+                    'branch_id' => $branchId,
+                    'movement_type' => 'Sale',
+                    'quantity' => -$item['quantity'],
+                    'previous_quantity' => $previousQuantity,
+                    'new_quantity' => 0,
+                    'user_id' => $_SESSION['user_id'] ?? null,
+                    'created_at' => date('Y-m-d H:i:s')
+                ]);
+            } catch (Exception $movementError) {
+                // Log but don't fail the sale
+                error_log("Stock movement creation error for unique product {$item['id']}: " . $movementError->getMessage());
+            }
+            
+            // Delete the unique product (it's been sold)
+            try {
+                $deleteResult = $db->delete('products', ['id' => $item['id']]);
+                if (!$deleteResult) {
+                    error_log("Failed to delete unique product {$item['id']} after sale: " . $db->getLastError());
+                    // Don't fail the sale, but log the error
+                }
+            } catch (Exception $deleteError) {
+                error_log("Error deleting unique product {$item['id']} after sale: " . $deleteError->getMessage());
+                // Don't fail the sale
+            }
+        } else {
+            // Normal product: Update stock using updateStock function
+            if (function_exists('updateStock')) {
+                try {
+                    updateStock($item['id'], -$item['quantity'], $branchId, 'Sale', true);
+                } catch (Exception $stockError) {
+                    // Log stock update error but don't fail the sale
+                    error_log("Stock update error for product {$item['id']}: " . $stockError->getMessage());
+                }
             }
         }
     }

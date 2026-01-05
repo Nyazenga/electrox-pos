@@ -16,12 +16,62 @@ if (!$id) {
 }
 
 $db = Database::getInstance();
-$product = $db->getRow("SELECT p.*, pc.name as category_name FROM products p LEFT JOIN product_categories pc ON p.category_id = pc.id WHERE p.id = :id", [':id' => $id]);
+$primaryDb = Database::getPrimaryInstance();
+
+// Get product with category and category tax_id
+$product = $db->getRow(
+    "SELECT p.*, pc.name as category_name, pc.tax_id as category_tax_id 
+     FROM products p 
+     LEFT JOIN product_categories pc ON p.category_id = pc.id 
+     WHERE p.id = :id", 
+    [':id' => $id]
+);
 
 if (!$product) {
     echo json_encode(['success' => false, 'message' => 'Product not found']);
     exit;
 }
+
+// Get tax information for display
+$taxDisplay = '-';
+$productTaxId = $product['tax_id'] ?? null;
+$categoryTaxId = $product['category_tax_id'] ?? null;
+$finalTaxId = $productTaxId ?: $categoryTaxId;
+
+if ($finalTaxId && $product['branch_id']) {
+    // Get applicable taxes from fiscal_config
+    $fiscalConfig = $primaryDb->getRow(
+        "SELECT applicable_taxes FROM fiscal_config WHERE branch_id = :branch_id LIMIT 1",
+        [':branch_id' => $product['branch_id']]
+    );
+    
+    if ($fiscalConfig && !empty($fiscalConfig['applicable_taxes'])) {
+        $applicableTaxes = json_decode($fiscalConfig['applicable_taxes'], true);
+        if (is_array($applicableTaxes)) {
+            // Filter out 5% Non-VAT Withholding Tax
+            require_once APP_PATH . '/includes/fiscal_helper.php';
+            $applicableTaxes = filterOut5PercentTax($applicableTaxes);
+            
+            // Find matching tax by taxID
+            foreach ($applicableTaxes as $tax) {
+                if (isset($tax['taxID']) && intval($tax['taxID']) == intval($finalTaxId)) {
+                    $taxPercent = isset($tax['taxPercent']) ? floatval($tax['taxPercent']) : null;
+                    $taxName = $tax['taxName'] ?? 'Tax';
+                    
+                    if ($taxPercent !== null) {
+                        $taxDisplay = $taxName . ' (' . number_format($taxPercent, 2) . '%)';
+                    } else {
+                        $taxDisplay = $taxName . ' (Exempt)';
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+// Add tax display to product array
+$product['tax'] = $taxDisplay;
 
 // Get stock in other branches if user has permission
 $stockInOtherBranches = [];

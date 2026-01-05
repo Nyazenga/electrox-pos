@@ -171,15 +171,34 @@ try {
                             throw new Exception("Insufficient stock for product ID: {$productId} in source branch");
                         }
                         
-                        // Check if product is unique (has serial number or IMEI)
-                        $isUniqueProduct = !empty($fromProduct['serial_number']) || !empty($fromProduct['imei']);
+                        // Get full product data to check if it's unique
+                        $fullSourceProduct = $db->getRow("SELECT * FROM products WHERE id = :id AND branch_id = :branch_id", 
+                            [':id' => $productId, ':branch_id' => $fromBranchId]);
+                        
+                        if (!$fullSourceProduct) {
+                            throw new Exception("Source product not found for product ID: {$productId} in branch {$fromBranchId}");
+                        }
+                        
+                        // Check if product is unique using productHasSerialOrImei function
+                        $isUniqueProduct = false;
+                        if (function_exists('productHasSerialOrImei')) {
+                            $isUniqueProduct = productHasSerialOrImei($fullSourceProduct, $db);
+                        } else {
+                            // Fallback: check serial/IMEI directly
+                            $isUniqueProduct = !empty($fullSourceProduct['serial_number']) || !empty($fullSourceProduct['imei']);
+                        }
                         
                         if ($isUniqueProduct) {
-                            // For unique products, completely remove from source branch
+                            // For unique products: DEACTIVATE source product and set stock to 0 (don't delete)
                             $fromPreviousQuantity = (int)($fromProduct['quantity_in_stock'] ?? 0);
                             
-                            // Delete the product from source branch
-                            $db->delete('products', ['id' => $productId, 'branch_id' => $fromBranchId]);
+                            // Deactivate and set stock to 0 (product is transferred, not deleted)
+                            $db->update('products', [
+                                'status' => 'Inactive',
+                                'quantity_in_stock' => 0,
+                                'updated_by' => $userId,
+                                'updated_at' => date('Y-m-d H:i:s')
+                            ], ['id' => $productId, 'branch_id' => $fromBranchId]);
                             
                             // Create stock movement record
                             $db->insert('stock_movements', [
@@ -192,7 +211,7 @@ try {
                                 'reference_id' => $transferId,
                                 'reference_type' => 'Transfer',
                                 'user_id' => $userId,
-                                'notes' => 'Transfer Out (Unique Product Removed): ' . $transfer['transfer_number'],
+                                'notes' => 'Transfer Out (Unique Product Deactivated): ' . $transfer['transfer_number'],
                                 'created_at' => date('Y-m-d H:i:s')
                             ]);
                         } else {
@@ -220,32 +239,150 @@ try {
                         }
                         
                         // Add to destination branch
-                        $toProduct = $db->getRow("SELECT quantity_in_stock FROM products WHERE id = :id AND branch_id = :branch_id", 
-                            [':id' => $productId, ':branch_id' => $toBranchId]);
-                        
-                        if ($toProduct) {
-                            // Product exists, update quantity
-                            $toPreviousQuantity = (int)($toProduct['quantity_in_stock'] ?? 0);
-                            $toNewQuantity = $toPreviousQuantity + $quantity;
+                        if ($isUniqueProduct) {
+                            // For unique products: Check if product exists in destination by serial/IMEI
+                            $serialNumber = $fullSourceProduct['serial_number'] ?? null;
+                            $imei = $fullSourceProduct['imei'] ?? null;
                             
-                            $db->update('products', [
-                                'quantity_in_stock' => $toNewQuantity
-                            ], ['id' => $productId, 'branch_id' => $toBranchId]);
+                            $existingProduct = null;
+                            if (!empty($serialNumber)) {
+                                $existingProduct = $db->getRow(
+                                    "SELECT * FROM products WHERE serial_number = :serial AND branch_id = :branch_id",
+                                    [':serial' => $serialNumber, ':branch_id' => $toBranchId]
+                                );
+                            }
+                            if (!$existingProduct && !empty($imei)) {
+                                $existingProduct = $db->getRow(
+                                    "SELECT * FROM products WHERE imei = :imei AND branch_id = :branch_id",
+                                    [':imei' => $imei, ':branch_id' => $toBranchId]
+                                );
+                            }
                             
-                            $db->insert('stock_movements', [
-                                'product_id' => $productId,
-                                'branch_id' => $toBranchId,
-                                'movement_type' => 'Transfer',
-                                'quantity' => $quantity,
-                                'previous_quantity' => $toPreviousQuantity,
-                                'new_quantity' => $toNewQuantity,
-                                'reference_id' => $transferId,
-                                'reference_type' => 'Transfer',
-                                'user_id' => $userId,
-                                'notes' => 'Transfer In: ' . $transfer['transfer_number'],
-                                'created_at' => date('Y-m-d H:i:s')
-                            ]);
+                            if ($existingProduct) {
+                                // Product exists in destination - REACTIVATE it and set stock to 1
+                                $toPreviousQuantity = (int)($existingProduct['quantity_in_stock'] ?? 0);
+                                
+                                $db->update('products', [
+                                    'status' => 'Active',
+                                    'quantity_in_stock' => 1,
+                                    'updated_by' => $userId,
+                                    'updated_at' => date('Y-m-d H:i:s')
+                                ], ['id' => $existingProduct['id'], 'branch_id' => $toBranchId]);
+                                
+                                $db->insert('stock_movements', [
+                                    'product_id' => $existingProduct['id'],
+                                    'branch_id' => $toBranchId,
+                                    'movement_type' => 'Transfer',
+                                    'quantity' => 1,
+                                    'previous_quantity' => $toPreviousQuantity,
+                                    'new_quantity' => 1,
+                                    'reference_id' => $transferId,
+                                    'reference_type' => 'Transfer',
+                                    'user_id' => $userId,
+                                    'notes' => 'Transfer In (Unique Product Reactivated): ' . $transfer['transfer_number'],
+                                    'created_at' => date('Y-m-d H:i:s')
+                                ]);
+                            } else {
+                                // Product doesn't exist in destination - CREATE new product entry
+                                $newProductData = [
+                                    'product_code' => '',
+                                    'category_id' => $fullSourceProduct['category_id'] ?? null,
+                                    'product_name' => $fullSourceProduct['product_name'] ?? null,
+                                    'brand' => $fullSourceProduct['brand'] ?? null,
+                                    'model' => $fullSourceProduct['model'] ?? null,
+                                    'color' => $fullSourceProduct['color'] ?? null,
+                                    'storage' => $fullSourceProduct['storage'] ?? null,
+                                    'sim_configuration' => $fullSourceProduct['sim_configuration'] ?? null,
+                                    'serial_number' => $serialNumber,
+                                    'imei' => $imei,
+                                    'battery_health' => $fullSourceProduct['battery_health'] ?? null,
+                                    'expiry_date' => $fullSourceProduct['expiry_date'] ?? null,
+                                    'weight' => $fullSourceProduct['weight'] ?? null,
+                                    'unit_of_measure' => $fullSourceProduct['unit_of_measure'] ?? null,
+                                    'manufacturer' => $fullSourceProduct['manufacturer'] ?? null,
+                                    'barcode' => $fullSourceProduct['barcode'] ?? null,
+                                    'description' => $fullSourceProduct['description'] ?? null,
+                                    'specifications' => $fullSourceProduct['specifications'] ?? null,
+                                    'cost_price' => $fullSourceProduct['cost_price'] ?? 0,
+                                    'selling_price' => $fullSourceProduct['selling_price'] ?? 0,
+                                    'reorder_level' => 0, // Unique products can't be reordered
+                                    'branch_id' => $toBranchId,
+                                    'tax_id' => $fullSourceProduct['tax_id'] ?? null,
+                                    'quantity_in_stock' => 1, // Unique products have qty=1
+                                    'status' => 'Active',
+                                    'created_by' => $userId,
+                                    'source' => 'manual',
+                                    'created_at' => date('Y-m-d H:i:s'),
+                                    'images' => $fullSourceProduct['images'] ?? null
+                                ];
+                                
+                                // Generate new product code (must be unique)
+                                if (!function_exists('generateProductCode')) {
+                                    throw new Exception("System error: Product code generation function not available");
+                                }
+                                
+                                $maxAttempts = 50;
+                                $attempt = 0;
+                                do {
+                                    $newProductCode = generateProductCode();
+                                    $existing = $db->getRow("SELECT id FROM products WHERE product_code = :code", [':code' => $newProductCode]);
+                                    $attempt++;
+                                    if ($attempt >= $maxAttempts) {
+                                        throw new Exception("Failed to generate unique product code after {$maxAttempts} attempts");
+                                    }
+                                } while ($existing);
+                                $newProductData['product_code'] = $newProductCode;
+                                
+                                // Insert new product in destination branch
+                                $newProductId = $db->insert('products', $newProductData);
+                                
+                                if ($newProductId) {
+                                    // Create stock movement record
+                                    $db->insert('stock_movements', [
+                                        'product_id' => $newProductId,
+                                        'branch_id' => $toBranchId,
+                                        'movement_type' => 'Transfer',
+                                        'quantity' => 1,
+                                        'previous_quantity' => 0,
+                                        'new_quantity' => 1,
+                                        'reference_id' => $transferId,
+                                        'reference_type' => 'Transfer',
+                                        'user_id' => $userId,
+                                        'notes' => 'Transfer In (Unique Product Created): ' . $transfer['transfer_number'],
+                                        'created_at' => date('Y-m-d H:i:s')
+                                    ]);
+                                } else {
+                                    throw new Exception("Failed to create product in destination branch: " . $db->getLastError());
+                                }
+                            }
                         } else {
+                            // Non-unique products: Normal handling
+                            $toProduct = $db->getRow("SELECT quantity_in_stock FROM products WHERE id = :id AND branch_id = :branch_id", 
+                                [':id' => $productId, ':branch_id' => $toBranchId]);
+                            
+                            if ($toProduct) {
+                                // Product exists, update quantity
+                                $toPreviousQuantity = (int)($toProduct['quantity_in_stock'] ?? 0);
+                                $toNewQuantity = $toPreviousQuantity + $quantity;
+                                
+                                $db->update('products', [
+                                    'quantity_in_stock' => $toNewQuantity
+                                ], ['id' => $productId, 'branch_id' => $toBranchId]);
+                                
+                                $db->insert('stock_movements', [
+                                    'product_id' => $productId,
+                                    'branch_id' => $toBranchId,
+                                    'movement_type' => 'Transfer',
+                                    'quantity' => $quantity,
+                                    'previous_quantity' => $toPreviousQuantity,
+                                    'new_quantity' => $toNewQuantity,
+                                    'reference_id' => $transferId,
+                                    'reference_type' => 'Transfer',
+                                    'user_id' => $userId,
+                                    'notes' => 'Transfer In: ' . $transfer['transfer_number'],
+                                    'created_at' => date('Y-m-d H:i:s')
+                                ]);
+                            } else {
                             // Product doesn't exist in destination branch - create new product entry
                             $sourceProduct = $db->getRow("SELECT * FROM products WHERE id = :id AND branch_id = :branch_id", 
                                 [':id' => $productId, ':branch_id' => $fromBranchId]);
