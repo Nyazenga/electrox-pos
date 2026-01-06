@@ -325,6 +325,40 @@ class ZimraSignature {
                 $logMessage .= "\n";
                 $logMessage .= "String length: " . strlen($signatureString) . " characters\n";
                 $logMessage .= "\n";
+                
+                // ADDITIONAL LOGGING: Check if 5% tax is present and log it separately for ZIMRA support
+                if (!empty($receiptData['receiptTaxes'])) {
+                    $has5PercentTax = false;
+                    foreach ($receiptData['receiptTaxes'] as $tax) {
+                        $taxPercent = isset($tax['taxPercent']) ? floatval($tax['taxPercent']) : null;
+                        if ($taxPercent == 5) {
+                            $has5PercentTax = true;
+                            $logMessage .= str_repeat('-', 80) . "\n";
+                            $logMessage .= "*** 5% NON-VAT WITHHOLDING TAX DETECTED ***\n";
+                            $logMessage .= str_repeat('-', 80) . "\n";
+                            $logMessage .= "Tax ID: " . ($tax['taxID'] ?? 'N/A') . "\n";
+                            $logMessage .= "Tax Code: " . ($tax['taxCode'] ?? 'N/A') . "\n";
+                            $logMessage .= "Tax Percent: " . ($taxPercent ?? 'N/A') . "\n";
+                            $logMessage .= "Tax Amount: " . ($tax['taxAmount'] ?? 'N/A') . "\n";
+                            $logMessage .= "Sales Amount With Tax: " . ($tax['salesAmountWithTax'] ?? 'N/A') . "\n";
+                            $logMessage .= "\n";
+                            // Log how this tax appears in the concatenated string
+                            $taxCode = $tax['taxCode'] ?? '';
+                            $taxPercentStr = isset($tax['taxPercent']) ? number_format(floatval($tax['taxPercent']), 2, '.', '') : '';
+                            $taxAmountStr = isset($tax['taxAmount']) ? intval(floatval($tax['taxAmount']) * 100) : 0;
+                            $salesAmountStr = isset($tax['salesAmountWithTax']) ? intval(floatval($tax['salesAmountWithTax']) * 100) : 0;
+                            $taxSegment = $taxCode . $taxPercentStr . $taxAmountStr . $salesAmountStr;
+                            $logMessage .= "5% Tax segment in signature string: " . $taxSegment . "\n";
+                            $logMessage .= "  Format: taxCode('$taxCode') || taxPercent('$taxPercentStr') || taxAmount($taxAmountStr cents) || salesAmountWithTax($salesAmountStr cents)\n";
+                            $logMessage .= str_repeat('-', 80) . "\n";
+                            break;
+                        }
+                    }
+                    if ($has5PercentTax) {
+                        $logMessage .= "\n*** THIS CONCATENATED STRING CONTAINS 5% NON-VAT WITHHOLDING TAX FOR ZIMRA TESTING ***\n\n";
+                    }
+                }
+                
                 $logMessage .= str_repeat('=', 80) . "\n";
                 $logMessage .= "END SIGNATURE STRING GENERATION\n";
                 $logMessage .= str_repeat('=', 80) . "\n\n";

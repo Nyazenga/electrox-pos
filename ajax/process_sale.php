@@ -548,12 +548,12 @@ try {
             }
         } else {
             // Normal product: Update stock using updateStock function
-            if (function_exists('updateStock')) {
-                try {
-                    updateStock($item['id'], -$item['quantity'], $branchId, 'Sale', true);
-                } catch (Exception $stockError) {
-                    // Log stock update error but don't fail the sale
-                    error_log("Stock update error for product {$item['id']}: " . $stockError->getMessage());
+        if (function_exists('updateStock')) {
+            try {
+                updateStock($item['id'], -$item['quantity'], $branchId, 'Sale', true);
+            } catch (Exception $stockError) {
+                // Log stock update error but don't fail the sale
+                error_log("Stock update error for product {$item['id']}: " . $stockError->getMessage());
                 }
             }
         }

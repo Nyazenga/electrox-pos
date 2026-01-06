@@ -342,8 +342,8 @@ if ($method === 'GET') {
                 }
             } else {
                 // Normal product: Deduct stock
-                $newStock = max(0, intval($product['quantity_in_stock']) - $quantity);
-                $db->update('products', ['quantity_in_stock' => $newStock], ['id' => $productId]);
+            $newStock = max(0, intval($product['quantity_in_stock']) - $quantity);
+            $db->update('products', ['quantity_in_stock' => $newStock], ['id' => $productId]);
             }
         }
         

@@ -29,16 +29,21 @@ function writeFiscalLog($message) {
 
 /**
  * Filter out 5% Non-VAT Withholding Tax from tax arrays
- * 5% Non-VAT Withholding Tax should NOT be fiscalized - it's a withholding tax handled outside the fiscal device system
+ * NOTE: Temporarily re-enabled for testing - ZIMRA support requested concatenated string for 5% tax
  * 
  * @param array $taxes Array of tax objects
- * @return array Filtered taxes without 5% tax
+ * @return array Filtered taxes (currently returns all taxes including 5%)
  */
 function filterOut5PercentTax($taxes) {
     if (empty($taxes) || !is_array($taxes)) {
         return [];
     }
     
+    // TEMPORARILY RE-ENABLED: ZIMRA support requested to test 5% tax fiscalization
+    // Return all taxes including 5% for testing
+    return $taxes;
+    
+    /* ORIGINAL CODE - DISABLED FOR TESTING
     $filtered = [];
     foreach ($taxes as $tax) {
         $taxPercent = isset($tax['taxPercent']) ? floatval($tax['taxPercent']) : null;
@@ -50,6 +55,7 @@ function filterOut5PercentTax($taxes) {
     }
     
     return $filtered;
+    */
 }
 
 /**
@@ -66,7 +72,8 @@ function mapApplicableTaxes($applicableTaxesRaw, $hasTaxID = false) {
         return [];
     }
     
-    // Filter out 5% Non-VAT Withholding Tax - it should NOT be fiscalized
+    // TEMPORARILY RE-ENABLED: ZIMRA support requested to test 5% tax fiscalization
+    // Filter function now returns all taxes including 5% for testing
     $applicableTaxesRaw = filterOut5PercentTax($applicableTaxesRaw);
     
     $applicableTaxes = [];
@@ -87,8 +94,7 @@ function mapApplicableTaxes($applicableTaxesRaw, $hasTaxID = false) {
         $taxName = strtolower($tax['taxName'] ?? '');
         
         // Determine taxCode based on taxPercent and taxName
-        // Common ZIMRA tax codes: 'A' = standard VAT, 'C' = zero, 'E' = exempt
-        // Note: 5% Non-VAT Withholding Tax has been filtered out above
+        // Common ZIMRA tax codes: 'A' = standard VAT, 'C' = zero, 'E' = exempt, 'B' = 5% Non-VAT Withholding Tax
         $taxCode = 'A'; // Default to standard VAT
         
         if ($taxPercent === null || $taxName === 'exempt' || strpos($taxName, 'exempt') !== false) {
@@ -97,6 +103,8 @@ function mapApplicableTaxes($applicableTaxesRaw, $hasTaxID = false) {
             $taxCode = 'C'; // Zero rate
         } elseif ($taxPercent == 15 || $taxPercent == 15.5) {
             $taxCode = 'A'; // Standard VAT (15% or 15.5%)
+        } elseif ($taxPercent == 5 && (strpos($taxName, 'withholding') !== false || strpos($taxName, 'non-vat') !== false || strpos($taxName, 'nonvat') !== false)) {
+            $taxCode = 'B'; // 5% Non-VAT Withholding Tax (taxID 514) - per ZIMRA support request
         }
         
         // CRITICAL: Preserve null for exempt taxes (don't convert to 0)
