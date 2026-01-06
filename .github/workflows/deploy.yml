@@ -10,7 +10,7 @@ env:
   SERVER_HOST: 31.97.199.82
   SERVER_USER: root
   DEPLOY_PATH: /var/www/electro-pos
-  SITE_URL: https://nedcom.co.zw
+  SITE_URL: https://electrox.bulconsultancy.com
 
 jobs:
   deploy:
@@ -34,8 +34,10 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ env.SERVER_HOST }} >> ~/.ssh/known_hosts
+          chmod 700 ~/.ssh
+          ssh-keyscan -H ${{ env.SERVER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
           chmod 600 ~/.ssh/known_hosts
+          echo "✓ SSH setup completed"
 
       - name: Deploy to server
         env:
