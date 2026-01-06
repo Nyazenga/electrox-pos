@@ -177,10 +177,6 @@ require_once APP_PATH . '/includes/header.php';
                         <input type="number" class="form-control" id="item_quantity" min="1" value="1" required>
                         <small class="text-muted" id="available_stock_text"></small>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Serial Numbers (Optional)</label>
-                        <textarea class="form-control" id="item_serial_numbers" rows="2" placeholder="Enter serial numbers, one per line"></textarea>
-                    </div>
                 </div>
             </div>
             <div class="modal-footer">

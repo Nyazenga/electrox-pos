@@ -304,7 +304,6 @@ document.addEventListener('DOMContentLoaded', function() {
             'product_id' => intval($item['product_id']),
             'product_name' => $item['product_name'] ?? '',
             'quantity' => intval($item['quantity']),
-            'serial_numbers' => $item['serial_numbers'] ?? '',
             'cost_price' => floatval($item['cost_price']),
             'selling_price' => floatval($item['selling_price']),
             'total' => floatval($item['cost_price']) * intval($item['quantity'])
@@ -317,7 +316,6 @@ document.addEventListener('DOMContentLoaded', function() {
             product_id: item.product_id,
             product_name: item.product_name,
             quantity: item.quantity,
-            serial_numbers: item.serial_numbers,
             cost_price: item.cost_price,
             selling_price: item.selling_price,
             total: item.total
