@@ -22,8 +22,11 @@ if (!$branchId) {
 try {
     $db = Database::getInstance();
     
+    // Check if we should exclude unique products (for GRN)
+    $excludeUnique = isset($_GET['exclude_unique']) && $_GET['exclude_unique'] == '1';
+    
     // Get products for the specified branch - handle both General category (product_name) and others (brand/model)
-    $products = $db->getRows("SELECT p.*, 
+    $allProducts = $db->getRows("SELECT p.*, 
                              COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
                              c.name as category_name 
                              FROM products p 
@@ -33,8 +36,20 @@ try {
                              ORDER BY COALESCE(p.product_name, p.brand, ''), p.model", 
                              [':branch_id' => $branchId]);
     
-    if ($products === false) {
-        $products = [];
+    if ($allProducts === false) {
+        $allProducts = [];
+    }
+    
+    // Filter out unique products if requested (for GRN)
+    $products = [];
+    if ($excludeUnique) {
+        foreach ($allProducts as $product) {
+            if (!productHasSerialOrImei($product, $db)) {
+                $products[] = $product;
+            }
+        }
+    } else {
+        $products = $allProducts;
     }
     
     // Format products for response

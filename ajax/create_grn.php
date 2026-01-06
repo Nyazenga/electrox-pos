@@ -108,11 +108,17 @@ try {
             [':id' => $productId]
         );
         
-        // CRITICAL: Unique products (with serial/IMEI) must always have qty=1
-        // They cannot be increased through GRN - each is a unique item
+        // BLOCK: Unique products (with serial/IMEI) cannot be received via GRN
+        // They must be added individually via Products management where each product gets its own record
         if ($product && productHasSerialOrImei($product, $db)) {
-            // Force qty=1 for unique products
-            $quantity = 1;
+            $db->rollbackTransaction();
+            ob_end_clean();
+            $productName = $product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')) ?? 'Product #' . $productId;
+            echo json_encode([
+                'success' => false, 
+                'message' => "Unique products (with serial numbers or IMEI) cannot be received via GRN. The product \"{$productName}\" has a serial number or IMEI and must be added individually via Products management."
+            ]);
+            exit;
         }
         
         // Create GRN item

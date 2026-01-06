@@ -125,6 +125,27 @@ try {
             continue;
         }
         
+        // Check if product has serial/IMEI (unique product)
+        $product = $db->getRow(
+            "SELECT p.*, pc.name as category_name FROM products p 
+             LEFT JOIN product_categories pc ON p.category_id = pc.id 
+             WHERE p.id = :id",
+            [':id' => $productId]
+        );
+        
+        // BLOCK: Unique products (with serial/IMEI) cannot be received via GRN
+        // They must be added individually via Products management where each product gets its own record
+        if ($product && productHasSerialOrImei($product, $db)) {
+            $db->rollbackTransaction();
+            ob_end_clean();
+            $productName = $product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')) ?? 'Product #' . $productId;
+            echo json_encode([
+                'success' => false, 
+                'message' => "Unique products (with serial numbers or IMEI) cannot be received via GRN. The product \"{$productName}\" has a serial number or IMEI and must be added individually via Products management."
+            ]);
+            exit;
+        }
+        
         // Create GRN item
         $itemData = [
             'grn_id' => $grnId,

@@ -51,10 +51,11 @@ if ($suppliers === false) $suppliers = [];
 
 // Get products - Only load if branch is selected (for initial display)
 // Products will be loaded dynamically via AJAX based on selected branch
+// NOTE: Unique products (with serial/IMEI) are EXCLUDED from GRN - they must be added individually
 $initialBranchId = $isEdit ? ($grn['branch_id'] ?? null) : $branchId;
 $products = [];
 if ($initialBranchId) {
-    $products = $db->getRows("SELECT p.*, 
+    $allProducts = $db->getRows("SELECT p.*, 
                              COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
                              c.name as category_name 
                              FROM products p 
@@ -63,7 +64,14 @@ if ($initialBranchId) {
                              AND p.branch_id = :branch_id
                              ORDER BY COALESCE(p.product_name, p.brand, ''), p.model", 
                              [':branch_id' => $initialBranchId]);
-    if ($products === false) $products = [];
+    if ($allProducts === false) $allProducts = [];
+    
+    // Filter out unique products (products with serial_number or imei)
+    foreach ($allProducts as $product) {
+        if (!productHasSerialOrImei($product, $db)) {
+            $products[] = $product;
+        }
+    }
 }
 
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
@@ -219,6 +227,9 @@ require_once APP_PATH . '/includes/header.php';
                         <a href="<?= BASE_URL ?>modules/products/add.php?return_to=grn" target="_blank" class="btn btn-sm btn-outline-primary">
                             <i class="bi bi-plus-circle"></i> Create New Product
                         </a>
+                    </div>
+                    <div class="alert alert-info mb-3" style="font-size: 0.875rem;">
+                        <i class="bi bi-info-circle"></i> <strong>Note:</strong> Unique products (with serial numbers or IMEI) cannot be added via GRN. They must be added individually via Products management.
                     </div>
                     <div class="position-relative">
                         <input type="text" class="form-control" id="product_search" placeholder="Type to search products..." autocomplete="off">
@@ -448,7 +459,7 @@ function loadProductsForBranch(branchId) {
         return;
     }
     
-    fetch('<?= BASE_URL ?>ajax/get_products_for_branch.php?branch_id=' + encodeURIComponent(branchId))
+    fetch('<?= BASE_URL ?>ajax/get_products_for_branch.php?branch_id=' + encodeURIComponent(branchId) + '&exclude_unique=1')
         .then(response => response.json())
         .then(data => {
             const dropdown = document.getElementById('product_dropdown');
@@ -518,6 +529,18 @@ function confirmAddItem() {
     
     if (!productId || !productName || !quantity || !costPrice || !sellingPrice) {
         Swal.fire('Error', 'Please fill in all required fields', 'error');
+        return;
+    }
+    
+    // Check if product is unique (client-side validation - server will also check)
+    // Note: Unique products should already be filtered out, but this is a safety check
+    const selectedProductItem = document.querySelector(`.product-item[data-id="${productId}"]`);
+    if (!selectedProductItem) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Invalid Product',
+            html: 'This product cannot be added via GRN. Unique products (with serial numbers or IMEI) must be added individually via Products management.'
+        });
         return;
     }
     
