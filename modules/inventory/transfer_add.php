@@ -339,6 +339,7 @@ function loadProductsForBranch(branchId) {
                     item.setAttribute('data-id', product.id);
                     item.setAttribute('data-name', product.display_name);
                     item.setAttribute('data-stock', product.quantity_in_stock);
+                    item.setAttribute('data-is-unique', product.is_unique || 0);
                     item.innerHTML = `
                         <strong>${escapeHtml(product.display_name)}</strong>
                         <br>
@@ -383,8 +384,22 @@ function confirmAddItem() {
     const quantity = parseInt(document.getElementById('item_quantity').value);
     const availableStock = parseInt(document.getElementById('item_quantity').max);
     
+    // Get is_unique flag from selected product
+    const selectedProductItem = document.querySelector(`#product_dropdown .product-item[data-id="${productId}"]`);
+    const isUnique = selectedProductItem ? (selectedProductItem.getAttribute('data-is-unique') === '1') : false;
+    
     if (!productId || !productName || !quantity || quantity <= 0) {
         Swal.fire('Error', 'Please fill in all required fields', 'error');
+        return;
+    }
+    
+    // Validate unique products can only have quantity = 1
+    if (isUnique && quantity > 1) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Invalid Quantity',
+            html: 'Unique products (with serial/IMEI) can only have a quantity of 1.'
+        });
         return;
     }
     
@@ -404,7 +419,8 @@ function confirmAddItem() {
         product_id: productId,
         product_name: productName,
         quantity: quantity,
-        available_stock: availableStock
+        available_stock: availableStock,
+        is_unique: isUnique
     };
     
     transferItems.push(item);
@@ -432,10 +448,21 @@ function renderItems() {
     
     transferItems.forEach((item, index) => {
         const row = document.createElement('tr');
+        row.setAttribute('data-item-index', index);
         row.innerHTML = `
             <td>${escapeHtml(item.product_name)}</td>
             <td>${item.available_stock}</td>
-            <td>${item.quantity}</td>
+            <td>
+                <input type="number" 
+                       class="form-control form-control-sm text-end" 
+                       value="${item.quantity}" 
+                       min="1" 
+                       max="${item.available_stock}"
+                       step="1"
+                       onchange="updateItemField(${index}, 'quantity', this.value)"
+                       ${item.is_unique ? 'max="1" readonly title="Unique products cannot have quantity changed - must be 1"' : ''}
+                       style="width: 80px;">
+            </td>
             <td>
                 <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(${index})">
                     <i class="bi bi-trash"></i>
@@ -444,6 +471,68 @@ function renderItems() {
         `;
         tbody.appendChild(row);
     });
+}
+
+function updateItemField(index, field, value) {
+    if (index < 0 || index >= transferItems.length) return;
+    
+    const item = transferItems[index];
+    
+    if (field === 'quantity') {
+        const newQuantity = Math.max(1, parseInt(value) || 1);
+        
+        // Validate unique products can only have quantity = 1
+        if (item.is_unique && newQuantity > 1) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Invalid Quantity',
+                html: 'Unique products (with serial/IMEI) can only have a quantity of 1.',
+                timer: 2000
+            });
+            // Reset to 1
+            item.quantity = 1;
+            // Update the input field
+            const tbody = document.getElementById('items_tbody');
+            const row = tbody.querySelector(`tr[data-item-index="${index}"]`);
+            if (row) {
+                const quantityInput = row.querySelector('td:nth-child(3) input');
+                if (quantityInput) quantityInput.value = 1;
+            }
+            return;
+        }
+        
+        // Validate against available stock
+        if (newQuantity > item.available_stock) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Invalid Quantity',
+                html: `Quantity cannot exceed available stock (${item.available_stock}).`,
+                timer: 2000
+            });
+            item.quantity = Math.min(item.quantity, item.available_stock);
+            // Update the input field
+            const tbody = document.getElementById('items_tbody');
+            const row = tbody.querySelector(`tr[data-item-index="${index}"]`);
+            if (row) {
+                const quantityInput = row.querySelector('td:nth-child(3) input');
+                if (quantityInput) quantityInput.value = item.quantity;
+            }
+            return;
+        }
+        
+        item.quantity = newQuantity;
+        
+        // Update the input field value to match parsed value
+        const tbody = document.getElementById('items_tbody');
+        const row = tbody.querySelector(`tr[data-item-index="${index}"]`);
+        if (row) {
+            const quantityInput = row.querySelector('td:nth-child(3) input');
+            if (quantityInput) quantityInput.value = item.quantity;
+        }
+    }
+    
+    // Update total
+    updateTotal();
 }
 
 function updateTotal() {
