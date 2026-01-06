@@ -94,7 +94,8 @@ function mapApplicableTaxes($applicableTaxesRaw, $hasTaxID = false) {
         $taxName = strtolower($tax['taxName'] ?? '');
         
         // Determine taxCode based on taxPercent and taxName
-        // Common ZIMRA tax codes: 'A' = standard VAT, 'C' = zero, 'E' = exempt, 'B' = 5% Non-VAT Withholding Tax
+        // Common ZIMRA tax codes: 'A' = standard VAT, 'C' = zero, 'E' = exempt
+        // For 5% Non-VAT Withholding Tax: use empty taxCode (per Python library and documentation)
         $taxCode = 'A'; // Default to standard VAT
         
         if ($taxPercent === null || $taxName === 'exempt' || strpos($taxName, 'exempt') !== false) {
@@ -104,7 +105,7 @@ function mapApplicableTaxes($applicableTaxesRaw, $hasTaxID = false) {
         } elseif ($taxPercent == 15 || $taxPercent == 15.5) {
             $taxCode = 'A'; // Standard VAT (15% or 15.5%)
         } elseif ($taxPercent == 5 && (strpos($taxName, 'withholding') !== false || strpos($taxName, 'non-vat') !== false || strpos($taxName, 'nonvat') !== false)) {
-            $taxCode = 'B'; // 5% Non-VAT Withholding Tax (taxID 514) - per ZIMRA support request
+            $taxCode = ''; // 5% Non-VAT Withholding Tax (taxID 514) - empty taxCode per Python library and documentation
         }
         
         // CRITICAL: Preserve null for exempt taxes (don't convert to 0)
