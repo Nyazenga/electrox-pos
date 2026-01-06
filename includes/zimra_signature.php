@@ -363,6 +363,26 @@ class ZimraSignature {
                 $logMessage .= "END SIGNATURE STRING GENERATION\n";
                 $logMessage .= str_repeat('=', 80) . "\n\n";
                 @file_put_contents($logFile, $logMessage, FILE_APPEND);
+                
+                // ALSO log to error_log for visibility in nginx logs (for production debugging)
+                // This ensures the concatenated string is visible even if file logging fails
+                error_log("ZIMRA SIGNATURE: Receipt Global No: " . ($receiptData['receiptGlobalNo'] ?? 'N/A') . " | Counter: " . ($receiptData['receiptCounter'] ?? 'N/A'));
+                error_log("ZIMRA SIGNATURE: COMPLETE CONCATENATED STRING: " . $signatureString);
+                error_log("ZIMRA SIGNATURE: String length: " . strlen($signatureString) . " characters");
+                if (!empty($receiptData['receiptTaxes'])) {
+                    foreach ($receiptData['receiptTaxes'] as $idx => $tax) {
+                        $taxPercent = isset($tax['taxPercent']) ? floatval($tax['taxPercent']) : null;
+                        if ($taxPercent == 5) {
+                            error_log("ZIMRA SIGNATURE: *** 5% NON-VAT WITHHOLDING TAX PRESENT - TaxID: " . ($tax['taxID'] ?? 'N/A') . ", TaxCode: '" . ($tax['taxCode'] ?? '') . "'");
+                            $taxCode = $tax['taxCode'] ?? '';
+                            $taxPercentStr = isset($tax['taxPercent']) ? number_format(floatval($tax['taxPercent']), 2, '.', '') : '';
+                            $taxAmountStr = isset($tax['taxAmount']) ? intval(floatval($tax['taxAmount']) * 100) : 0;
+                            $salesAmountStr = isset($tax['salesAmountWithTax']) ? intval(floatval($tax['salesAmountWithTax']) * 100) : 0;
+                            $taxSegment = $taxCode . $taxPercentStr . $taxAmountStr . $salesAmountStr;
+                            error_log("ZIMRA SIGNATURE: 5% Tax segment: " . $taxSegment . " (taxCode='$taxCode' || taxPercent='$taxPercentStr' || taxAmount=$taxAmountStr || salesAmount=$salesAmountStr)");
+                        }
+                    }
+                }
             }
         }
         
