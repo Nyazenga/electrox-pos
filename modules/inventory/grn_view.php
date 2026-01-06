@@ -45,8 +45,9 @@ require_once APP_PATH . '/includes/header.php';
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>GRN Details - <?= escapeHtml($grn['grn_number']) ?></h2>
     <div>
-        <?php if ($auth->hasPermission('inventory.edit')): ?>
-            <a href="grn_print.php?id=<?= $id ?>" class="btn btn-primary" target="_blank"><i class="bi bi-printer"></i> Print</a>
+        <?php if ($auth->hasPermission('inventory.view')): ?>
+            <a href="grn_print.php?id=<?= $id ?>" class="btn btn-primary" target="_blank"><i class="bi bi-printer"></i> Print GRN</a>
+            <a href="grn_print.php?id=<?= $id ?>&po=1" class="btn btn-success" target="_blank"><i class="bi bi-file-earmark-text"></i> Convert to Purchase Order</a>
         <?php endif; ?>
         <a href="grn.php" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
     </div>

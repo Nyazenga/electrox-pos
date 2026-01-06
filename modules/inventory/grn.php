@@ -142,7 +142,8 @@ require_once APP_PATH . '/includes/header.php';
                     <td>
                         <div class="btn-group btn-group-sm">
                             <a href="grn_view.php?id=<?= $grn['id'] ?>" class="btn btn-info" title="View"><i class="bi bi-eye"></i></a>
-                            <a href="grn_print.php?id=<?= $grn['id'] ?>" class="btn btn-primary" target="_blank" title="Print"><i class="bi bi-printer"></i></a>
+                            <a href="grn_print.php?id=<?= $grn['id'] ?>" class="btn btn-primary" target="_blank" title="Print GRN"><i class="bi bi-printer"></i></a>
+                            <a href="grn_print.php?id=<?= $grn['id'] ?>&po=1" class="btn btn-success" target="_blank" title="Purchase Order"><i class="bi bi-file-earmark-text"></i></a>
                             <?php if ($auth->hasPermission('grn.edit') && ($grn['status'] ?? 'Draft') == 'Draft'): ?>
                                 <a href="grn_add.php?id=<?= $grn['id'] ?>" class="btn btn-warning" title="Edit"><i class="bi bi-pencil"></i></a>
                             <?php endif; ?>

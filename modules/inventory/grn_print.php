@@ -10,6 +10,7 @@ $auth->requirePermission('inventory.view');
 
 $db = Database::getInstance();
 $id = intval($_GET['id'] ?? 0);
+$isPurchaseOrder = isset($_GET['po']) && $_GET['po'] == '1';
 
 if (!$id) {
     redirectTo('modules/inventory/grn.php');
@@ -29,7 +30,7 @@ if (!$grn) {
     redirectTo('modules/inventory/grn.php');
 }
 
-$grnItems = $db->getRows("SELECT gi.*, p.brand, p.model, p.product_code, c.name as category_name
+$grnItems = $db->getRows("SELECT gi.*, p.brand, p.model, p.product_code, p.product_name, c.name as category_name
                           FROM grn_items gi
                           LEFT JOIN products p ON gi.product_id = p.id
                           LEFT JOIN product_categories c ON p.category_id = c.id
@@ -37,164 +38,308 @@ $grnItems = $db->getRows("SELECT gi.*, p.brand, p.model, p.product_code, c.name 
                           ORDER BY gi.id", [':id' => $id]);
 if ($grnItems === false) $grnItems = [];
 
+// Get company settings
 $companyName = getSetting('company_name', SYSTEM_NAME);
 $companyAddress = getSetting('company_address', '');
 $companyPhone = getSetting('company_phone', '');
 $companyEmail = getSetting('company_email', '');
+$companyTIN = getSetting('company_tin', '');
+$companyVAT = getSetting('company_vat_number', '');
 
-$pageTitle = 'GRN Print - ' . $grn['grn_number'];
-require_once APP_PATH . '/includes/header.php';
-?>
+// Get logo
+$receiptLogoPath = getSetting('pos_receipt_logo', '');
+$showLogo = !empty($receiptLogoPath);
 
-<style>
-@media print {
-    .no-print, .sidebar, .topbar, header, footer, .navbar {
-        display: none !important;
-    }
-    body {
-        margin: 0;
-        padding: 0;
-        background: white !important;
-    }
-    .content-area {
-        display: block !important;
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-    .print-container {
-        padding: 20px;
+// Use TCPDF for PDF generation
+require_once APP_PATH . '/vendor/autoload.php';
+
+// Create PDF (Portrait, mm, A4)
+$pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+
+// Set document information
+$documentType = $isPurchaseOrder ? 'Purchase Order' : 'GRN';
+$pdf->SetCreator('ELECTROX-POS');
+$pdf->SetAuthor($companyName);
+$pdf->SetTitle($documentType . ' ' . $grn['grn_number']);
+$pdf->SetSubject($documentType);
+
+// Remove default header/footer
+$pdf->setPrintHeader(false);
+$pdf->setPrintFooter(false);
+
+// Set margins
+$pdf->SetMargins(15, 15, 15);
+$pdf->SetAutoPageBreak(TRUE, 20);
+
+// Add a page
+$pdf->AddPage();
+
+// Set font
+$pdf->SetFont('helvetica', '', 10);
+
+// Get logo path for TCPDF
+$logoPath = '';
+$logoHeight = 0;
+if ($showLogo && $receiptLogoPath) {
+    $logoFullPath = APP_PATH . '/' . ltrim($receiptLogoPath, '/');
+    if (file_exists($logoFullPath)) {
+        $logoPath = realpath($logoFullPath);
+        $logoHeight = 25;
     }
 }
-.print-container {
-    max-width: 210mm;
-    margin: 0 auto;
-    padding: 20px;
-    background: white;
+
+// Start Y position for header
+$startY = 15;
+$pdf->SetY($startY);
+
+// Logo on right (if exists)
+$logoBottomY = $startY;
+if ($logoPath) {
+    $logoWidth = 45;
+    $logoX = 195 - 5 - $logoWidth;
+    $logoY = $startY;
+    try {
+        $pdf->Image($logoPath, $logoX, $logoY, $logoWidth, $logoHeight, '', '', '', false, 300, '', false, false, 0);
+        $logoBottomY = $logoY + $logoHeight;
+    } catch (Exception $e) {
+        error_log("Failed to add logo to PDF: " . $e->getMessage());
+        $logoPath = '';
+    }
 }
-</style>
 
-<div class="d-flex justify-content-between align-items-center mb-4 no-print">
-    <h2>GRN Print - <?= escapeHtml($grn['grn_number']) ?></h2>
-    <div>
-        <button onclick="window.print()" class="btn btn-primary"><i class="bi bi-printer"></i> Print</button>
-        <a href="grn.php" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
-    </div>
-</div>
+// Company name on left
+$pdf->SetXY(15, $startY);
+$pdf->SetFont('helvetica', 'B', 16);
+$pdf->Cell(95, 8, htmlspecialchars($companyName), 0, 1, 'L');
 
-<div class="print-container">
-    <div class="text-center mb-4">
-        <h3><?= escapeHtml($companyName) ?></h3>
-        <p><?= nl2br(escapeHtml($companyAddress)) ?></p>
-        <?php if ($companyPhone): ?>
-            <p><strong>Phone:</strong> <?= escapeHtml($companyPhone) ?></p>
-        <?php endif; ?>
-        <?php if ($companyEmail): ?>
-            <p><strong>Email:</strong> <?= escapeHtml($companyEmail) ?></p>
-        <?php endif; ?>
-    </div>
-    
-    <hr>
-    
-    <h4 class="text-center mb-4">GOODS RECEIVED NOTE (GRN)</h4>
-    
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <table class="table table-borderless">
-                <tr>
-                    <th width="150">GRN Number:</th>
-                    <td><?= escapeHtml($grn['grn_number']) ?></td>
-                </tr>
-                <tr>
-                    <th>Date:</th>
-                    <td><?= formatDate($grn['received_date']) ?></td>
-                </tr>
-                <tr>
-                    <th>Branch:</th>
-                    <td><?= escapeHtml($grn['branch_name'] ?? 'N/A') ?></td>
-                </tr>
-                <tr>
-                    <th>Received By:</th>
-                    <td><?= escapeHtml(trim(($grn['first_name'] ?? '') . ' ' . ($grn['last_name'] ?? '')) ?: 'N/A') ?></td>
-                </tr>
-            </table>
-        </div>
-        <div class="col-md-6">
-            <?php if ($grn['supplier_name']): ?>
-            <table class="table table-borderless">
-                <tr>
-                    <th width="150">Supplier:</th>
-                    <td><?= escapeHtml($grn['supplier_name']) ?></td>
-                </tr>
-                <?php if ($grn['contact_person']): ?>
-                <tr>
-                    <th>Contact Person:</th>
-                    <td><?= escapeHtml($grn['contact_person']) ?></td>
-                </tr>
-                <?php endif; ?>
-                <?php if ($grn['supplier_phone']): ?>
-                <tr>
-                    <th>Phone:</th>
-                    <td><?= escapeHtml($grn['supplier_phone']) ?></td>
-                </tr>
-                <?php endif; ?>
-            </table>
-            <?php endif; ?>
-        </div>
-    </div>
-    
-    <table class="table table-bordered">
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>Product</th>
-                <th>Category</th>
-                <th>Quantity</th>
-                <th>Cost Price</th>
-                <th>Selling Price</th>
-                <th>Total</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php $counter = 1; foreach ($grnItems as $item): ?>
-                <tr>
-                    <td><?= $counter++ ?></td>
-                    <td>
-                        <strong><?= escapeHtml(trim(($item['brand'] ?? '') . ' ' . ($item['model'] ?? ''))) ?></strong>
-                        <br>
-                        <small><?= escapeHtml($item['product_code'] ?? 'N/A') ?></small>
-                    </td>
-                    <td><?= escapeHtml($item['category_name'] ?? 'N/A') ?></td>
-                    <td><?= $item['quantity'] ?></td>
-                    <td><?= formatCurrency($item['cost_price'] ?? 0) ?></td>
-                    <td><?= formatCurrency($item['selling_price'] ?? 0) ?></td>
-                    <td><?= formatCurrency(($item['cost_price'] ?? 0) * ($item['quantity'] ?? 0)) ?></td>
-                </tr>
-            <?php endforeach; ?>
-        </tbody>
-        <tfoot>
-            <tr>
-                <td colspan="6" class="text-end"><strong>Total Value:</strong></td>
-                <td><strong><?= formatCurrency($grn['total_value'] ?? 0) ?></strong></td>
-            </tr>
-        </tfoot>
-    </table>
-    
-    <?php if ($grn['notes']): ?>
-    <div class="mt-4">
-        <strong>Notes:</strong>
-        <p><?= nl2br(escapeHtml($grn['notes'])) ?></p>
-    </div>
-    <?php endif; ?>
-    
-    <div class="mt-4">
-        <p><strong>Status:</strong> 
-            <span class="badge bg-<?= ($grn['status'] ?? 'Draft') == 'Approved' ? 'success' : (($grn['status'] ?? 'Draft') == 'Rejected' ? 'danger' : 'warning') ?>">
-                <?= escapeHtml($grn['status'] ?? 'Draft') ?>
-            </span>
-        </p>
-    </div>
-</div>
+// Company address on left
+$pdf->SetFont('helvetica', '', 9);
+$pdf->MultiCell(95, 5, htmlspecialchars($companyAddress), 0, 'L', false, 0);
 
-<?php require_once APP_PATH . '/includes/footer.php'; ?>
+// Contact info
+$contactStartY = max($pdf->GetY(), $logoBottomY + 3);
+$pdf->SetXY(15, $contactStartY);
+if ($companyPhone) {
+    $pdf->Cell(95, 5, 'Phone: ' . htmlspecialchars($companyPhone), 0, 1, 'L');
+}
+if ($companyEmail) {
+    $pdf->Cell(95, 5, 'Email: ' . htmlspecialchars($companyEmail), 0, 1, 'L');
+}
+if ($companyTIN) {
+    $pdf->Cell(95, 5, 'TIN: ' . htmlspecialchars($companyTIN), 0, 1, 'L');
+}
+if ($companyVAT) {
+    $pdf->Cell(95, 5, 'VAT No: ' . htmlspecialchars($companyVAT), 0, 1, 'L');
+}
+$leftSectionEndY = $pdf->GetY();
 
+// Document type and number on right
+$rightStartY = $logoBottomY + 3;
+$pdf->SetXY(110, $rightStartY);
+$pdf->SetFont('helvetica', 'B', 14);
+$pdf->Cell(0, 7, strtoupper($documentType), 0, 1, 'R');
+$pdf->SetFont('helvetica', 'B', 12);
+$pdf->Cell(0, 6, 'Ref #: ' . htmlspecialchars($grn['grn_number']), 0, 1, 'R');
+$pdf->SetFont('helvetica', '', 9);
+$pdf->Cell(0, 5, 'Date: ' . date('d/m/Y', strtotime($grn['received_date'])), 0, 1, 'R');
+$rightSectionEndY = $pdf->GetY();
 
+// Move to the lower of left or right section
+$nextY = max($leftSectionEndY, $rightSectionEndY);
+$pdf->SetY($nextY);
+
+// Horizontal line
+$pdf->Line(15, $pdf->GetY(), 195, $pdf->GetY());
+$pdf->Ln(8);
+
+// GRN/Branch Information Section
+$pdf->SetFont('helvetica', 'B', 10);
+$pdf->SetFillColor(233, 236, 239);
+$pdf->Cell(0, 8, 'BRANCH INFORMATION', 1, 1, 'L', true);
+$pdf->SetFont('helvetica', '', 9);
+$pdf->SetFillColor(255, 255, 255);
+
+$branchInfo = 'Branch: ' . htmlspecialchars($grn['branch_name'] ?? 'N/A');
+if ($grn['branch_address']) {
+    $branchInfo .= "\nAddress: " . htmlspecialchars($grn['branch_address']);
+}
+$pdf->MultiCell(87.5, 5, $branchInfo, 1, 'L', true, 0);
+
+// Received By info
+$receivedByInfo = 'Received By: ' . htmlspecialchars(trim(($grn['first_name'] ?? '') . ' ' . ($grn['last_name'] ?? '')) ?: 'N/A');
+if ($grn['status']) {
+    $receivedByInfo .= "\nStatus: " . htmlspecialchars($grn['status']);
+}
+$pdf->MultiCell(87.5, 5, $receivedByInfo, 1, 'L', true, 1);
+
+$pdf->Ln(5);
+
+// Supplier Information Section (if exists)
+if ($grn['supplier_name']) {
+    $pdf->SetFont('helvetica', 'B', 10);
+    $pdf->SetFillColor(233, 236, 239);
+    $pdf->Cell(0, 8, 'SUPPLIER INFORMATION', 1, 1, 'L', true);
+    $pdf->SetFont('helvetica', '', 9);
+    $pdf->SetFillColor(255, 255, 255);
+    
+    $supplierInfo = 'Supplier: ' . htmlspecialchars($grn['supplier_name']);
+    if ($grn['contact_person']) {
+        $supplierInfo .= "\nContact: " . htmlspecialchars($grn['contact_person']);
+    }
+    if ($grn['supplier_phone']) {
+        $supplierInfo .= "\nPhone: " . htmlspecialchars($grn['supplier_phone']);
+    }
+    if ($grn['supplier_email']) {
+        $supplierInfo .= "\nEmail: " . htmlspecialchars($grn['supplier_email']);
+    }
+    $pdf->MultiCell(0, 5, $supplierInfo, 1, 'L', true);
+    $pdf->Ln(5);
+}
+
+// Items Table Header
+$pdf->SetFont('helvetica', 'B', 9);
+$pdf->SetFillColor(51, 51, 51);
+$pdf->SetTextColor(255, 255, 255);
+
+// Column widths
+$colNo = 10;
+$colProduct = 65;
+$colCategory = 25;
+$colQty = 15;
+$colCost = 25;
+$colSelling = 25;
+$colTotal = 25;
+
+$pdf->Cell($colNo, 7, '#', 1, 0, 'C', true);
+$pdf->Cell($colProduct, 7, 'Product', 1, 0, 'L', true);
+$pdf->Cell($colCategory, 7, 'Category', 1, 0, 'L', true);
+$pdf->Cell($colQty, 7, 'Qty', 1, 0, 'C', true);
+$pdf->Cell($colCost, 7, 'Cost Price', 1, 0, 'R', true);
+if (!$isPurchaseOrder) {
+    $pdf->Cell($colSelling, 7, 'Selling Price', 1, 0, 'R', true);
+}
+$pdf->Cell($colTotal, 7, 'Total', 1, 1, 'R', true);
+
+$pdf->SetTextColor(0, 0, 0);
+$pdf->SetFont('helvetica', '', 9);
+
+// Items
+$counter = 1;
+$totalValue = 0;
+foreach ($grnItems as $item) {
+    // For General category products, use product_name; for others use brand + model
+    $categoryName = $item['category_name'] ?? '';
+    $isGeneralCategory = strcasecmp(trim($categoryName), 'General') === 0;
+    
+    if ($isGeneralCategory && !empty($item['product_name'])) {
+        $productDisplayName = $item['product_name'];
+    } else {
+        $productDisplayName = trim(($item['brand'] ?? '') . ' ' . ($item['model'] ?? ''));
+        // Fallback to product_name if brand/model is empty
+        if (empty($productDisplayName) && !empty($item['product_name'])) {
+            $productDisplayName = $item['product_name'];
+        }
+        // Final fallback to product code
+        if (empty($productDisplayName)) {
+            $productDisplayName = $item['product_code'] ?? 'N/A';
+        }
+    }
+    
+    $productCode = $item['product_code'] ?? '';
+    $quantity = intval($item['quantity'] ?? 0);
+    $costPrice = floatval($item['cost_price'] ?? 0);
+    $sellingPrice = floatval($item['selling_price'] ?? 0);
+    $lineTotal = $costPrice * $quantity;
+    $totalValue += $lineTotal;
+    
+    // Get current Y position for multi-cell
+    $currentY = $pdf->GetY();
+    
+    // Product name with code (may wrap)
+    $productText = htmlspecialchars($productDisplayName);
+    if ($productCode && $productDisplayName !== $productCode) {
+        $productText .= "\n" . htmlspecialchars($productCode);
+    }
+    
+    // Calculate height needed for product name
+    $productHeight = max(7, $pdf->getStringHeight($colProduct, $productText, false, true, '', 1));
+    
+    // Number
+    $pdf->Cell($colNo, $productHeight, $counter++, 1, 0, 'C', false, '', 0, '', 'T');
+    
+    // Product (with wrapping)
+    $pdf->MultiCell($colProduct, 7, $productText, 1, 'L', false, 0, '', '', true, 0, false, true, $productHeight, 'T');
+    
+    // Category
+    $pdf->Cell($colCategory, $productHeight, htmlspecialchars($categoryName), 1, 0, 'L', false, '', 0, '', 'T');
+    
+    // Quantity
+    $pdf->Cell($colQty, $productHeight, number_format($quantity), 1, 0, 'C', false, '', 0, '', 'T');
+    
+    // Cost Price
+    $pdf->Cell($colCost, $productHeight, '$' . number_format($costPrice, 2), 1, 0, 'R', false, '', 0, '', 'T');
+    
+    // Selling Price (only for GRN, not Purchase Order)
+    if (!$isPurchaseOrder) {
+        $pdf->Cell($colSelling, $productHeight, '$' . number_format($sellingPrice, 2), 1, 0, 'R', false, '', 0, '', 'T');
+    }
+    
+    // Total
+    $pdf->Cell($colTotal, $productHeight, '$' . number_format($lineTotal, 2), 1, 1, 'R', false, '', 0, '', 'T');
+}
+
+// Total Row
+$pdf->SetFont('helvetica', 'B', 10);
+$pdf->SetFillColor(245, 245, 245);
+
+$totalCols = 4; // #, Product, Category, Qty
+if (!$isPurchaseOrder) {
+    $totalCols++; // Selling Price
+}
+$totalCols++; // Cost Price
+$totalWidth = $colNo + $colProduct + $colCategory + $colQty + $colCost;
+if (!$isPurchaseOrder) {
+    $totalWidth += $colSelling;
+}
+
+$pdf->Cell($totalWidth, 8, 'Total Value:', 1, 0, 'R', true);
+$pdf->Cell($colTotal, 8, '$' . number_format($totalValue, 2), 1, 1, 'R', true);
+
+$pdf->SetFont('helvetica', '', 9);
+$pdf->SetFillColor(255, 255, 255);
+
+// Notes section
+if (!empty($grn['notes'])) {
+    $pdf->Ln(8);
+    $pdf->SetFont('helvetica', 'B', 10);
+    $pdf->Cell(0, 6, 'Notes:', 0, 1, 'L');
+    $pdf->SetFont('helvetica', '', 9);
+    $pdf->MultiCell(0, 5, htmlspecialchars($grn['notes']), 0, 'L');
+}
+
+// Footer signature area (for Purchase Orders)
+if ($isPurchaseOrder) {
+    $pdf->Ln(15);
+    $pdf->SetY($pdf->GetY());
+    
+    // Signature line for supplier
+    $pdf->SetFont('helvetica', '', 9);
+    $pdf->Cell(87.5, 5, 'Supplier Signature:', 0, 0, 'L');
+    $pdf->Cell(87.5, 5, 'Authorized By:', 0, 1, 'L');
+    
+    $pdf->SetY($pdf->GetY() + 15);
+    $pdf->Line(15, $pdf->GetY(), 102.5, $pdf->GetY());
+    $pdf->Line(102.5, $pdf->GetY(), 195, $pdf->GetY());
+    
+    $pdf->SetY($pdf->GetY() + 5);
+    $pdf->SetFont('helvetica', '', 8);
+    $pdf->SetTextColor(100, 100, 100);
+    $pdf->Cell(87.5, 4, 'Date: _______________', 0, 0, 'L');
+    $pdf->Cell(87.5, 4, 'Date: _______________', 0, 1, 'L');
+    $pdf->SetTextColor(0, 0, 0);
+}
+
+// Output PDF
+$filename = ($isPurchaseOrder ? 'PO' : 'GRN') . '_' . $grn['grn_number'] . '.pdf';
+$pdf->Output($filename, 'I');
+exit;
