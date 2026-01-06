@@ -66,9 +66,11 @@ require_once APP_PATH . '/includes/header.php';
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Product Categories</h2>
-    <?php if ($auth->hasPermission('products.create')): ?>
-        <button class="btn btn-primary" onclick="showAddCategory()"><i class="bi bi-plus-circle"></i> Add Category</button>
-    <?php endif; ?>
+    <?php 
+    // DISABLED: Add Category functionality - No new categories are to be added to the system
+    // if ($auth->hasPermission('products.create')): ?>
+        <!-- <button class="btn btn-primary" onclick="showAddCategory()"><i class="bi bi-plus-circle"></i> Add Category</button> -->
+    <?php // endif; ?>
 </div>
 
 <div class="card">
@@ -166,12 +168,15 @@ require_once APP_PATH . '/includes/header.php';
 </div>
 
 <script>
+// DISABLED: Add Category functionality - No new categories are to be added to the system
+/*
 function showAddCategory() {
     document.getElementById('categoryModalTitle').textContent = 'Add Category';
     document.getElementById('categoryForm').reset();
     document.getElementById('categoryId').value = '';
     new bootstrap.Modal(document.getElementById('categoryModal')).show();
 }
+*/
 
 function editCategory(id) {
     fetch('<?= BASE_URL ?>ajax/get_category.php?id=' + id)

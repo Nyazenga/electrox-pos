@@ -1,0 +1,96 @@
+Subject: Clarification on 5% Non-VAT Withholding Tax Fiscalization Implementation
+
+Dear ZIMRA Technical Support Team,
+
+I hope this email finds you well. I am writing to seek clarification regarding the fiscalization implementation of the 5% Non-VAT Withholding Tax in our custom POS system for Electro X Zimbabwe Pvt Ltd.
+
+We have successfully implemented fiscalization for all other tax types, and they are working correctly:
+- Exempt tax (taxCode: E)
+- Zero-rated tax (taxCode: C) 
+- Standard VAT (taxCode: A)
+
+However, we are experiencing an issue specifically with the 5% Non-VAT Withholding Tax (taxID: 514) when attempting to fiscalize receipts. We consistently receive "Invoice signature is invalid" errors when this tax is included in receipt submissions.
+
+We have attempted multiple implementation approaches based on our understanding of the ZIMRA Fiscal Device Gateway API documentation (v7.2) and Section 13.2.1 regarding receipt signature generation:
+1. Including taxCode 'B' for the 5% tax in both receiptLines and receiptTaxes
+2. Using an empty string for taxCode (maintaining consistency across all lines per documentation requirement)
+3. Omitting the taxCode field entirely from receipt submissions
+
+All approaches result in signature validation failure (RCPT020 error), while the same receipt structure works correctly for all other tax types.
+
+I would like to confirm the following:
+
+1. Is the 5% Non-VAT Withholding Tax intended to be processed through the fiscal device system, or is it handled separately outside of fiscalization? We note that it appears in the applicableTaxes array returned by getConfig, but we want to confirm its intended use case.
+
+2. If it should be fiscalized, what is the correct taxCode value that should be used for this tax type in receipt submissions? Our getConfig response returns this tax as follows:
+   {
+       "taxPercent": 5,
+       "taxName": "Non-VAT Withholding Tax",
+       "validFrom": "2024-01-01T00:00:00",
+       "taxID": 514
+   }
+   Note: We observe that the getConfig response does not include a taxCode field for any tax, which aligns with the documentation stating taxCode is not returned by this endpoint.
+
+3. Is there any specific handling required for non-VAT taxes in the receipt signature generation process (Section 13.2.1) that differs from VAT taxes? Our implementation currently treats all taxes uniformly in signature generation.
+
+We understand that the getConfig endpoint returns applicableTaxes, which may include taxes for various purposes, not necessarily all for fiscalization. However, since this tax appears in the applicableTaxes array with a valid taxID, we want to ensure we are implementing it correctly according to ZIMRA's requirements and documentation.
+
+Your guidance on this matter would be greatly appreciated to ensure our implementation fully complies with ZIMRA fiscalization requirements.
+
+Please find below our complete getConfig response for your reference:
+
+{
+    "taxPayerName": "Electro X Zimbabwe Pvt Ltd",
+    "taxPayerTIN": "2001286483",
+    "vatNumber": "220108354",
+    "deviceSerialNo": "electrox-2",
+    "deviceBranchName": "Electro X Zimbabwe Pvt Ltd",
+    "deviceBranchAddress": {
+        "province": "HARARE",
+        "city": "HARARE",
+        "street": "ED Mnangagwa Rd",
+        "houseNo": "147"
+    },
+    "deviceBranchContacts": {
+        "phoneNo": "0776190449",
+        "email": "accounts@electrox.co.zw"
+    },
+    "deviceOperatingMode": "Online",
+    "taxPayerDayMaxHrs": 24,
+    "applicableTaxes": [
+        {
+            "taxName": "Exempt",
+            "validFrom": "2023-01-01T00:00:00",
+            "taxID": 1
+        },
+        {
+            "taxPercent": 0,
+            "taxName": "Zero rated 0%",
+            "validFrom": "2023-01-01T00:00:00",
+            "taxID": 2
+        },
+        {
+            "taxPercent": 5,
+            "taxName": "Non-VAT Withholding Tax",
+            "validFrom": "2024-01-01T00:00:00",
+            "taxID": 514
+        },
+        {
+            "taxPercent": 15.5,
+            "taxName": "Standard rated 15.5%",
+            "validFrom": "2025-12-15T00:00:00",
+            "taxID": 517
+        }
+    ],
+    "certificateValidTill": "2026-12-18T12:34:49",
+    "qrUrl": "https://fdmstest.zimra.co.zw",
+    "taxpayerDayEndNotificationHrs": 2,
+    "operationID": "0HNHM698NBDA4:00000001"
+}
+
+Thank you for your time and assistance. I look forward to your response.
+
+Warm Regards,
+Munashe Nyazenga
+Electro X Zimbabwe Pvt Ltd
+

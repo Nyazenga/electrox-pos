@@ -28,12 +28,17 @@ try {
     ];
     
     if (!empty($input['id'])) {
-        // Update
+        // Update - Edit existing category is allowed
         $db->update('product_categories', $data, ['id' => intval($input['id'])]);
     } else {
-        // Insert
-        $data['created_at'] = date('Y-m-d H:i:s');
-        $db->insert('product_categories', $data);
+        // DISABLED: Insert new category - No new categories are to be added to the system
+        // throw new Exception('Adding new categories is not allowed. Only editing existing categories is permitted.');
+        // $data['created_at'] = date('Y-m-d H:i:s');
+        // $db->insert('product_categories', $data);
+        
+        // Reject attempts to add new categories
+        echo json_encode(['success' => false, 'message' => 'Adding new categories is not allowed. Only editing existing categories is permitted.']);
+        exit;
     }
     
     echo json_encode(['success' => true, 'message' => 'Category saved successfully']);
