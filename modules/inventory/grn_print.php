@@ -46,9 +46,34 @@ $companyEmail = getSetting('company_email', '');
 $companyTIN = getSetting('company_tin', '');
 $companyVAT = getSetting('company_vat_number', '');
 
-// Get logo
-$receiptLogoPath = getSetting('pos_receipt_logo', '');
-$showLogo = !empty($receiptLogoPath);
+// Get logo - use same logic as invoices
+$grnLogo = getSetting('invoice_logo', getSetting('company_logo', ''));
+// If no logo setting found, try to find the most recent invoice_logo file
+if (empty($grnLogo)) {
+    $logoDir = APP_PATH . '/assets/images/';
+    $logoFiles = glob($logoDir . 'invoice_logo_*.png');
+    if (!empty($logoFiles)) {
+        // Sort by modification time, most recent first
+        usort($logoFiles, function($a, $b) {
+            return filemtime($b) - filemtime($a);
+        });
+        $mostRecent = $logoFiles[0];
+        $grnLogo = 'assets/images/' . basename($mostRecent);
+    }
+}
+// Normalize logo path - ensure it's relative to APP_PATH
+if ($grnLogo && !empty($grnLogo)) {
+    $logoFullPath = APP_PATH . '/' . ltrim($grnLogo, '/');
+    // If file doesn't exist at the stored path, try without leading slash
+    if (!file_exists($logoFullPath) && strpos($grnLogo, '/') !== 0) {
+        $logoFullPath = APP_PATH . '/' . $grnLogo;
+    }
+    // Only use logo if file actually exists
+    if (!file_exists($logoFullPath)) {
+        $grnLogo = '';
+    }
+}
+$showLogo = getSetting('invoice_show_logo', '1') == '1' && !empty($grnLogo);
 
 // Use TCPDF for PDF generation
 require_once APP_PATH . '/vendor/autoload.php';
@@ -80,11 +105,11 @@ $pdf->SetFont('helvetica', '', 10);
 // Get logo path for TCPDF
 $logoPath = '';
 $logoHeight = 0;
-if ($showLogo && $receiptLogoPath) {
-    $logoFullPath = APP_PATH . '/' . ltrim($receiptLogoPath, '/');
+if ($showLogo && $grnLogo) {
+    $logoFullPath = APP_PATH . '/' . ltrim($grnLogo, '/');
     if (file_exists($logoFullPath)) {
         $logoPath = realpath($logoFullPath);
-        $logoHeight = 25;
+        $logoHeight = 25; // Fixed logo height in mm
     }
 }
 
