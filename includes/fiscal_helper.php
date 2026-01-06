@@ -104,8 +104,9 @@ function mapApplicableTaxes($applicableTaxesRaw, $hasTaxID = false) {
             $taxCode = 'C'; // Zero rate
         } elseif ($taxPercent == 15 || $taxPercent == 15.5) {
             $taxCode = 'A'; // Standard VAT (15% or 15.5%)
-        } elseif ($taxPercent == 5 && (strpos($taxName, 'withholding') !== false || strpos($taxName, 'non-vat') !== false || strpos($taxName, 'nonvat') !== false)) {
+        } elseif (($taxPercent == 5 && (strpos($taxName, 'withholding') !== false || strpos($taxName, 'non-vat') !== false || strpos($taxName, 'nonvat') !== false)) || ($taxID == 514 && $taxPercent == 5)) {
             $taxCode = ''; // 5% Non-VAT Withholding Tax (taxID 514) - empty taxCode per Python library and documentation
+            // Check both by taxName AND taxID 514 to ensure we catch it even if taxName format differs
         }
         
         // CRITICAL: Preserve null for exempt taxes (don't convert to 0)
