@@ -107,6 +107,8 @@ function mapApplicableTaxes($applicableTaxesRaw, $hasTaxID = false) {
         } elseif (($taxPercent == 5 && (strpos($taxName, 'withholding') !== false || strpos($taxName, 'non-vat') !== false || strpos($taxName, 'nonvat') !== false)) || ($taxID == 514 && $taxPercent == 5)) {
             $taxCode = ''; // 5% Non-VAT Withholding Tax (taxID 514) - empty taxCode per Python library and documentation
             // Check both by taxName AND taxID 514 to ensure we catch it even if taxName format differs
+            // LOG THIS CHANGE TO VERIFY IT'S WORKING
+            error_log("TAX CODE ASSIGNMENT: 5% Non-VAT Withholding Tax detected - taxID=$taxID, taxPercent=$taxPercent, taxName='$taxName' - Assigning EMPTY taxCode ('') per ZIMRA documentation");
         }
         
         // CRITICAL: Preserve null for exempt taxes (don't convert to 0)
@@ -695,7 +697,14 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             $taxPercent = isset($selectedTax['taxPercent']) && $selectedTax['taxPercent'] !== null ? floatval($selectedTax['taxPercent']) : null;
             $taxCode = $selectedTax['taxCode']; // Exact from ZIMRA - no fallback
             
-            writeFiscalLog("FISCALIZE SALE: Using EXACT tax from ZIMRA - taxID=$taxId, taxPercent=" . ($taxPercent !== null ? $taxPercent : 'NULL (exempt)') . ", taxCode=$taxCode");
+            // CRITICAL LOGGING: Verify taxCode assignment for receiptLine (especially 5% tax)
+            if ($taxId == 514 && $taxPercent == 5) {
+                writeFiscalLog("FISCALIZE SALE: *** RECEIPTLINE TAXCODE VERIFICATION - 5% NON-VAT WITHHOLDING TAX ***");
+                writeFiscalLog("FISCALIZE SALE: taxID=514, taxPercent=5, taxCode='" . $taxCode . "' (SHOULD BE EMPTY STRING '')");
+                error_log("FISCALIZE SALE: *** RECEIPTLINE - 5% NON-VAT WITHHOLDING TAX - taxID=514, taxCode='" . $taxCode . "' (SHOULD BE EMPTY '') ***");
+            }
+            
+            writeFiscalLog("FISCALIZE SALE: Using EXACT tax from ZIMRA - taxID=$taxId, taxPercent=" . ($taxPercent !== null ? $taxPercent : 'NULL (exempt)') . ", taxCode='$taxCode'");
             writeFiscalLog("FISCALIZE SALE: NOTE - ZIMRA getConfig returned taxPercent=" . ($selectedTax['taxPercent'] ?? 'NULL (exempt)') . " (raw value from ZIMRA)");
             
             // Get tax settings
@@ -1110,8 +1119,23 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             
             $receiptData['receiptTaxes'][] = $receiptTaxEntry;
             
+            // CRITICAL LOGGING: Verify taxCode assignment, especially for 5% tax
+            if ($validTax['taxID'] == 514 && $taxPercentForAPI == 5) {
+                writeFiscalLog("FISCALIZE SALE: *** 5% NON-VAT WITHHOLDING TAX VERIFICATION ***");
+                writeFiscalLog("FISCALIZE SALE: taxID=514, taxPercent=5, taxCode='" . $validTax['taxCode'] . "' (SHOULD BE EMPTY STRING '')");
+                writeFiscalLog("FISCALIZE SALE: receiptTaxEntry taxCode='" . $receiptTaxEntry['taxCode'] . "' (for signature generation)");
+                error_log("FISCALIZE SALE: *** 5% NON-VAT WITHHOLDING TAX - taxID=514, taxCode='" . $receiptTaxEntry['taxCode'] . "' (SHOULD BE EMPTY '') ***");
+            }
+            
+            // CRITICAL LOGGING: Verify exempt tax handling
+            if ($validTax['taxCode'] === 'E') {
+                writeFiscalLog("FISCALIZE SALE: *** EXEMPT TAX VERIFICATION ***");
+                writeFiscalLog("FISCALIZE SALE: taxID={$validTax['taxID']}, taxCode='E', taxPercent=" . ($taxPercentForAPI !== null ? $taxPercentForAPI : 'NOT INCLUDED (per ZIMRA docs)'));
+                error_log("FISCALIZE SALE: *** EXEMPT TAX - taxID={$validTax['taxID']}, taxCode='E', taxPercent NOT included in receiptTaxEntry ***");
+            }
+            
             writeFiscalLog("FISCALIZE SALE: Added receiptTax entry: " . json_encode($receiptTaxEntry, JSON_PRETTY_PRINT));
-            writeFiscalLog("FISCALIZE SALE: Using exact tax from ZIMRA - taxID={$validTax['taxID']}, taxPercent={$validTax['taxPercent']}, taxCode={$validTax['taxCode']}, taxAmount=$taxAmount, salesAmountWithTax={$group['total']}");
+            writeFiscalLog("FISCALIZE SALE: Using exact tax from ZIMRA - taxID={$validTax['taxID']}, taxPercent=" . ($taxPercentForAPI !== null ? $taxPercentForAPI : 'NULL (exempt)') . ", taxCode={$validTax['taxCode']}, taxAmount=$taxAmount, salesAmountWithTax={$group['total']}");
             writeFiscalLog("FISCALIZE SALE: ========== END PROCESSING TAX GROUP ==========");
         }
         
@@ -1303,20 +1327,40 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
         foreach ($receiptData['receiptTaxes'] as $receiptTax) {
             $found = false;
             foreach ($applicableTaxes as $applicableTax) {
-                // Both receiptTax and applicableTax are in percentage form, so direct comparison
-                if (intval($receiptTax['taxID']) === intval($applicableTax['taxID']) && 
-                    abs(floatval($receiptTax['taxPercent']) - floatval($applicableTax['taxPercent'])) < 0.01 &&
-                    $receiptTax['taxCode'] === $applicableTax['taxCode']) {
-                    $found = true;
-                    writeFiscalLog("FISCALIZE SALE: ✓ Receipt tax validated - taxID={$receiptTax['taxID']}, taxPercent={$receiptTax['taxPercent']}, taxCode={$receiptTax['taxCode']}");
-                    break;
+                // For exempt taxes (taxCode='E'), match by taxID and taxCode only, ignore taxPercent
+                if ($receiptTax['taxCode'] === 'E' && $applicableTax['taxCode'] === 'E') {
+                    if (intval($receiptTax['taxID']) === intval($applicableTax['taxID'])) {
+                        $found = true;
+                        writeFiscalLog("FISCALIZE SALE: ✓ Receipt tax validated (exempt) - taxID={$receiptTax['taxID']}, taxCode={$receiptTax['taxCode']}");
+                        break;
+                    }
+                } else {
+                    // Non-exempt taxes - match by taxID, taxPercent and taxCode
+                    $receiptTaxPercent = isset($receiptTax['taxPercent']) && $receiptTax['taxPercent'] !== null ? floatval($receiptTax['taxPercent']) : null;
+                    $applicableTaxPercent = isset($applicableTax['taxPercent']) && $applicableTax['taxPercent'] !== null ? floatval($applicableTax['taxPercent']) : null;
+                    
+                    $taxPercentMatch = false;
+                    if ($receiptTaxPercent !== null && $applicableTaxPercent !== null) {
+                        $taxPercentMatch = (abs($receiptTaxPercent - $applicableTaxPercent) < 0.01);
+                    } elseif ($receiptTaxPercent === null && $applicableTaxPercent === null) {
+                        $taxPercentMatch = true;
+                    }
+                    
+                    if (intval($receiptTax['taxID']) === intval($applicableTax['taxID']) && 
+                        $taxPercentMatch &&
+                        $receiptTax['taxCode'] === $applicableTax['taxCode']) {
+                        $found = true;
+                        writeFiscalLog("FISCALIZE SALE: ✓ Receipt tax validated - taxID={$receiptTax['taxID']}, taxPercent=" . ($receiptTaxPercent !== null ? $receiptTaxPercent : 'NULL (exempt)') . ", taxCode={$receiptTax['taxCode']}");
+                        break;
+                    }
                 }
             }
             if (!$found) {
-                $errorMsg = "FISCALIZE SALE: ERROR - Receipt tax (taxID={$receiptTax['taxID']}, taxPercent={$receiptTax['taxPercent']}, taxCode={$receiptTax['taxCode']}) does not match any applicableTax from ZIMRA!";
+                $receiptTaxPercentDisplay = isset($receiptTax['taxPercent']) && $receiptTax['taxPercent'] !== null ? $receiptTax['taxPercent'] : 'NULL (exempt)';
+                $errorMsg = "FISCALIZE SALE: ERROR - Receipt tax (taxID={$receiptTax['taxID']}, taxPercent=$receiptTaxPercentDisplay, taxCode={$receiptTax['taxCode']}) does not match any applicableTax from ZIMRA!";
                 writeFiscalLog($errorMsg);
                 writeFiscalLog("FISCALIZE SALE: Available applicableTaxes: " . json_encode($applicableTaxes, JSON_PRETTY_PRINT));
-                throw new Exception("Invalid tax configuration: Tax combination (taxID={$receiptTax['taxID']}, taxPercent={$receiptTax['taxPercent']}, taxCode={$receiptTax['taxCode']}) not found in ZIMRA applicable taxes. Please sync configuration from ZIMRA.");
+                throw new Exception("Invalid tax configuration: Tax combination (taxID={$receiptTax['taxID']}, taxPercent=$receiptTaxPercentDisplay, taxCode={$receiptTax['taxCode']}) not found in ZIMRA applicable taxes. Please sync configuration from ZIMRA.");
             }
         }
         
@@ -1328,7 +1372,10 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             $line['receiptLinePrice'] = floatval($line['receiptLinePrice']);
             $line['receiptLineQuantity'] = floatval($line['receiptLineQuantity']);
             $line['receiptLineTotal'] = floatval($line['receiptLineTotal']);
-            $line['taxPercent'] = floatval($line['taxPercent']);
+            // Only set taxPercent if it exists (exempt taxes don't have taxPercent)
+            if (isset($line['taxPercent'])) {
+                $line['taxPercent'] = floatval($line['taxPercent']);
+            }
             // Keep taxCode and taxID
             if (isset($line['taxID'])) $line['taxID'] = intval($line['taxID']);
         }
@@ -1338,20 +1385,25 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
         // taxCode will be removed from JSON payload in fiscal_service.php before sending to ZIMRA
         // Reorder receiptTaxes fields: taxPercent, taxID, taxCode, taxAmount, salesAmountWithTax (taxCode kept for signature)
         foreach ($receiptData['receiptTaxes'] as &$tax) {
-            $taxPercent = floatval($tax['taxPercent']);
+            // For exempt taxes (taxCode='E'), taxPercent should not be included
+            $taxPercent = isset($tax['taxPercent']) && $tax['taxPercent'] !== null ? floatval($tax['taxPercent']) : null;
             $taxID = intval($tax['taxID']);
             $taxCode = $tax['taxCode'] ?? ''; // Keep taxCode for signature generation
             $taxAmount = floatval($tax['taxAmount']);
             $salesAmountWithTax = floatval($tax['salesAmountWithTax']);
             
             // Rebuild with correct order, keeping taxCode for signature generation
+            // Only include taxPercent if it's not exempt (taxCode='E')
             $tax = [
-                'taxPercent' => $taxPercent,
                 'taxID' => $taxID,
                 'taxCode' => $taxCode, // Keep for signature (will be removed from payload before sending)
                 'taxAmount' => $taxAmount,
                 'salesAmountWithTax' => $salesAmountWithTax
             ];
+            // Only include taxPercent if it's not exempt
+            if ($taxCode !== 'E' && $taxPercent !== null) {
+                $tax['taxPercent'] = $taxPercent;
+            }
         }
         unset($tax);
         
