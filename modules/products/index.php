@@ -369,7 +369,7 @@ require_once APP_PATH . '/includes/header.php';
                                 <a href="edit.php?id=<?= $product['id'] ?>" class="btn btn-sm btn-warning"><i class="bi bi-pencil"></i></a>
                             <?php endif; ?>
                             <?php if ($auth->hasPermission('products.delete')): ?>
-                                <a href="delete.php?id=<?= $product['id'] ?>" class="btn btn-sm btn-danger delete-btn"><i class="bi bi-trash"></i></a>
+                                <a href="delete.php?id=<?= $product['id'] ?>" class="btn btn-sm btn-danger delete-btn" onclick="return confirmDelete(event, <?= $product['id'] ?>);"><i class="bi bi-trash"></i></a>
                             <?php endif; ?>
                         </td>
                         <td style="display: none;"><?= $product['created_at'] ?? '' ?></td> <!-- Hidden column for sorting by date created -->
@@ -607,6 +607,29 @@ function applyBulkTax() {
         btn.disabled = false;
         btn.innerHTML = originalText;
     });
+}
+
+// Delete product confirmation
+function confirmDelete(event, productId) {
+    event.preventDefault();
+    
+    Swal.fire({
+        title: 'Delete Product?',
+        text: 'Are you sure you want to delete this product?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, Delete It',
+        cancelButtonText: 'Cancel'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Redirect to delete.php
+            window.location.href = 'delete.php?id=' + productId;
+        }
+    });
+    
+    return false;
 }
 
 // Update button state on page load
