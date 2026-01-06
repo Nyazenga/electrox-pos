@@ -306,13 +306,26 @@ if ($method === 'GET') {
                 throw new Exception('Failed to create sale item');
             }
             
-            // Handle stock update - unique products get DELETED when sold, not just stock reduced
+            // Handle stock update - unique products get DEACTIVATED when sold (not deleted, to preserve reports/invoices)
             if (function_exists('productHasSerialOrImei') && productHasSerialOrImei($product, $db)) {
-                // Unique product: DELETE it when sold (it's no longer in inventory)
+                // Unique product: DEACTIVATE it when sold (status='Inactive', quantity_in_stock=0)
+                // We deactivate instead of delete to preserve:
+                // - Sales reports that JOIN products table for cost_price, product_code, category
+                // - Invoice history and product references
+                // - Profit calculations that depend on p.cost_price
+                // - Product filtering in reports
                 $previousQuantity = (int)($product['quantity_in_stock'] ?? 0);
                 
-                // Create stock movement record before deletion (for audit trail)
+                // Deactivate product and set stock to 0
                 try {
+                    $db->update('products', [
+                        'status' => 'Inactive',
+                        'quantity_in_stock' => 0,
+                        'updated_by' => $user['id'] ?? null,
+                        'updated_at' => date('Y-m-d H:i:s')
+                    ], ['id' => $productId]);
+                    
+                    // Create stock movement record (for audit trail)
                     $db->insert('stock_movements', [
                         'product_id' => $productId,
                         'branch_id' => $product['branch_id'] ?? null,
@@ -320,24 +333,12 @@ if ($method === 'GET') {
                         'quantity' => -$quantity,
                         'previous_quantity' => $previousQuantity,
                         'new_quantity' => 0,
-                        'user_id' => $_SESSION['user_id'] ?? null,
+                        'user_id' => $user['id'] ?? null,
                         'created_at' => date('Y-m-d H:i:s')
                     ]);
-                } catch (Exception $movementError) {
+                } catch (Exception $updateError) {
                     // Log but don't fail the sale
-                    error_log("Stock movement creation error for unique product {$productId}: " . $movementError->getMessage());
-                }
-                
-                // Delete the unique product (it's been sold)
-                try {
-                    $deleteResult = $db->delete('products', ['id' => $productId]);
-                    if (!$deleteResult) {
-                        error_log("Failed to delete unique product {$productId} after sale: " . $db->getLastError());
-                        // Don't fail the sale, but log the error
-                    }
-                } catch (Exception $deleteError) {
-                    error_log("Error deleting unique product {$productId} after sale: " . $deleteError->getMessage());
-                    // Don't fail the sale
+                    error_log("Error deactivating unique product {$productId} after sale: " . $updateError->getMessage());
                 }
             } else {
                 // Normal product: Deduct stock
