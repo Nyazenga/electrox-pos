@@ -160,7 +160,7 @@ require_once APP_PATH . '/includes/header.php';
 </div>
 
 <script>
-const BASE_URL_TRANSFER = '<?= BASE_URL ?>';
+const BASE_URL_TRANSFER = <?= json_encode(BASE_URL) ?>;
 
 function approveTransfer(transferId, transferNumber) {
     Swal.fire({
