@@ -3,12 +3,17 @@ require_once dirname(dirname(dirname(__FILE__))) . '/config.php';
 require_once APP_PATH . '/includes/db.php';
 require_once APP_PATH . '/includes/auth.php';
 require_once APP_PATH . '/includes/functions.php';
+require_once APP_PATH . '/includes/currency_functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
 $auth->requirePermission('products.stock_take_reports');
 
 $pageTitle = 'Stock Take Reports';
+
+// Get base currency for displaying amounts
+$baseCurrency = getBaseCurrency($db);
+$currencyCode = $baseCurrency['code'] ?? 'USD';
 
 $db = Database::getInstance();
 $primaryDb = Database::getPrimaryInstance();
@@ -166,15 +171,15 @@ require_once APP_PATH . '/includes/header.php';
                             <td class="text-end"><?= number_format($report['total_items']) ?></td>
                             <td class="text-end text-success">
                                 <?= number_format($report['items_with_gains']) ?> 
-                                <small class="text-muted">(+<?= number_format($report['total_gain_quantity'], 2) ?>)</small>
+                                <small class="text-muted">(<?= number_format($report['total_gain_quantity'], 2) ?>)</small>
                             </td>
                             <td class="text-end text-danger">
                                 <?= number_format($report['items_with_losses']) ?> 
-                                <small class="text-muted">(-<?= number_format($report['total_loss_quantity'], 2) ?>)</small>
+                                <small class="text-muted">(<?= $report['total_loss_quantity'] > 0 ? '-' : '' ?><?= number_format($report['total_loss_quantity'], 2) ?>)</small>
                             </td>
                             <td class="text-end"><?= number_format($report['items_no_change']) ?></td>
                             <td class="text-end <?= $report['net_difference'] >= 0 ? 'text-success' : 'text-danger' ?>">
-                                <strong><?= $report['net_difference'] >= 0 ? '+' : '' ?><?= number_format($report['net_difference'], 2) ?></strong>
+                                <strong><?= $report['net_difference'] < 0 ? '-' : '' ?><?= number_format(abs($report['net_difference']), 2) ?> <?= escapeHtml($currencyCode) ?></strong>
                             </td>
                             <td>
                                 <a href="<?= BASE_URL ?>modules/products/print_stock_take_report.php?id=<?= $report['id'] ?>" 

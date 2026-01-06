@@ -3,10 +3,15 @@ require_once dirname(dirname(dirname(__FILE__))) . '/config.php';
 require_once APP_PATH . '/includes/db.php';
 require_once APP_PATH . '/includes/auth.php';
 require_once APP_PATH . '/includes/functions.php';
+require_once APP_PATH . '/includes/currency_functions.php';
 
 $auth = Auth::getInstance();
 $auth->requireLogin();
 $auth->requirePermission('products.stock_take');
+
+// Get base currency for displaying amounts
+$baseCurrency = getBaseCurrency($db);
+$currencyCode = $baseCurrency['code'] ?? 'USD';
 
 $reportId = intval($_GET['id'] ?? 0);
 if (!$reportId) {
@@ -175,7 +180,7 @@ $pdf->Cell(0, 8, number_format($report['total_items']), 1, 1, 'R');
 
 $pdf->Cell(95, 8, 'Items with Gains:', 1, 0, 'L', true);
 $pdf->SetTextColor(0, 128, 0);
-$pdf->Cell(0, 8, number_format($report['items_with_gains']) . ' (+' . number_format($report['total_gain_quantity'], 2) . ')', 1, 1, 'R');
+$pdf->Cell(0, 8, number_format($report['items_with_gains']) . ' (' . number_format($report['total_gain_quantity'], 2) . ')', 1, 1, 'R');
 $pdf->SetTextColor(0, 0, 0);
 
 $pdf->Cell(95, 8, 'Items with Losses:', 1, 0, 'L', true);
@@ -189,7 +194,7 @@ $pdf->Cell(0, 8, number_format($report['items_no_change']), 1, 1, 'R');
 $pdf->SetFont('helvetica', 'B', 10);
 $pdf->Cell(95, 10, 'Net Difference:', 1, 0, 'L', true);
 $pdf->SetTextColor($report['net_difference'] >= 0 ? 0 : 220, $report['net_difference'] >= 0 ? 128 : 53, $report['net_difference'] >= 0 ? 0 : 69);
-$pdf->Cell(0, 10, ($report['net_difference'] >= 0 ? '+' : '') . number_format($report['net_difference'], 2), 1, 1, 'R');
+$pdf->Cell(0, 10, ($report['net_difference'] < 0 ? '-' : '') . number_format(abs($report['net_difference']), 2) . ' ' . htmlspecialchars($currencyCode), 1, 1, 'R');
 $pdf->SetTextColor(0, 0, 0);
 
 $pdf->Ln(12);
@@ -235,8 +240,8 @@ if (!empty($detailedBreakdown)) {
         $pdf->Cell(22, 7, number_format($item['current_stock'] ?? 0, 2), 1, 0, 'R');
         $pdf->Cell(22, 7, number_format($item['counted_stock'] ?? 0, 2), 1, 0, 'R');
         $pdf->SetTextColor($diffColor[0], $diffColor[1], $diffColor[2]);
-        $pdf->Cell(25, 7, ($difference >= 0 ? '+' : '') . number_format($difference, 2), 1, 0, 'R');
-        $pdf->Cell(29, 7, ($amount >= 0 ? '+' : '') . number_format($amount, 2), 1, 1, 'R');
+        $pdf->Cell(25, 7, ($difference < 0 ? '-' : '') . number_format(abs($difference), 2), 1, 0, 'R');
+        $pdf->Cell(29, 7, ($amount < 0 ? '-' : '') . number_format(abs($amount), 2) . ' ' . htmlspecialchars($currencyCode), 1, 1, 'R');
         $pdf->SetTextColor(0, 0, 0);
         
         // Add notes if available
@@ -255,7 +260,7 @@ if (!empty($detailedBreakdown)) {
     $totalAmountColor = $totalAmount >= 0 ? [0, 128, 0] : [220, 53, 69];
     $pdf->Cell(163, 8, 'Total Amount Gained/Lost:', 1, 0, 'R', true);
     $pdf->SetTextColor($totalAmountColor[0], $totalAmountColor[1], $totalAmountColor[2]);
-    $pdf->Cell(29, 8, ($totalAmount >= 0 ? '+' : '') . number_format($totalAmount, 2), 1, 1, 'R', true);
+    $pdf->Cell(29, 8, ($totalAmount < 0 ? '-' : '') . number_format(abs($totalAmount), 2) . ' ' . htmlspecialchars($currencyCode), 1, 1, 'R', true);
     $pdf->SetTextColor(0, 0, 0);
     
     $pdf->Ln(10);
