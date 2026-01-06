@@ -29,11 +29,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $targetPath = $uploadDir . $filename;
         
         if (move_uploaded_file($_FILES['receipt_logo']['tmp_name'], $targetPath)) {
-            setSetting('pos_receipt_logo', 'assets/images/' . $filename);
-            $updated = true;
+            $logoPath = 'assets/images/' . $filename;
+            // Verify file was actually saved
+            if (file_exists($targetPath)) {
+                // Save to database
+                $saveResult = setSetting('pos_receipt_logo', $logoPath);
+                if ($saveResult) {
+                    // Verify it was saved correctly by reading it back
+                    $savedPath = getSetting('pos_receipt_logo', '');
+                    if ($savedPath === $logoPath) {
+                        $updated = true;
+                    } else {
+                        $errors[] = "Logo uploaded but failed to save setting to database. File: {$logoPath}, Saved: {$savedPath}";
+                        error_log("Receipt logo setting mismatch - Expected: {$logoPath}, Got: {$savedPath}");
+                    }
+                } else {
+                    $errors[] = "Logo file uploaded but failed to save to database. Please try again.";
+                    error_log("Failed to save pos_receipt_logo setting after file upload");
+                }
+            } else {
+                $errors[] = "Failed to upload receipt logo. File was not saved to disk.";
+            }
         } else {
             $errors[] = "Failed to upload receipt logo. Please check directory permissions.";
         }
+    } elseif (isset($_FILES['receipt_logo']) && $_FILES['receipt_logo']['error'] !== UPLOAD_ERR_NO_FILE) {
+        // File upload error occurred (but not "no file" error)
+        $errorMsg = "Upload error code: " . $_FILES['receipt_logo']['error'];
+        switch ($_FILES['receipt_logo']['error']) {
+            case UPLOAD_ERR_INI_SIZE:
+            case UPLOAD_ERR_FORM_SIZE:
+                $errorMsg = "File is too large. Maximum size allowed: " . ini_get('upload_max_filesize');
+                break;
+            case UPLOAD_ERR_PARTIAL:
+                $errorMsg = "File upload was interrupted. Please try again.";
+                break;
+            case UPLOAD_ERR_NO_TMP_DIR:
+                $errorMsg = "Temporary folder is missing. Please contact system administrator.";
+                break;
+            case UPLOAD_ERR_CANT_WRITE:
+                $errorMsg = "Failed to write file to disk. Please check directory permissions.";
+                break;
+            case UPLOAD_ERR_EXTENSION:
+                $errorMsg = "File upload was stopped by extension. Please contact system administrator.";
+                break;
+        }
+        $errors[] = "Receipt logo upload failed: " . $errorMsg;
     }
     
     // Handle checkboxes - if not set, set to '0'

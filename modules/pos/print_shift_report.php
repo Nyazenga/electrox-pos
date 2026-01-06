@@ -155,7 +155,48 @@ $companyEmail = getSetting('company_email', '');
 $companyTagline = getSetting('company_tagline', 'Transforming Your Tomorrow');
 
 // Get receipt logo
+// Get receipt logo - check pos_receipt_logo first, then fallback to invoice_logo, then company_logo
 $receiptLogoPath = getSetting('pos_receipt_logo', '');
+// If no receipt logo setting found, try invoice_logo, then company_logo
+if (empty($receiptLogoPath)) {
+    $receiptLogoPath = getSetting('invoice_logo', getSetting('company_logo', ''));
+}
+// If still no logo setting found, try to find the most recent receipt_logo or invoice_logo file
+if (empty($receiptLogoPath)) {
+    $logoDir = APP_PATH . '/assets/images/';
+    $logoFiles = array_merge(
+        glob($logoDir . 'receipt_logo_*.png'),
+        glob($logoDir . 'receipt_logo_*.jpg'),
+        glob($logoDir . 'receipt_logo_*.jpeg'),
+        glob($logoDir . 'invoice_logo_*.png'),
+        glob($logoDir . 'invoice_logo_*.jpg'),
+        glob($logoDir . 'invoice_logo_*.jpeg')
+    );
+    if (!empty($logoFiles)) {
+        // Sort by modification time, most recent first
+        usort($logoFiles, function($a, $b) {
+            return filemtime($b) - filemtime($a);
+        });
+        $mostRecent = $logoFiles[0];
+        $receiptLogoPath = 'assets/images/' . basename($mostRecent);
+        // If we found a file but no database setting, save it to the database for persistence
+        if (!empty($receiptLogoPath)) {
+            setSetting('pos_receipt_logo', $receiptLogoPath);
+        }
+    }
+}
+// Normalize logo path - ensure it's relative to APP_PATH
+if ($receiptLogoPath && !empty($receiptLogoPath)) {
+    $logoFullPath = APP_PATH . '/' . ltrim($receiptLogoPath, '/');
+    // If file doesn't exist at the stored path, try without leading slash
+    if (!file_exists($logoFullPath) && strpos($receiptLogoPath, '/') !== 0) {
+        $logoFullPath = APP_PATH . '/' . $receiptLogoPath;
+    }
+    // Only use logo if file actually exists
+    if (!file_exists($logoFullPath)) {
+        $receiptLogoPath = '';
+    }
+}
 $showLogo = !empty($receiptLogoPath);
 
 // Use TCPDF for PDF generation

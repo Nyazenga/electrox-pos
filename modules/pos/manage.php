@@ -235,11 +235,23 @@ if (isset($_GET['id'])) {
     $companyEmail = getSetting('company_email', '');
     
     // Get receipt logo - use EXACT same logic as invoice print
-    $receiptLogoPath = getSetting('pos_receipt_logo', getSetting('invoice_logo', getSetting('company_logo', '')));
-    // If no logo setting found, try to find the most recent invoice_logo file (same as invoice)
+    // Get receipt logo - check pos_receipt_logo first, then fallback to invoice_logo, then company_logo
+    $receiptLogoPath = getSetting('pos_receipt_logo', '');
+    // If no receipt logo setting found, try invoice_logo, then company_logo
+    if (empty($receiptLogoPath)) {
+        $receiptLogoPath = getSetting('invoice_logo', getSetting('company_logo', ''));
+    }
+    // If still no logo setting found, try to find the most recent receipt_logo or invoice_logo file
     if (empty($receiptLogoPath)) {
         $logoDir = APP_PATH . '/assets/images/';
-        $logoFiles = glob($logoDir . 'invoice_logo_*.png');
+        $logoFiles = array_merge(
+            glob($logoDir . 'receipt_logo_*.png'),
+            glob($logoDir . 'receipt_logo_*.jpg'),
+            glob($logoDir . 'receipt_logo_*.jpeg'),
+            glob($logoDir . 'invoice_logo_*.png'),
+            glob($logoDir . 'invoice_logo_*.jpg'),
+            glob($logoDir . 'invoice_logo_*.jpeg')
+        );
         if (!empty($logoFiles)) {
             // Sort by modification time, most recent first
             usort($logoFiles, function($a, $b) {
@@ -247,6 +259,10 @@ if (isset($_GET['id'])) {
             });
             $mostRecent = $logoFiles[0];
             $receiptLogoPath = 'assets/images/' . basename($mostRecent);
+            // If we found a file but no database setting, save it to the database for persistence
+            if (!empty($receiptLogoPath)) {
+                setSetting('pos_receipt_logo', $receiptLogoPath);
+            }
         }
     }
     // Normalize logo path - ensure it's relative to APP_PATH
