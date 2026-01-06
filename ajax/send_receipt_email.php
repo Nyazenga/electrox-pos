@@ -126,8 +126,38 @@ try {
     $companyPhone = getSetting('company_phone', '');
     $companyEmail = getSetting('company_email', '');
     
-    // Get receipt logo - prepare for embedding
+    // Get receipt logo - check pos_receipt_logo first, then fallback to invoice_logo, then company_logo
     $receiptLogoPath = getSetting('pos_receipt_logo', '');
+    // If no receipt logo setting found, try invoice_logo, then company_logo
+    if (empty($receiptLogoPath)) {
+        $receiptLogoPath = getSetting('invoice_logo', getSetting('company_logo', ''));
+    }
+    // If still no logo setting found, try to find the most recent receipt_logo or invoice_logo file
+    if (empty($receiptLogoPath)) {
+        $logoDir = APP_PATH . '/assets/images/';
+        $logoFiles = array_merge(
+            glob($logoDir . 'receipt_logo_*.png'),
+            glob($logoDir . 'receipt_logo_*.jpg'),
+            glob($logoDir . 'receipt_logo_*.jpeg'),
+            glob($logoDir . 'invoice_logo_*.png'),
+            glob($logoDir . 'invoice_logo_*.jpg'),
+            glob($logoDir . 'invoice_logo_*.jpeg')
+        );
+        if (!empty($logoFiles)) {
+            // Sort by modification time, most recent first
+            usort($logoFiles, function($a, $b) {
+                return filemtime($b) - filemtime($a);
+            });
+            $mostRecent = $logoFiles[0];
+            $receiptLogoPath = 'assets/images/' . basename($mostRecent);
+            // If we found a file but no database setting, save it to the database for persistence
+            if (!empty($receiptLogoPath)) {
+                setSetting('pos_receipt_logo', $receiptLogoPath);
+            }
+        }
+    }
+    
+    // Prepare logo for email embedding
     $receiptLogoUrl = '';
     $logoCid = 'receipt_logo_' . time();
     $logoFullPath = '';
@@ -136,6 +166,11 @@ try {
     if ($receiptLogoPath) {
         $logoPath = ltrim($receiptLogoPath, '/');
         $fullPath = APP_PATH . '/' . $logoPath;
+        
+        // Normalize path - try different variations
+        if (!file_exists($fullPath) && strpos($receiptLogoPath, '/') !== 0) {
+            $fullPath = APP_PATH . '/' . $receiptLogoPath;
+        }
         
         // Check if file exists
         if (file_exists($fullPath)) {
