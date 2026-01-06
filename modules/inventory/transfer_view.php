@@ -49,6 +49,14 @@ require_once APP_PATH . '/includes/header.php';
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Transfer Details - <?= escapeHtml($transfer['transfer_number']) ?></h2>
     <div>
+        <?php if ($auth->hasPermission('transfers.change_status') && ($transfer['status'] ?? 'Pending') == 'Pending'): ?>
+            <button type="button" class="btn btn-success" onclick='approveTransfer(<?= $transfer['id'] ?>, <?= json_encode($transfer['transfer_number'] ?? '') ?>)' title="Approve">
+                <i class="bi bi-check-circle"></i> Approve
+            </button>
+            <button type="button" class="btn btn-danger" onclick='rejectTransfer(<?= $transfer['id'] ?>, <?= json_encode($transfer['transfer_number'] ?? '') ?>)' title="Reject">
+                <i class="bi bi-x-circle"></i> Reject
+            </button>
+        <?php endif; ?>
         <a href="transfers.php" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
     </div>
 </div>
@@ -72,7 +80,7 @@ require_once APP_PATH . '/includes/header.php';
                     <tr>
                         <th>Status:</th>
                         <td>
-                            <span class="badge bg-<?= ($transfer['status'] ?? 'Pending') == 'Completed' ? 'success' : (($transfer['status'] ?? 'Pending') == 'Rejected' ? 'danger' : 'warning') ?>">
+                            <span class="badge bg-<?= ($transfer['status'] ?? 'Pending') == 'Approved' || ($transfer['status'] ?? 'Pending') == 'Completed' ? 'success' : (($transfer['status'] ?? 'Pending') == 'Rejected' ? 'danger' : 'warning') ?>">
                                 <?= escapeHtml($transfer['status'] ?? 'Pending') ?>
                             </span>
                         </td>
@@ -150,6 +158,84 @@ require_once APP_PATH . '/includes/header.php';
         </div>
     </div>
 </div>
+
+<script>
+const BASE_URL_TRANSFER = '<?= BASE_URL ?>';
+
+function approveTransfer(transferId, transferNumber) {
+    Swal.fire({
+        title: 'Approve Transfer?',
+        text: 'Are you sure you want to approve transfer ' + transferNumber + '?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#28a745',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Yes, approve it!'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            updateTransferStatus(transferId, 'Approved');
+        }
+    });
+}
+
+function rejectTransfer(transferId, transferNumber) {
+    Swal.fire({
+        title: 'Reject Transfer?',
+        text: 'Are you sure you want to reject transfer ' + transferNumber + '?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Yes, reject it!'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            updateTransferStatus(transferId, 'Rejected');
+        }
+    });
+}
+
+function updateTransferStatus(transferId, status) {
+    fetch(BASE_URL_TRANSFER + 'ajax/update_transfer_status.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            transfer_id: transferId,
+            status: status
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Success!',
+                text: 'Transfer status updated successfully',
+                confirmButtonColor: '#1e3a8a'
+            }).then(() => {
+                location.reload();
+            });
+        } else {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error!',
+                text: data.message || 'Failed to update transfer status',
+                confirmButtonColor: '#d33'
+            });
+        }
+    })
+    .catch(error => {
+        console.error('Status update error:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error!',
+            text: 'An error occurred while updating the status',
+            confirmButtonColor: '#d33'
+        });
+    });
+}
+</script>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>
 

@@ -58,7 +58,7 @@ require_once APP_PATH . '/includes/header.php';
                     <td><?= escapeHtml($transfer['to_branch'] ?? 'N/A') ?></td>
                     <td><?= $transfer['total_items'] ?? 0 ?> items</td>
                     <td>
-                        <span class="badge bg-<?= ($transfer['status'] ?? 'Pending') == 'Completed' ? 'success' : (($transfer['status'] ?? 'Pending') == 'Rejected' ? 'danger' : 'warning') ?>">
+                        <span class="badge bg-<?= ($transfer['status'] ?? 'Pending') == 'Approved' || ($transfer['status'] ?? 'Pending') == 'Completed' ? 'success' : (($transfer['status'] ?? 'Pending') == 'Rejected' ? 'danger' : 'warning') ?>">
                             <?= escapeHtml($transfer['status'] ?? 'Pending') ?>
                         </span>
                     </td>
