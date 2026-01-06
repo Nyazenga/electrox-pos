@@ -499,9 +499,11 @@ function addItem() {
     document.getElementById('product_search').value = '';
     document.getElementById('selected_product_id').value = '';
     document.getElementById('item_quantity').value = '1';
-    document.getElementById('item_serial_numbers').value = '';
-    document.getElementById('item_cost_price').value = '';
-    document.getElementById('item_selling_price').value = '';
+    // Note: item_serial_numbers field removed - serial numbers not used in this form
+    const itemCostPrice = document.getElementById('item_cost_price');
+    const itemSellingPrice = document.getElementById('item_selling_price');
+    if (itemCostPrice) itemCostPrice.value = '';
+    if (itemSellingPrice) itemSellingPrice.value = '';
     
     const modal = new bootstrap.Modal(document.getElementById('addItemModal'));
     modal.show();
@@ -554,12 +556,37 @@ function renderItems() {
     
     grnItems.forEach((item, index) => {
         const row = document.createElement('tr');
+        row.setAttribute('data-item-index', index);
         row.innerHTML = `
             <td>${escapeHtml(item.product_name)}</td>
-            <td>${item.quantity}</td>
-            <td>$${item.cost_price.toFixed(2)}</td>
-            <td>$${item.selling_price.toFixed(2)}</td>
-            <td>$${item.total.toFixed(2)}</td>
+            <td>
+                <input type="number" 
+                       class="form-control form-control-sm text-end" 
+                       value="${item.quantity}" 
+                       min="1" 
+                       step="1"
+                       onchange="updateItemField(${index}, 'quantity', this.value)"
+                       style="width: 80px;">
+            </td>
+            <td>
+                <input type="number" 
+                       class="form-control form-control-sm text-end" 
+                       value="${item.cost_price.toFixed(2)}" 
+                       min="0" 
+                       step="0.01"
+                       onchange="updateItemField(${index}, 'cost_price', this.value)"
+                       style="width: 100px;">
+            </td>
+            <td>
+                <input type="number" 
+                       class="form-control form-control-sm text-end" 
+                       value="${item.selling_price.toFixed(2)}" 
+                       min="0" 
+                       step="0.01"
+                       onchange="updateItemField(${index}, 'selling_price', this.value)"
+                       style="width: 100px;">
+            </td>
+            <td class="text-end">$${item.total.toFixed(2)}</td>
             <td>
                 <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(${index})">
                     <i class="bi bi-trash"></i>
@@ -568,6 +595,48 @@ function renderItems() {
         `;
         tbody.appendChild(row);
     });
+}
+
+function updateItemField(index, field, value) {
+    if (index < 0 || index >= grnItems.length) return;
+    
+    const item = grnItems[index];
+    const numValue = parseFloat(value) || 0;
+    
+    if (field === 'quantity') {
+        item.quantity = Math.max(1, parseInt(value) || 1);
+    } else if (field === 'cost_price') {
+        item.cost_price = Math.max(0, numValue);
+    } else if (field === 'selling_price') {
+        item.selling_price = Math.max(0, numValue);
+    }
+    
+    // Recalculate total
+    item.total = item.cost_price * item.quantity;
+    
+    // Update the total cell in the row
+    const tbody = document.getElementById('items_tbody');
+    const row = tbody.querySelector(`tr[data-item-index="${index}"]`);
+    if (row) {
+        const totalCell = row.querySelector('td:nth-child(5)');
+        if (totalCell) {
+            totalCell.textContent = '$' + item.total.toFixed(2);
+        }
+        
+        // Update the input field values to match parsed values
+        if (field === 'quantity') {
+            const quantityInput = row.querySelector('td:nth-child(2) input');
+            if (quantityInput) quantityInput.value = item.quantity;
+        } else if (field === 'cost_price') {
+            const costInput = row.querySelector('td:nth-child(3) input');
+            if (costInput) costInput.value = item.cost_price.toFixed(2);
+        } else if (field === 'selling_price') {
+            const sellingInput = row.querySelector('td:nth-child(4) input');
+            if (sellingInput) sellingInput.value = item.selling_price.toFixed(2);
+        }
+    }
+    
+    updateTotal();
 }
 
 function updateTotal() {
