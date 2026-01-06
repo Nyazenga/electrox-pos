@@ -464,6 +464,7 @@ try {
                             } else {
                                 throw new Exception("Source product not found for product ID: {$productId} in branch {$fromBranchId}");
                             }
+                            }
                         }
                     }
                 }
@@ -549,16 +550,9 @@ try {
             // Don't fail the response if logging fails
         }
         
-        while (ob_get_level()) {
-            ob_end_clean();
-        }
-        header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'message' => 'Transfer status updated successfully']);
-        exit;
-        
     } catch (Exception $e) {
         try {
-            if ($db->getPdo()->inTransaction()) {
+            if (isset($db) && $db->getPdo()->inTransaction()) {
                 $db->rollbackTransaction();
             }
         } catch (Exception $rollbackError) {
@@ -566,6 +560,14 @@ try {
         }
         throw $e;
     }
+    
+    // Success response - moved outside the inner try-catch
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true, 'message' => 'Transfer status updated successfully']);
+    exit;
     
 } catch (Exception $e) {
     if (isset($db)) {
