@@ -31,7 +31,7 @@ if (!$grn) {
     redirectTo('modules/inventory/grn.php');
 }
 
-$grnItems = $db->getRows("SELECT gi.*, p.brand, p.model, p.product_code, c.name as category_name
+$grnItems = $db->getRows("SELECT gi.*, p.brand, p.model, p.product_code, p.product_name, c.name as category_name
                           FROM grn_items gi
                           LEFT JOIN products p ON gi.product_id = p.id
                           LEFT JOIN product_categories c ON p.category_id = c.id
@@ -146,12 +146,32 @@ require_once APP_PATH . '/includes/header.php';
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($grnItems as $item): ?>
+                            <?php foreach ($grnItems as $item): 
+                                // For General category products, use product_name; for others use brand + model
+                                $categoryName = $item['category_name'] ?? '';
+                                $isGeneralCategory = strcasecmp(trim($categoryName), 'General') === 0;
+                                
+                                if ($isGeneralCategory && !empty($item['product_name'])) {
+                                    $productDisplayName = $item['product_name'];
+                                } else {
+                                    $productDisplayName = trim(($item['brand'] ?? '') . ' ' . ($item['model'] ?? ''));
+                                    // Fallback to product_name if brand/model is empty
+                                    if (empty($productDisplayName) && !empty($item['product_name'])) {
+                                        $productDisplayName = $item['product_name'];
+                                    }
+                                    // Final fallback to product code
+                                    if (empty($productDisplayName)) {
+                                        $productDisplayName = $item['product_code'] ?? 'N/A';
+                                    }
+                                }
+                            ?>
                                 <tr>
                                     <td>
-                                        <strong><?= escapeHtml(trim(($item['brand'] ?? '') . ' ' . ($item['model'] ?? ''))) ?></strong>
+                                        <strong><?= escapeHtml($productDisplayName) ?></strong>
+                                        <?php if (!empty($item['product_code']) && ($productDisplayName !== ($item['product_code'] ?? ''))): ?>
                                         <br>
-                                        <small class="text-muted"><?= escapeHtml($item['product_code'] ?? 'N/A') ?></small>
+                                        <small class="text-muted"><?= escapeHtml($item['product_code']) ?></small>
+                                        <?php endif; ?>
                                     </td>
                                     <td><?= escapeHtml($item['category_name'] ?? 'N/A') ?></td>
                                     <td><?= $item['quantity'] ?></td>
