@@ -229,7 +229,7 @@ require_once APP_PATH . '/includes/header.php';
         <!-- Data Table -->
         <div class="card">
             <div class="card-body">
-                <table id="fiscalizationsTable" class="table table-striped table-hover data-table">
+                <table id="fiscalizationsTable" class="table table-striped table-hover">
                     <thead>
                         <tr>
                             <th>ID</th>
@@ -341,31 +341,44 @@ require_once APP_PATH . '/includes/header.php';
 
 <script>
 $(document).ready(function() {
-    // Initialize DataTable
-    if ($.fn.DataTable) {
-        $('#fiscalizationsTable').DataTable({
-            order: [[0, 'desc']], // Sort by ID descending
-            pageLength: 25,
-            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
-            responsive: true,
-            autoWidth: false,
-            columnDefs: [
-                { orderable: false, targets: [11, 12] } // QR Code and Actions columns
-            ],
-            language: {
-                search: "Search:",
-                lengthMenu: "Show _MENU_ entries",
-                info: "Showing _START_ to _END_ of _TOTAL_ entries",
-                infoEmpty: "No entries to show",
-                infoFiltered: "(filtered from _MAX_ total entries)",
-                paginate: {
-                    first: "First",
-                    last: "Last",
-                    next: "Next",
-                    previous: "Previous"
+    // Initialize DataTable for fiscalizations
+    if ($.fn.DataTable && $('#fiscalizationsTable').length) {
+        // Destroy existing instance if it exists
+        if ($.fn.DataTable.isDataTable('#fiscalizationsTable')) {
+            $('#fiscalizationsTable').DataTable().destroy();
+        }
+        
+        // Check if table has actual data (not just empty placeholder)
+        var tbody = $('#fiscalizationsTable tbody');
+        var firstRow = tbody.find('tr:first');
+        var hasColspan = firstRow.find('td').first().attr('colspan') !== undefined;
+        
+        // Only initialize if we have data
+        if (!hasColspan && firstRow.length > 0) {
+            $('#fiscalizationsTable').DataTable({
+                order: [[0, 'desc']], // Sort by ID descending
+                pageLength: 25,
+                lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]],
+                responsive: true,
+                autoWidth: false,
+                columnDefs: [
+                    { orderable: false, targets: [11, 12] } // QR Code and Actions columns
+                ],
+                language: {
+                    search: "Search:",
+                    lengthMenu: "Show _MENU_ entries",
+                    info: "Showing _START_ to _END_ of _TOTAL_ entries",
+                    infoEmpty: "No entries to show",
+                    infoFiltered: "(filtered from _MAX_ total entries)",
+                    paginate: {
+                        first: "First",
+                        last: "Last",
+                        next: "Next",
+                        previous: "Previous"
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 });
 </script>

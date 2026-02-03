@@ -4,8 +4,8 @@ $(document).ready(function() {
         var $table = $(this);
         var tableId = $table.attr('id');
         
-        // Skip tables that are initialized manually (like refundsTable)
-        if (tableId && (tableId === 'refundsTable' || window[tableId + 'Initialized'])) {
+        // Skip tables that are initialized manually (like refundsTable, fiscalizationsTable, suppliersTable)
+        if (tableId && (tableId === 'refundsTable' || tableId === 'fiscalizationsTable' || tableId === 'suppliersTable' || window[tableId + 'Initialized'])) {
             return;
         }
         

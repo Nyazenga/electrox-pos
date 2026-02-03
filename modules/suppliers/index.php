@@ -27,7 +27,7 @@ require_once APP_PATH . '/includes/header.php';
 
 <div class="card">
     <div class="card-body">
-        <table class="table table-striped data-table">
+        <table id="suppliersTable" class="table table-striped">
             <thead>
                 <tr>
                     <th>Code</th>
