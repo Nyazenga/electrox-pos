@@ -17,8 +17,11 @@ if (!$invoiceId) {
 $db = Database::getInstance();
 $branchId = $_SESSION['branch_id'] ?? null;
 
-// Get invoice
-$invoice = $db->getRow("SELECT * FROM invoices WHERE id = :id AND invoice_type = 'Proforma'", [':id' => $invoiceId]);
+// Get invoice with customer information
+$invoice = $db->getRow("SELECT i.*, c.first_name, c.last_name, c.company_name 
+                        FROM invoices i 
+                        LEFT JOIN customers c ON i.customer_id = c.id 
+                        WHERE i.id = :id AND i.invoice_type = 'Proforma'", [':id' => $invoiceId]);
 
 if (!$invoice) {
     redirectTo('modules/invoicing/index.php');
@@ -39,6 +42,10 @@ if ($invoiceItems === false) {
 // Get data
 $customers = $db->getRows("SELECT * FROM customers WHERE status = 'Active' ORDER BY first_name, last_name");
 if ($customers === false) $customers = [];
+
+// Get terms & conditions for proforma invoices
+$proformaTerms = $db->getRows("SELECT * FROM proforma_terms WHERE is_active = 1 ORDER BY title");
+if ($proformaTerms === false) $proformaTerms = [];
 
 // Get products
 $products = $db->getRows("SELECT p.*, 
@@ -337,7 +344,30 @@ require_once APP_PATH . '/includes/header.php';
             <div class="col-md-8">
                 <div class="mb-3">
                     <label class="form-label">Terms & Conditions</label>
-                    <textarea name="terms" class="form-control" rows="4" placeholder="Payment terms, delivery terms, etc..."><?= escapeHtml($invoice['terms'] ?? getSetting('invoice_default_terms', '')) ?></textarea>
+                    <select name="terms_id" id="termsId" class="form-select mb-2" onchange="loadTermsContent()">
+                        <option value="">-- Select Terms & Conditions --</option>
+                        <?php foreach ($proformaTerms as $term): ?>
+                            <option value="<?= $term['id'] ?>" 
+                                    data-content="<?= escapeHtml($term['content']) ?>"
+                                    <?= ($invoice['terms_id'] ?? null) == $term['id'] ? 'selected' : '' ?>>
+                                <?= escapeHtml($term['title']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <textarea name="terms" id="termsContent" class="form-control" rows="4" placeholder="Payment terms, delivery terms, etc..."><?= escapeHtml($invoice['terms'] ?? getSetting('invoice_default_terms', '')) ?></textarea>
+                    <small class="text-muted">Select from pre-defined terms or edit manually</small>
+                </div>
+                
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="banking_details_included" id="bankingDetailsIncluded" 
+                               <?= ($invoice['banking_details_included'] ?? 1) ? 'checked' : '' ?> 
+                               style="width: 3em; height: 1.5em;">
+                        <label class="form-check-label" for="bankingDetailsIncluded">
+                            <strong>Include Banking Details</strong>
+                        </label>
+                        <small class="d-block text-muted">Show banking details on the proforma invoice</small>
+                    </div>
                 </div>
             </div>
             <div class="col-md-4">
@@ -405,9 +435,48 @@ invoiceItems.push({
 });
 <?php endforeach; ?>
 
+// Load terms content when dropdown changes
+function loadTermsContent() {
+    const termsSelect = document.getElementById('termsId');
+    const termsTextarea = document.getElementById('termsContent');
+    if (termsSelect && termsTextarea) {
+        const selectedOption = termsSelect.options[termsSelect.selectedIndex];
+        if (selectedOption && selectedOption.value) {
+            const content = selectedOption.getAttribute('data-content');
+            if (content) {
+                termsTextarea.value = content;
+            }
+        }
+    }
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     renderItems();
+    
+    // Ensure customer search field and hidden field are properly set
+    const customerSearch = document.getElementById('customerSearch');
+    const customerId = document.getElementById('customerId');
+    if (customerSearch && customerId) {
+        const customerIdValue = <?= $invoice['customer_id'] ? $invoice['customer_id'] : 'null' ?>;
+        const customerName = <?= $invoice['customer_id'] && isset($invoice['first_name']) ? json_encode(trim(($invoice['first_name'] ?? '') . ' ' . ($invoice['last_name'] ?? ''))) : 'null' ?>;
+        
+        if (customerIdValue) {
+            customerId.value = customerIdValue;
+            if (customerName && customerName.trim() !== '') {
+                customerSearch.value = customerName;
+            } else {
+                // If name is not available, try to find it from the dropdown
+                const customerItem = document.querySelector(`.customer-item[data-id="${customerIdValue}"]`);
+                if (customerItem) {
+                    customerSearch.value = customerItem.dataset.text;
+                }
+            }
+        } else {
+            customerId.value = '';
+            customerSearch.value = 'Walk-in Customer';
+        }
+    }
     
     const dueDateInput = document.getElementById('dueDate');
     const serverToday = '<?= date('Y-m-d') ?>';
@@ -764,6 +833,8 @@ document.getElementById('invoiceForm').addEventListener('submit', function(e) {
         due_date: formData.get('due_date') || null,
         notes: formData.get('notes') || null,
         terms: formData.get('terms') || null,
+        terms_id: formData.get('terms_id') ? parseInt(formData.get('terms_id')) : null,
+        banking_details_included: formData.get('banking_details_included') === 'on' ? 1 : 0,
         items: invoiceItems.map(item => {
             // Calculate line total with global discount and tax
             const pricesIncludeTax = <?= (getSetting('prices_include_tax', '1') == '1') ? 'true' : 'false' ?>;

@@ -320,48 +320,144 @@ function checkStockLevel($productId, $branchId = null) {
 }
 
 /**
- * Check if a product has serial number or IMEI (unique products that must have qty=1)
- * Products with serial/IMEI are unique items like smartphones and laptops
+ * Check if a product requires product_specific_list entries
+ * Products like smartphones, laptops, tablets, gaming devices need individual tracking
  */
-function productHasSerialOrImei($product, $db = null) {
+function productRequiresSpecificList($product, $db = null) {
     if (!$product) {
         return false;
     }
     
-    // Check if product has serial_number or imei fields populated
-    if (!empty($product['serial_number']) || !empty($product['imei'])) {
+    // Check if product has requires_specific_list flag set
+    if (isset($product['requires_specific_list']) && $product['requires_specific_list'] == 1) {
         return true;
     }
     
-    // Check by category name (smartphone, laptop, tablet)
-    if (!empty($product['category_id'])) {
+    // Check by category name (smartphone, laptop, tablet, gaming)
+    $categoryName = '';
+    if (!empty($product['category_name'])) {
+        $categoryName = strtolower($product['category_name']);
+    } elseif (!empty($product['category_id'])) {
         if (!$db) {
             $db = Database::getInstance();
         }
         $category = $db->getRow("SELECT name FROM product_categories WHERE id = :id", [':id' => $product['category_id']]);
         if ($category) {
             $categoryName = strtolower($category['name']);
-            if (strpos($categoryName, 'smartphone') !== false || 
-                strpos($categoryName, 'phone') !== false || 
-                strpos($categoryName, 'laptop') !== false ||
-                strpos($categoryName, 'tablet') !== false) {
-                return true;
-            }
         }
     }
     
-    // Check if category name is in product data
-    if (!empty($product['category_name'])) {
-        $categoryName = strtolower($product['category_name']);
+    if ($categoryName) {
         if (strpos($categoryName, 'smartphone') !== false || 
             strpos($categoryName, 'phone') !== false || 
             strpos($categoryName, 'laptop') !== false ||
-            strpos($categoryName, 'tablet') !== false) {
+            strpos($categoryName, 'tablet') !== false ||
+            strpos($categoryName, 'gaming') !== false) {
             return true;
         }
     }
     
     return false;
+}
+
+/**
+ * Check if a product has serial number or IMEI (unique products that must have qty=1)
+ * Products with serial/IMEI are unique items like smartphones and laptops
+ * @deprecated Use productRequiresSpecificList() instead
+ */
+function productHasSerialOrImei($product, $db = null) {
+    // For backward compatibility, check both old and new system
+    if (productRequiresSpecificList($product, $db)) {
+        return true;
+    }
+    
+    if (!$product) {
+        return false;
+    }
+    
+    // Check if product has serial_number or imei fields populated (old system)
+    if (!empty($product['serial_number']) || !empty($product['imei'])) {
+        return true;
+    }
+    
+    return false;
+}
+
+/**
+ * Get count of available product_specific_list entries for a product
+ */
+function getProductSpecificListCount($productId, $branchId = null, $status = 'available', $db = null) {
+    if (!$db) {
+        $db = Database::getInstance();
+    }
+    
+    $whereConditions = ['product_id = :product_id'];
+    $params = [':product_id' => $productId];
+    
+    // Only filter by status if provided
+    if ($status !== null) {
+        $whereConditions[] = 'status = :status';
+        $params[':status'] = $status;
+    }
+    
+    if ($branchId !== null) {
+        $whereConditions[] = 'branch_id = :branch_id';
+        $params[':branch_id'] = $branchId;
+    }
+    
+    $whereClause = implode(' AND ', $whereConditions);
+    $count = $db->getCount("SELECT COUNT(*) FROM product_specific_list WHERE $whereClause", $params);
+    
+    return $count !== false ? $count : 0;
+}
+
+/**
+ * Check if product can be sold/invoiced (qty must equal count of product_specific_list)
+ */
+function canSellProduct($productId, $branchId = null, $db = null) {
+    if (!$db) {
+        $db = Database::getInstance();
+    }
+    
+    $product = $db->getRow("SELECT * FROM products WHERE id = :id", [':id' => $productId]);
+    if (!$product) {
+        return false;
+    }
+    
+    // If product doesn't require specific list, allow sale
+    if (!productRequiresSpecificList($product, $db)) {
+        return true;
+    }
+    
+    // For products requiring specific list, qty must equal count of available entries
+    $productQty = (int)($product['quantity_in_stock'] ?? 0);
+    $specificListCount = getProductSpecificListCount($productId, $branchId, 'available', $db);
+    
+    return $productQty === $specificListCount && $productQty > 0;
+}
+
+/**
+ * Get available product_specific_list entries for selection during sale/invoice
+ */
+function getAvailableProductSpecificList($productId, $branchId = null, $quantity = null, $db = null) {
+    if (!$db) {
+        $db = Database::getInstance();
+    }
+    
+    $whereConditions = ['product_id = :product_id', 'status = :status'];
+    $params = [':product_id' => $productId, ':status' => 'available'];
+    
+    if ($branchId !== null) {
+        $whereConditions[] = 'branch_id = :branch_id';
+        $params[':branch_id'] = $branchId;
+    }
+    
+    $whereClause = implode(' AND ', $whereConditions);
+    $limit = $quantity !== null ? "LIMIT " . intval($quantity) : '';
+    
+    $entries = $db->getRows("SELECT * FROM product_specific_list WHERE $whereClause ORDER BY created_at ASC $limit", $params);
+    
+    return $entries !== false ? $entries : [];
 }
 
 function updateStock($productId, $quantity, $branchId = null, $movementType = 'Adjustment', $useTransaction = false) {

@@ -51,6 +51,7 @@ $whereClause = implode(' AND ', $whereConditions);
 $products = $db->getRows("SELECT p.id, p.product_code, 
                           COALESCE(p.product_name, CONCAT(p.brand, ' ', p.model)) as display_name,
                           p.quantity_in_stock,
+                          p.requires_specific_list,
                           pc.name as category_name
                           FROM products p
                           LEFT JOIN product_categories pc ON p.category_id = pc.id

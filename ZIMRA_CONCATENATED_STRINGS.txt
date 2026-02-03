@@ -1,0 +1,109 @@
+ZIMRA SIGNATURE CONCATENATED STRINGS
+=====================================
+
+Based on the nginx error logs from your test sales:
+
+---------------------------------------------------------------------------
+RECEIPT #0016 (WORKED - Single 5% Tax Item)
+---------------------------------------------------------------------------
+Receipt Details:
+- Receipt #: 1-260106-0016
+- Receipt Global No: 350
+- Receipt Counter: 1 (First receipt in fiscal day)
+- Date: 2026-01-06T16:00:15
+- Total: $1,800.00 USD
+
+Tax Breakdown:
+- taxID: 514
+- taxCode: "B" (Note: Should be empty string in latest code, but production shows "B")
+- taxPercent: 5
+- taxAmount: 85.71 USD
+- salesAmountWithTax: 1800.00 USD
+
+CONCATENATED SIGNATURE STRING:
+30199FISCALINVOICEUSD3502026-01-06T16:00:15180000B5.008571180000
+
+Breakdown:
+1. deviceID: 30199
+2. receiptType: FISCALINVOICE
+3. receiptCurrency: USD
+4. receiptGlobalNo: 350
+5. receiptDate: 2026-01-06T16:00:15
+6. receiptTotal: 180000 (1800.00 USD * 100 cents)
+7. receiptTaxes: B5.008571180000
+   - taxCode: "B"
+   - taxPercent: "5.00"
+   - taxAmount: 8571 (85.71 USD * 100 cents)
+   - salesAmountWithTax: 180000 (1800.00 USD * 100 cents)
+8. previousReceiptHash: (NOT INCLUDED - first receipt)
+
+---------------------------------------------------------------------------
+RECEIPT #0017 (FAILED - Multiple Tax Items Including 5%)
+---------------------------------------------------------------------------
+Receipt Details:
+- Receipt #: 1-260106-0017
+- Receipt Global No: 351
+- Receipt Counter: 2
+- Date: 2026-01-06T16:03:40
+- Total: $1,324.00 USD
+
+Tax Breakdown (sorted by taxID ascending):
+1. taxID=1, taxCode="E" (Exempt), taxPercent=null, taxAmount=0, salesAmountWithTax=8.00 USD
+2. taxID=2, taxCode="C" (Zero), taxPercent=0, taxAmount=0, salesAmountWithTax=110.00 USD
+3. taxID=514, taxCode="B" (5% Non-VAT), taxPercent=5, taxAmount=0.29 USD, salesAmountWithTax=6.00 USD
+4. taxID=517, taxCode="A" (Standard VAT), taxPercent=15.5, taxAmount=161.04 USD, salesAmountWithTax=1200.00 USD
+
+Previous Receipt Hash (from receipt #0016):
+Ackcwq2hqsOd8eJmuOOwtGL1qfZmcK7feTcG9M5oYDI=
+
+CONCATENATED SIGNATURE STRING:
+30199FISCALINVOICEUSD3512026-01-06T16:03:40132400E0800C0.00011000B5.0029600A15.5016104120000Ackcwq2hqsOd8eJmuOOwtGL1qfZmcK7feTcG9M5oYDI=
+
+Breakdown:
+1. deviceID: 30199
+2. receiptType: FISCALINVOICE
+3. receiptCurrency: USD
+4. receiptGlobalNo: 351
+5. receiptDate: 2026-01-06T16:03:40
+6. receiptTotal: 132400 (1324.00 USD * 100 cents)
+7. receiptTaxes: E0800C0.00011000B5.0029600A15.5016104120000
+   - Tax 1 (taxID=1): E0800
+     * taxCode: "E"
+     * taxPercent: "" (empty - exempt)
+     * taxAmount: 0 (0 USD * 100 cents)
+     * salesAmountWithTax: 800 (8.00 USD * 100 cents)
+   - Tax 2 (taxID=2): C0.00011000
+     * taxCode: "C"
+     * taxPercent: "0.00"
+     * taxAmount: 0 (0 USD * 100 cents)
+     * salesAmountWithTax: 11000 (110.00 USD * 100 cents)
+   - Tax 3 (taxID=514, 5% Non-VAT): B5.0029600
+     * taxCode: "B" (Should be empty "" in latest code)
+     * taxPercent: "5.00"
+     * taxAmount: 29 (0.29 USD * 100 cents)
+     * salesAmountWithTax: 600 (6.00 USD * 100 cents)
+   - Tax 4 (taxID=517): A15.5016104120000
+     * taxCode: "A"
+     * taxPercent: "15.50"
+     * taxAmount: 16104 (161.04 USD * 100 cents)
+     * salesAmountWithTax: 120000 (1200.00 USD * 100 cents)
+8. previousReceiptHash: Ackcwq2hqsOd8eJmuOOwtGL1qfZmcK7feTcG9M5oYDI=
+
+=============================================================================
+NOTES FOR ZIMRA:
+=============================================================================
+
+1. Receipt #0016 (single 5% tax) - WORKED successfully
+2. Receipt #0017 (multiple taxes including 5%) - FAILED with RCPT020 (Invalid signature)
+
+The key difference is that receipt #0017 has multiple tax types together, while #0016 only has the 5% tax.
+
+Current implementation shows taxCode="B" for 5% tax, but according to Python library and documentation, 
+it should be empty string (""). The latest code has been updated to use empty taxCode for taxID 514.
+
+The concatenated string for receipt #0017 uses taxCode="B" because production server hasn't been 
+updated with the latest code yet. After updating to latest code, the 5% tax segment should be:
+5.0029600 (instead of B5.0029600) - note the missing "B" prefix.
+
+=============================================================================
+

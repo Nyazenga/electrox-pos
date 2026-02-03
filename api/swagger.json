@@ -19,7 +19,7 @@
             "description": "Local Development Server"
         },
         {
-            "url": "https://app.electrox-pos.com/api/v1",
+            "url": "https://www.electrox-pos.com/api/v1",
             "description": "Production Server"
         }
     ],

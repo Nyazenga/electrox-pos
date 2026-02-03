@@ -112,6 +112,16 @@ if (isset($_GET['id'])) {
     
     if ($selectedSale) {
         $items = $db->getRows("SELECT * FROM sale_items WHERE sale_id = :id", [':id' => $selectedSale['id']]);
+        
+        // Get product_specific_list entries for each sale item
+        foreach ($items as &$item) {
+            $specificEntries = $db->getRows(
+                "SELECT * FROM product_specific_list WHERE sale_item_id = :sale_item_id ORDER BY id",
+                [':sale_item_id' => $item['id']]
+            );
+            $item['specific_list_entries'] = $specificEntries !== false ? $specificEntries : [];
+        }
+        unset($item);
         if ($items === false) {
             $items = [];
         }
@@ -926,7 +936,16 @@ require_once APP_PATH . '/includes/header.php';
                             $totalPriceFormatted = $paymentCurrency ? formatCurrencyAmount($totalPrice, $paymentCurrencyId, $db) : formatCurrency($totalPrice);
                         ?>
                             <tr>
-                                <td style="text-align: left; padding: 6px 4px; word-wrap: break-word; border-bottom: 1px solid #ddd;"><?= escapeHtml($item['product_name']) ?></td>
+                                <td style="text-align: left; padding: 6px 4px; word-wrap: break-word; border-bottom: 1px solid #ddd;">
+                                    <?= escapeHtml($item['product_name']) ?>
+                                    <?php if (!empty($item['specific_list_entries'])): ?>
+                                        <div style="font-size: 9px; color: #666; margin-top: 2px;">
+                                            <?php foreach ($item['specific_list_entries'] as $entry): ?>
+                                                <div>Serial: <?= escapeHtml($entry['serial_number'] ?? 'N/A') ?></div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </td>
                                 <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $item['quantity'] ?></td>
                                 <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $unitPriceFormatted ?></td>
                                 <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $totalPriceFormatted ?></td>

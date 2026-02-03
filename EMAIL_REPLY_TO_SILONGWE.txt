@@ -1,0 +1,278 @@
+Subject: Re: Clarification on Fiscalization of 5% Non-VAT Withholding Tax (Tax ID 514) - Concatenated Strings Provided
+
+Good day Thandolwethu,
+
+Thank you for your response. I have conducted additional testing and I am pleased to report that fiscalization is now working successfully for receipts containing the 5% Non-VAT Withholding Tax (taxID: 514).
+
+The issue was resolved when someone who had previously implemented fiscalization suggested using taxCode="B" for the 5% Non-VAT Withholding Tax. After implementing this change, all receipts are now being successfully accepted by ZIMRA.
+
+I have successfully fiscalized multiple receipts including:
+- Single-line receipts with only 5% Non-VAT Withholding Tax
+- Multi-line receipts with 5% Non-VAT Withholding Tax combined with other tax types (Exempt, Zero-rated, and Standard VAT)
+
+All receipts were accepted by ZIMRA and receiptIDs were returned successfully.
+
+As requested, please find below the concatenated signature strings for invoices where the 5% Non-VAT Withholding Tax was used:
+
+=============================================================================
+RECEIPT #0020 - Single 5% Non-VAT Withholding Tax Item
+=============================================================================
+Receipt Details:
+- Receipt #: 1-260106-0020
+- Receipt Global No: 354
+- Receipt Counter: 1
+- Date: 2026-01-06T16:58:32
+- Total: $1,800.00 USD
+- Status: Successfully fiscalized (receiptID: 10599527)
+
+Tax Details:
+- taxID: 514
+- taxCode: "B"
+- taxPercent: 5
+- taxAmount: 85.71 USD
+- salesAmountWithTax: 1800.00 USD
+
+Receipt Data Sent to ZIMRA:
+{
+    "receiptType": "FiscalInvoice",
+    "receiptCurrency": "USD",
+    "receiptCounter": 1,
+    "receiptGlobalNo": 354,
+    "receiptDate": "2026-01-06T16:58:32",
+    "invoiceNo": "1-260106-0020",
+    "receiptTotal": 1800,
+    "receiptLinesTaxInclusive": true,
+    "receiptLines": [
+        {
+            "receiptLineType": "Sale",
+            "receiptLineNo": 1,
+            "receiptLineName": "wilson mufunga",
+            "receiptLinePrice": 1800,
+            "receiptLineQuantity": 1,
+            "receiptLineTotal": 1800,
+            "taxID": 514,
+            "taxCode": "B",
+            "taxPercent": 5
+        }
+    ],
+    "receiptTaxes": [
+        {
+            "taxID": 514,
+            "taxCode": "B",
+            "taxPercent": 5,
+            "taxAmount": 85.71,
+            "salesAmountWithTax": 1800
+        }
+    ]
+}
+
+CONCATENATED SIGNATURE STRING:
+30199FISCALINVOICEUSD3542026-01-06T16:58:32180000B5.008571180000
+
+Breakdown:
+- deviceID: 30199
+- receiptType: FISCALINVOICE
+- receiptCurrency: USD
+- receiptGlobalNo: 354
+- receiptDate: 2026-01-06T16:58:32
+- receiptTotal: 180000 (1800.00 USD * 100 cents)
+- receiptTaxes: B5.008571180000
+  * taxCode: "B"
+  * taxPercent: "5.00"
+  * taxAmount: 8571 (85.71 USD * 100 cents)
+  * salesAmountWithTax: 180000 (1800.00 USD * 100 cents)
+- previousReceiptHash: (not included - first receipt in fiscal day)
+
+=============================================================================
+RECEIPT #0021 - Single 5% Non-VAT Withholding Tax Item (Subsequent Receipt)
+=============================================================================
+Receipt Details:
+- Receipt #: 1-260106-0021
+- Receipt Global No: 355
+- Receipt Counter: 2
+- Date: 2026-01-06T17:01:34
+- Total: $1,800.00 USD
+- Status: Successfully fiscalized (receiptID: 10599535)
+
+Tax Details:
+- taxID: 514
+- taxCode: "B"
+- taxPercent: 5
+- taxAmount: 85.71 USD
+- salesAmountWithTax: 1800.00 USD
+
+Receipt Data Sent to ZIMRA:
+{
+    "receiptType": "FiscalInvoice",
+    "receiptCurrency": "USD",
+    "receiptCounter": 2,
+    "receiptGlobalNo": 355,
+    "receiptDate": "2026-01-06T17:01:34",
+    "invoiceNo": "1-260106-0021",
+    "receiptTotal": 1800,
+    "receiptLinesTaxInclusive": true,
+    "receiptLines": [
+        {
+            "receiptLineType": "Sale",
+            "receiptLineNo": 1,
+            "receiptLineName": "wilson mufunga",
+            "receiptLinePrice": 1800,
+            "receiptLineQuantity": 1,
+            "receiptLineTotal": 1800,
+            "taxID": 514,
+            "taxCode": "B",
+            "taxPercent": 5
+        }
+    ],
+    "receiptTaxes": [
+        {
+            "taxID": 514,
+            "taxCode": "B",
+            "taxPercent": 5,
+            "taxAmount": 85.71,
+            "salesAmountWithTax": 1800
+        }
+    ]
+}
+
+Previous Receipt Hash: 5mvZwIR/C3GhlPPNuXQBqsVT4dVuVQq77dQ1uAsnVOo=
+
+CONCATENATED SIGNATURE STRING:
+30199FISCALINVOICEUSD3552026-01-06T17:01:34180000B5.0085711800005mvZwIR/C3GhlPPNuXQBqsVT4dVuVQq77dQ1uAsnVOo=
+
+=============================================================================
+RECEIPT #0022 - Multiple Tax Types Including 5% Non-VAT Withholding Tax
+=============================================================================
+Receipt Details:
+- Receipt #: 1-260106-0022
+- Receipt Global No: 356
+- Receipt Counter: 3
+- Date: 2026-01-06T17:04:12
+- Total: $3,073.00 USD
+- Status: Successfully fiscalized (receiptID: 10599542)
+
+Tax Breakdown (sorted by taxID):
+1. taxID=1, taxCode="E" (Exempt), taxPercent=0, taxAmount=0, salesAmountWithTax=1200.00 USD
+2. taxID=2, taxCode="C" (Zero-rated), taxPercent=0, taxAmount=0, salesAmountWithTax=1800.00 USD
+3. taxID=514, taxCode="B" (5% Non-VAT Withholding), taxPercent=5, taxAmount=0.38 USD, salesAmountWithTax=8.00 USD
+4. taxID=517, taxCode="A" (Standard VAT), taxPercent=15.5, taxAmount=8.72 USD, salesAmountWithTax=65.00 USD
+
+Receipt Data Sent to ZIMRA:
+{
+    "receiptType": "FiscalInvoice",
+    "receiptCurrency": "USD",
+    "receiptCounter": 3,
+    "receiptGlobalNo": 356,
+    "receiptDate": "2026-01-06T17:04:12",
+    "invoiceNo": "1-260106-0022",
+    "receiptTotal": 3073,
+    "receiptLinesTaxInclusive": true,
+    "receiptLines": [
+        {
+            "receiptLineType": "Sale",
+            "receiptLineNo": 1,
+            "receiptLineName": "dominic",
+            "receiptLinePrice": 8,
+            "receiptLineQuantity": 1,
+            "receiptLineTotal": 8,
+            "taxID": 514,
+            "taxCode": "B",
+            "taxPercent": 5
+        },
+        {
+            "receiptLineType": "Sale",
+            "receiptLineNo": 2,
+            "receiptLineName": "munashe iPhone 65 Pro",
+            "receiptLinePrice": 1200,
+            "receiptLineQuantity": 1,
+            "receiptLineTotal": 1200,
+            "taxID": 1,
+            "taxCode": "E"
+        },
+        {
+            "receiptLineType": "Sale",
+            "receiptLineNo": 3,
+            "receiptLineName": "nyazenga THINKPAD 675",
+            "receiptLinePrice": 1800,
+            "receiptLineQuantity": 1,
+            "receiptLineTotal": 1800,
+            "taxID": 2,
+            "taxCode": "C",
+            "taxPercent": 0
+        },
+        {
+            "receiptLineType": "Sale",
+            "receiptLineNo": 4,
+            "receiptLineName": "Anker PowerCore 10000",
+            "receiptLinePrice": 65,
+            "receiptLineQuantity": 1,
+            "receiptLineTotal": 65,
+            "taxID": 517,
+            "taxCode": "A",
+            "taxPercent": 15.5
+        }
+    ],
+    "receiptTaxes": [
+        {
+            "taxID": 514,
+            "taxCode": "B",
+            "taxPercent": 5,
+            "taxAmount": 0.38,
+            "salesAmountWithTax": 8
+        },
+        {
+            "taxID": 1,
+            "taxCode": "E",
+            "taxAmount": 0,
+            "salesAmountWithTax": 1200
+        },
+        {
+            "taxID": 2,
+            "taxCode": "C",
+            "taxPercent": 0,
+            "taxAmount": 0,
+            "salesAmountWithTax": 1800
+        },
+        {
+            "taxID": 517,
+            "taxCode": "A",
+            "taxPercent": 15.5,
+            "taxAmount": 8.72,
+            "salesAmountWithTax": 65
+        }
+    ]
+}
+
+Previous Receipt Hash: f9nBLlrFTHIPAY+HZ5eicTuzKOFgz1Xvaea1rPV14YI=
+
+CONCATENATED SIGNATURE STRING:
+30199FISCALINVOICEUSD3562026-01-06T17:04:12307300E012000C0.00180000B5.00386500A15.5087265000f9nBLlrFTHIPAY+HZ5eicTuzKOFgz1Xvaea1rPV14YI=
+
+Breakdown of receiptTaxes segment:
+- Tax 1 (Exempt): E012000 (taxCode="E", no taxPercent, taxAmount=0, salesAmountWithTax=120000)
+- Tax 2 (Zero-rated): C0.00180000 (taxCode="C", taxPercent="0.00", taxAmount=0, salesAmountWithTax=180000)
+- Tax 3 (5% Non-VAT): B5.00386500 (taxCode="B", taxPercent="5.00", taxAmount=38, salesAmountWithTax=800)
+- Tax 4 (Standard VAT): A15.5087265000 (taxCode="A", taxPercent="15.50", taxAmount=872, salesAmountWithTax=6500)
+
+=============================================================================
+
+QUESTIONS FOR CONFIRMATION:
+
+1. The receipts started working successfully after implementing taxCode="B" for the 5% Non-VAT Withholding Tax, as suggested by someone who had previously implemented fiscalization. Could you please confirm if using taxCode="B" is the correct implementation, or if this is coincidental and we should expect issues in the future?
+
+2. I have seen references in the documentation suggesting that the taxCode can be omitted for certain tax types. Could you please confirm:
+   - Should we continue using taxCode="B" for the 5% Non-VAT Withholding Tax (taxID: 514)?
+   - Or should we omit the taxCode (use empty string "") as per the documentation?
+
+3. For the 5% tax segment in the concatenated signature string, should it be:
+   - Current implementation: "B5.00[amount][salesAmount]" (with "B" prefix)
+   - Or: "5.00[amount][salesAmount]" (without taxCode prefix, as documentation suggests taxCode can be omitted)?
+
+All receipts are currently working successfully with taxCode="B", but I want to ensure we are using the correct format per ZIMRA's specifications to avoid any future issues.
+
+Thank you for your continued support and guidance.
+
+Kind regards,
+Munashe Nyazenga
+Electro X Zimbabwe Pvt Ltd
+

@@ -83,75 +83,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $isGeneralCategory = $category && strtolower($category['name']) === 'general';
     }
     
-    // Get serial number and IMEI directly from POST
-    $serialNumber = !empty($_POST['serial_number']) ? sanitizeInput($_POST['serial_number']) : null;
-    $imei = !empty($_POST['imei']) ? sanitizeInput($_POST['imei']) : null;
-    
-    // Check if this is a unique product (has serial/IMEI)
-    $isUniqueProduct = false;
+    // Check if this product requires product_specific_list (smartphones, laptops, tablets, gaming)
+    $requiresSpecificList = false;
     if ($categoryId) {
         $category = $db->getRow("SELECT name FROM product_categories WHERE id = :id", [':id' => $categoryId]);
         if ($category) {
             $categoryName = strtolower($category['name']);
-            $isUniqueProduct = (strpos($categoryName, 'smartphone') !== false || 
-                              strpos($categoryName, 'phone') !== false || 
-                              strpos($categoryName, 'laptop') !== false ||
-                              strpos($categoryName, 'tablet') !== false) ||
-                              !empty($serialNumber) || !empty($imei);
+            $requiresSpecificList = (strpos($categoryName, 'smartphone') !== false || 
+                                   strpos($categoryName, 'phone') !== false || 
+                                   strpos($categoryName, 'laptop') !== false ||
+                                   strpos($categoryName, 'tablet') !== false ||
+                                   strpos($categoryName, 'gaming') !== false);
         }
     }
     
-    // CRITICAL: Unique products (with serial/IMEI) must always have qty=1
-    // They cannot be increased - each is a unique item
-    $reorderLevel = intval($_POST['reorder_level'] ?? 0);
-    if ($isUniqueProduct) {
-        $quantityInStock = 1; // Force qty=1 for unique products
-        $reorderLevel = 0; // Force reorder_level=0 for unique products (can't reorder unique items)
-    } else {
-        $quantityInStock = intval($_POST['quantity_in_stock'] ?? 0);
-    }
+    // Get stock control setting
+    $stockControlEnabled = isset($_POST['stock_control']) && $_POST['stock_control'] == '1';
     
-    // Validate for duplicate serial numbers
-    if (!empty($serialNumber)) {
-        $existingSerial = $db->getRow("SELECT id, product_code FROM products WHERE serial_number = :serial_number", [':serial_number' => $serialNumber]);
-        if ($existingSerial) {
-            $error = 'Serial Number "' . $serialNumber . '" already exists in the database (Product Code: ' . $existingSerial['product_code'] . '). Cannot create duplicate.';
+    // Get selected branches from checkboxes in Inventory section
+    $selectedBranches = [];
+    $branchQuantities = [];
+    $branchReorderLevels = [];
+    $branchCostPrices = [];
+    $branchSellingPrices = [];
+    $branchWholesalePrices = [];
+    
+    // Get branches from shop_available checkboxes
+    if (!empty($_POST['shop_available'])) {
+        foreach ($_POST['shop_available'] as $branchId => $value) {
+            $branchId = intval($branchId);
+            if ($branchId > 0 && $value == '1') {
+                $selectedBranches[] = $branchId;
+                
+                // Get branch-specific prices
+                $branchCostPrices[$branchId] = !empty($_POST['branch_cost_price'][$branchId]) ? floatval($_POST['branch_cost_price'][$branchId]) : 0;
+                $branchSellingPrices[$branchId] = !empty($_POST['branch_selling_price'][$branchId]) ? floatval($_POST['branch_selling_price'][$branchId]) : 0;
+                $branchWholesalePrices[$branchId] = !empty($_POST['branch_wholesale_price'][$branchId]) ? floatval($_POST['branch_wholesale_price'][$branchId]) : null;
+                
+                // Get branch-specific quantity and reorder level if stock control is enabled
+                if ($stockControlEnabled) {
+                    $branchQuantities[$branchId] = intval($_POST['branch_qty'][$branchId] ?? 0);
+                    $branchReorderLevels[$branchId] = intval($_POST['branch_reorder'][$branchId] ?? 0);
+                } else {
+                    // Stock control off: set to 0
+                    $branchQuantities[$branchId] = 0;
+                    $branchReorderLevels[$branchId] = 0;
+                }
+            }
         }
     }
     
-    // Validate for duplicate IMEI
-    if (empty($error) && !empty($imei)) {
-        $existingImei = $db->getRow("SELECT id, product_code FROM products WHERE imei = :imei", [':imei' => $imei]);
-        if ($existingImei) {
-            $error = 'IMEI "' . $imei . '" already exists in the database (Product Code: ' . $existingImei['product_code'] . '). Cannot create duplicate.';
-        }
+    if (empty($selectedBranches)) {
+        $error = 'Please select at least one branch.';
     }
     
-    $data = [
+    // Base product data (without branch_id - will be set per branch)
+    $baseData = [
         'product_code' => generateProductCode(),
         'category_id' => $categoryId,
         'product_name' => $isGeneralCategory ? sanitizeInput($_POST['product_name'] ?? '') : null,
         'brand' => $isGeneralCategory ? null : sanitizeInput($_POST['brand'] ?? ''),
         'model' => $isGeneralCategory ? null : sanitizeInput($_POST['model'] ?? ''),
-        'color' => sanitizeInput($_POST['color'] ?? ''),
-        'storage' => sanitizeInput($_POST['storage'] ?? ''),
-        'serial_number' => $serialNumber,
-        'imei' => $imei,
-        'sim_configuration' => sanitizeInput($_POST['sim_configuration'] ?? ''),
-        'battery_health' => !empty($_POST['battery_health']) ? intval($_POST['battery_health']) : null,
+        // Note: color, storage, sim_configuration, serial_number, imei, battery_health, 
+        // manufacturer, warranty_months, warranty_terms, condition, trade_in_eligible 
+        // are no longer stored at product level - they go in product_specific_list
         'expiry_date' => !empty($_POST['expiry_date']) ? $_POST['expiry_date'] : null,
         'weight' => !empty($_POST['weight']) ? floatval($_POST['weight']) : null,
         'unit_of_measure' => sanitizeInput($_POST['unit_of_measure'] ?? ''),
-        'manufacturer' => sanitizeInput($_POST['manufacturer'] ?? ''),
         'barcode' => sanitizeInput($_POST['barcode'] ?? ''),
         'description' => sanitizeInput($_POST['description'] ?? ''),
         'specifications' => sanitizeInput($_POST['specifications'] ?? ''),
-        'cost_price' => $_POST['cost_price'] ?? 0,
-        'selling_price' => $_POST['selling_price'] ?? 0,
-        'reorder_level' => $reorderLevel,
-        'branch_id' => $_POST['branch_id'] ?? $_SESSION['branch_id'],
         'tax_id' => !empty($_POST['tax_id']) ? intval($_POST['tax_id']) : null,
-        'quantity_in_stock' => $quantityInStock,
+        'requires_specific_list' => $requiresSpecificList ? 1 : 0,
         'status' => 'Active',
         'created_by' => $_SESSION['user_id'],
         'source' => 'manual',
@@ -161,21 +164,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Validation: For General category, product_name is required; for others, brand and model are required
     if (empty($error)) {
-        if ($isGeneralCategory && empty($data['product_name'])) {
+        if ($isGeneralCategory && empty($baseData['product_name'])) {
             $error = 'Product name is required for General category products.';
-        } elseif (!$isGeneralCategory && (empty($data['brand']) || empty($data['model']))) {
+        } elseif (!$isGeneralCategory && (empty($baseData['brand']) || empty($baseData['model']))) {
             $error = 'Brand and Model are required for this category.';
         } else {
             $db->beginTransaction();
             try {
-                $productId = $db->insert('products', $data);
-                if (!$productId) {
-                    throw new Exception('Failed to add product: ' . $db->getLastError());
+                $createdProductIds = [];
+                $createdBranches = [];
+                
+                // Create product in each selected branch
+                foreach ($selectedBranches as $branchId) {
+                    $data = $baseData;
+                    $data['branch_id'] = $branchId;
+                    // Generate unique product code for each branch instance
+                    $data['product_code'] = generateProductCode();
+                    // Set branch-specific prices
+                    $data['cost_price'] = $branchCostPrices[$branchId] ?? 0;
+                    $data['selling_price'] = $branchSellingPrices[$branchId] ?? 0;
+                    $data['wholesale_price'] = $branchWholesalePrices[$branchId] ?? null;
+                    // Set branch-specific quantity and reorder level
+                    $data['quantity_in_stock'] = $branchQuantities[$branchId] ?? 0;
+                    $data['reorder_level'] = $branchReorderLevels[$branchId] ?? 0;
+                    
+                    $productId = $db->insert('products', $data);
+                    if (!$productId) {
+                        throw new Exception('Failed to add product for branch ID ' . $branchId . ': ' . $db->getLastError());
+                    }
+                    
+                    $createdProductIds[] = $productId;
+                    
+                    // Get branch name for success message
+                    $branch = $db->getRow("SELECT branch_name FROM branches WHERE id = :id", [':id' => $branchId]);
+                    $createdBranches[] = $branch ? $branch['branch_name'] : 'Branch ' . $branchId;
                 }
                 
                 $db->commitTransaction();
-                $_SESSION['success_message'] = 'Product added successfully!';
-                redirectTo('modules/products/index.php');
+                
+                // Success message
+                $branchCount = count($createdBranches);
+                $branchNames = implode(', ', $createdBranches);
+                if ($branchCount > 1) {
+                    $_SESSION['success_message'] = "Product created successfully in {$branchCount} branches: {$branchNames}!";
+                } else {
+                    $_SESSION['success_message'] = "Product created successfully in {$branchNames}!";
+                }
+                
+                // If product requires specific list, redirect to view page of first created product
+                if ($requiresSpecificList && !empty($createdProductIds)) {
+                    $_SESSION['success_message'] .= ' Please add individual instances below.';
+                    redirectTo('modules/products/view.php?id=' . $createdProductIds[0]);
+                } else {
+                    redirectTo('modules/products/index.php');
+                }
             } catch (Exception $e) {
                 $db->rollbackTransaction();
                 $error = $e->getMessage();
@@ -252,10 +294,10 @@ require_once APP_PATH . '/includes/header.php';
             <div class="alert alert-danger"><?= escapeHtml($error) ?></div>
         <?php endif; ?>
         
-        <form method="POST" id="productForm" enctype="multipart/form-data">
-            <!-- Category and Branch -->
+        <form method="POST" id="productForm" enctype="multipart/form-data" onsubmit="return validateBranchSelection()">
+            <!-- Category -->
             <div class="row">
-                <div class="col-md-6 mb-3">
+                <div class="col-md-12 mb-3">
                     <label class="form-label">Category *</label>
                     <div class="position-relative">
                         <input type="text" 
@@ -278,14 +320,6 @@ require_once APP_PATH . '/includes/header.php';
                         </div>
                     </div>
                 </div>
-                <div class="col-md-6 mb-3">
-                    <label class="form-label">Branch *</label>
-                    <select class="form-control" name="branch_id" id="branchId" required>
-                        <?php foreach ($branches as $branch): ?>
-                            <option value="<?= $branch['id'] ?>" <?= $branch['id'] == $_SESSION['branch_id'] ? 'selected' : '' ?>><?= escapeHtml($branch['branch_name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
             </div>
             
             <!-- Product Name (for General) or Brand/Model (for others) -->
@@ -307,18 +341,9 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
             </div>
             
-            <!-- Color Picker (Always visible) -->
-            <div class="row">
-                <div class="col-md-6 mb-3">
-                    <label class="form-label">Choose a Color</label>
-                    <div class="color-picker-wrapper">
-                        <input type="color" class="form-control form-control-color" name="color" id="colorPicker" value="#ffffff" style="width: 60px; height: 40px; cursor: pointer;">
-                        <div class="color-preview" id="colorPreview" style="background-color: #ffffff;"></div>
-                        <input type="text" class="form-control" id="colorHex" placeholder="#ffffff" style="max-width: 120px;">
-                    </div>
-                    <small class="text-muted">Select a color for this product</small>
-                </div>
-            </div>
+            <!-- Color Picker - REMOVED: Color is now captured in product_specific_list during GRN/Stock Take -->
+            <!-- For products requiring specific list (smartphones, laptops, tablets, gaming), 
+                 color is captured per individual instance, not at product level -->
             
             <!-- Image Upload -->
             <div class="row">
@@ -330,38 +355,13 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
             </div>
             
-            <!-- Dynamic Fields - Electronics (Storage, Battery, Serial, IMEI, SIM) -->
-            <div class="row">
-                <div class="col-md-3 mb-3" id="storageField" style="display: none;">
-                    <label class="form-label">Storage</label>
-                    <input type="text" class="form-control" name="storage" placeholder="e.g., 128GB, 256GB">
-                </div>
-                <div class="col-md-3 mb-3" id="batteryHealthField" style="display: none;">
-                    <label class="form-label">Battery Health (%)</label>
-                    <input type="number" class="form-control" name="battery_health" min="0" max="100">
-                </div>
-                <div class="col-md-3 mb-3" id="serialNumberField" style="display: none;">
-                    <label class="form-label">Serial Number</label>
-                    <input type="text" class="form-control" name="serial_number">
-                </div>
-            </div>
-            
-            <div class="row">
-                <div class="col-md-3 mb-3" id="imeiField" style="display: none;">
-                    <label class="form-label">IMEI</label>
-                    <input type="text" class="form-control" name="imei" maxlength="15">
-                </div>
-                <div class="col-md-3 mb-3" id="simConfigField" style="display: none;">
-                    <label class="form-label">SIM Configuration</label>
-                    <select class="form-control" name="sim_configuration">
-                        <option value="">Select</option>
-                        <option value="Single SIM">Single SIM</option>
-                        <option value="Dual SIM">Dual SIM</option>
-                        <option value="eSIM">eSIM</option>
-                        <option value="Dual SIM + eSIM">Dual SIM + eSIM</option>
-                    </select>
-                </div>
-            </div>
+            <!-- Note: For products requiring specific list (smartphones, laptops, tablets, gaming),
+                 individual instances with color, storage, serial, IMEI, etc. should be added via:
+                 - GRN (Goods Received Notes)
+                 - Stock Take
+                 - Bulk Upload
+                 
+                 These fields are no longer captured at product creation level. -->
             
             <!-- Grocery/General Fields -->
             <div class="row">
@@ -389,10 +389,6 @@ require_once APP_PATH . '/includes/header.php';
                         <option value="bag">Bag</option>
                     </select>
                 </div>
-                <div class="col-md-3 mb-3" id="manufacturerField" style="display: none;">
-                    <label class="form-label">Manufacturer</label>
-                    <input type="text" class="form-control" name="manufacturer">
-                </div>
             </div>
             
             <div class="row">
@@ -402,20 +398,122 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
             </div>
             
-            <!-- Pricing and Stock -->
+            <!-- Info message for products requiring specific list -->
+            <div id="specificListInfo" class="alert alert-info" style="display: none;">
+                <i class="bi bi-info-circle"></i> 
+                <strong>Note:</strong> This product type requires individual instance tracking. 
+                After creating the product, you'll need to add specific instances (with color, storage, serial numbers, etc.) 
+                via GRN, Stock Take, or Bulk Upload.
+            </div>
+            
+            <!-- Inventory and Branch Selection -->
             <div class="row">
-                <div class="col-md-4 mb-3">
-                    <label class="form-label">Cost Price *</label>
-                    <input type="number" step="0.01" class="form-control" name="cost_price" required>
-                </div>
-                <div class="col-md-4 mb-3">
-                    <label class="form-label">Selling Price *</label>
-                    <input type="number" step="0.01" class="form-control" name="selling_price" required>
-                </div>
-                <div class="col-md-4 mb-3">
-                    <label class="form-label">Initial Stock</label>
-                    <input type="number" class="form-control" name="quantity_in_stock" id="quantityInStock" value="0" min="0">
-                    <small class="text-muted" id="quantityHelpText">Enter initial stock quantity</small>
+                <div class="col-md-12 mb-3">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title mb-3">Inventory</h5>
+                            <div class="d-flex align-items-center mb-3">
+                                <label class="form-label mb-0 me-3">Stock control</label>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="stockControl" name="stock_control" value="1" onchange="toggleStockControl()" style="width: 3em; height: 1.5em;">
+                                    <label class="form-check-label" for="stockControl"></label>
+                                </div>
+                            </div>
+                            
+                            <!-- Branch-specific settings -->
+                            <div id="branchStockSettings">
+                                <h6 class="mb-3">Branches</h6>
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" id="selectAllBranches" onchange="toggleAllBranchAvailability()">
+                                    <label class="form-check-label" for="selectAllBranches">
+                                        The item is available for sale in all branches
+                                    </label>
+                                </div>
+                                
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th width="80">Available</th>
+                                                <th>Branch</th>
+                                                <th width="120">Cost Price *</th>
+                                                <th width="120">Selling Price *</th>
+                                                <th width="120">Wholesale Price</th>
+                                                <th width="100" id="stockHeader" style="display: none;">In stock</th>
+                                                <th width="100" id="reorderHeader" style="display: none;">Safety stock</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($branches as $branch): ?>
+                                                <tr id="branchRow_<?= $branch['id'] ?>" style="<?= $branch['id'] == $_SESSION['branch_id'] ? '' : 'display: none;' ?>">
+                                                    <td>
+                                                        <div class="form-check">
+                                                            <input class="form-check-input branch-available" 
+                                                                   type="checkbox" 
+                                                                   name="shop_available[<?= $branch['id'] ?>]" 
+                                                                   value="1"
+                                                                   id="branch_available_<?= $branch['id'] ?>"
+                                                                   <?= $branch['id'] == $_SESSION['branch_id'] ? 'checked' : '' ?>
+                                                                   onchange="toggleBranchRow(<?= $branch['id'] ?>)">
+                                                        </div>
+                                                    </td>
+                                                    <td><?= escapeHtml($branch['branch_name']) ?></td>
+                                                    <td>
+                                                        <input type="number" 
+                                                               step="0.01"
+                                                               class="form-control form-control-sm" 
+                                                               name="branch_cost_price[<?= $branch['id'] ?>]" 
+                                                               id="branch_cost_price_<?= $branch['id'] ?>"
+                                                               value="0" 
+                                                               min="0"
+                                                               placeholder="0.00">
+                                                    </td>
+                                                    <td>
+                                                        <input type="number" 
+                                                               step="0.01"
+                                                               class="form-control form-control-sm" 
+                                                               name="branch_selling_price[<?= $branch['id'] ?>]" 
+                                                               id="branch_selling_price_<?= $branch['id'] ?>"
+                                                               value="0" 
+                                                               min="0"
+                                                               placeholder="0.00">
+                                                    </td>
+                                                    <td>
+                                                        <input type="number" 
+                                                               step="0.01"
+                                                               class="form-control form-control-sm" 
+                                                               name="branch_wholesale_price[<?= $branch['id'] ?>]" 
+                                                               id="branch_wholesale_price_<?= $branch['id'] ?>"
+                                                               value="" 
+                                                               min="0"
+                                                               placeholder="Optional">
+                                                    </td>
+                                                    <td class="stock-control-cell" style="display: none;">
+                                                        <input type="number" 
+                                                               class="form-control form-control-sm" 
+                                                               name="branch_qty[<?= $branch['id'] ?>]" 
+                                                               id="branch_qty_<?= $branch['id'] ?>"
+                                                               value="0" 
+                                                               min="0"
+                                                               placeholder="0">
+                                                    </td>
+                                                    <td class="stock-control-cell" style="display: none;">
+                                                        <input type="number" 
+                                                               class="form-control form-control-sm" 
+                                                               name="branch_reorder[<?= $branch['id'] ?>]" 
+                                                               id="branch_reorder_<?= $branch['id'] ?>"
+                                                               value="0" 
+                                                               min="0"
+                                                               placeholder="0">
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -451,11 +549,6 @@ require_once APP_PATH . '/includes/header.php';
                 <div class="col-md-6 mb-3">
                     <label class="form-label">Barcode</label>
                     <input type="text" class="form-control" name="barcode" placeholder="For scanning">
-                </div>
-                <div class="col-md-6 mb-3">
-                    <label class="form-label">Reorder Level</label>
-                    <input type="number" class="form-control" name="reorder_level" id="reorderLevel" value="10" min="0">
-                    <small class="text-muted" id="reorderLevelHelp">Enter reorder level threshold</small>
                 </div>
             </div>
             
@@ -531,26 +624,8 @@ function showCategoryDropdown() {
     categoryDropdown.style.display = 'block';
 }
 
-// Color picker functionality
-const colorPicker = document.getElementById('colorPicker');
-const colorPreview = document.getElementById('colorPreview');
-const colorHex = document.getElementById('colorHex');
-
-if (colorPicker && colorPreview && colorHex) {
-    colorPicker.addEventListener('input', function() {
-        const color = this.value;
-        colorPreview.style.backgroundColor = color;
-        colorHex.value = color;
-    });
-    
-    colorHex.addEventListener('input', function() {
-        const color = this.value;
-        if (/^#[0-9A-F]{6}$/i.test(color)) {
-            colorPicker.value = color;
-            colorPreview.style.backgroundColor = color;
-        }
-    });
-}
+// Color picker functionality - REMOVED
+// Color is now captured in product_specific_list during GRN/Stock Take, not at product level
 
 // Image preview functionality
 const productImages = document.getElementById('productImages');
@@ -664,133 +739,182 @@ function updateDynamicFields(categoryName) {
         if (field) field.style.display = 'none';
     });
     
-    // Check if this is a unique product (smartphone, laptop, tablet)
-    const isUniqueProduct = categoryName.includes('smartphone') || 
-                            categoryName.includes('phone') || 
-                            categoryName.includes('laptop') || 
-                            categoryName.includes('tablet');
+    // Check if this product requires specific list (smartphone, laptop, tablet, gaming)
+    const requiresSpecificList = categoryName.includes('smartphone') || 
+                                 categoryName.includes('phone') || 
+                                 categoryName.includes('laptop') || 
+                                 categoryName.includes('tablet') ||
+                                 categoryName.includes('gaming');
     
-    // Handle quantity field for unique products
-    const quantityInput = document.getElementById('quantityInStock');
-    const quantityHelpText = document.getElementById('quantityHelpText');
-    if (quantityInput && quantityHelpText) {
-        if (isUniqueProduct) {
-            // Unique products must have qty=1 always
-            quantityInput.value = 1;
-            quantityInput.readOnly = true;
-            quantityInput.style.backgroundColor = '#e9ecef';
-            quantityInput.style.cursor = 'not-allowed';
-            quantityHelpText.textContent = 'Unique products (smartphones/laptops) must have quantity = 1. Each item is unique.';
-            quantityHelpText.className = 'text-muted';
-        } else {
-            quantityInput.readOnly = false;
-            quantityInput.style.backgroundColor = '';
-            quantityInput.style.cursor = '';
-            quantityHelpText.textContent = 'Enter initial stock quantity';
-            quantityHelpText.className = 'text-muted';
-        }
+    // Show info message for products requiring specific list
+    const specificListInfo = document.getElementById('specificListInfo');
+    if (specificListInfo) {
+        specificListInfo.style.display = requiresSpecificList ? 'block' : 'none';
     }
     
-    // Handle reorder level field for unique products
-    const reorderLevelInput = document.getElementById('reorderLevel');
-    const reorderLevelHelp = document.getElementById('reorderLevelHelp');
-    if (reorderLevelInput && reorderLevelHelp) {
-        if (isUniqueProduct) {
-            // Unique products must have reorder_level=0 (can't reorder unique items)
-            reorderLevelInput.value = 0;
-            reorderLevelInput.readOnly = true;
-            reorderLevelInput.style.backgroundColor = '#e9ecef';
-            reorderLevelInput.style.cursor = 'not-allowed';
-            reorderLevelHelp.textContent = 'Unique products cannot be reordered. Reorder level must be 0.';
-            reorderLevelHelp.className = 'text-muted';
-        } else {
-            reorderLevelInput.readOnly = false;
-            reorderLevelInput.style.backgroundColor = '';
-            reorderLevelInput.style.cursor = '';
-            reorderLevelHelp.textContent = 'Enter reorder level threshold';
-            reorderLevelHelp.className = 'text-muted';
-        }
-    }
+    // Quantity and reorder level are now handled per-branch in the stock control section
     
-    // Show fields based on category
-    if (categoryName.includes('smartphone') || categoryName.includes('phone')) {
-        // Smartphones: Show all electronics fields
-        if (storageField) storageField.style.display = 'block';
-        if (batteryHealthField) batteryHealthField.style.display = 'block';
-        if (serialNumberField) serialNumberField.style.display = 'block';
-        if (imeiField) imeiField.style.display = 'block';
-        if (simConfigField) simConfigField.style.display = 'block';
-    } else if (categoryName.includes('laptop')) {
-        // Laptops: Storage, Serial Number
-        if (storageField) storageField.style.display = 'block';
-        if (serialNumberField) serialNumberField.style.display = 'block';
-    } else if (categoryName.includes('tablet')) {
-        // Tablets: Storage, Battery Health, Serial Number
-        if (storageField) storageField.style.display = 'block';
-        if (batteryHealthField) batteryHealthField.style.display = 'block';
-        if (serialNumberField) serialNumberField.style.display = 'block';
-    } else if (categoryName.includes('audio') || categoryName.includes('wearable')) {
-        // Audio Devices & Wearables: Battery Health (for wearables)
-        if (categoryName.includes('wearable') && batteryHealthField) {
-            batteryHealthField.style.display = 'block';
-        }
-    } else if (isGeneral) {
+    // Show fields based on category (only for non-specific-list products)
+    if (isGeneral) {
         // General/Grocery: Show grocery-specific fields
         if (expiryDateField) expiryDateField.style.display = 'block';
         if (weightField) weightField.style.display = 'block';
         if (unitOfMeasureField) unitOfMeasureField.style.display = 'block';
-        if (manufacturerField) manufacturerField.style.display = 'block';
         if (batchNumberField) batchNumberField.style.display = 'block';
     }
 }
 
-// Load applicable taxes when branch changes
-const branchSelect = document.getElementById('branchId');
-const taxSelect = document.getElementById('taxId');
-
-if (branchSelect && taxSelect) {
-    branchSelect.addEventListener('change', function() {
-        const branchId = this.value;
-        if (!branchId) {
-            taxSelect.innerHTML = '<option value="">Select Tax (Optional)</option>';
-            return;
-        }
-        
-        // Show loading
-        taxSelect.innerHTML = '<option value="">Loading taxes...</option>';
-        taxSelect.disabled = true;
-        
-        // Fetch taxes for selected branch
-        fetch('<?= BASE_URL ?>ajax/get_applicable_taxes.php?branch_id=' + branchId)
-            .then(response => response.json())
-            .then(data => {
-                taxSelect.innerHTML = '<option value="">Select Tax (Optional)</option>';
+// Load applicable taxes when branch selection changes
+document.addEventListener('DOMContentLoaded', function() {
+    const branchCheckboxes = document.querySelectorAll('.branch-available');
+    const taxSelect = document.getElementById('taxId');
+    
+    if (branchCheckboxes.length > 0 && taxSelect) {
+        branchCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                // Use the first checked branch for tax selection
+                const checkedBranches = Array.from(document.querySelectorAll('.branch-available:checked'));
+                const branchId = checkedBranches.length > 0 ? checkedBranches[0].id.replace('branch_available_', '') : null;
                 
-                if (data.success && data.taxes && data.taxes.length > 0) {
-                    data.taxes.forEach(tax => {
-                        const option = document.createElement('option');
-                        option.value = tax.taxID;
-                        option.textContent = `${tax.taxName || 'Tax'} (${tax.taxPercent || 0}%) - Code: ${tax.taxCode || ''}`;
-                        taxSelect.appendChild(option);
-                    });
-                } else {
-                    const option = document.createElement('option');
-                    option.value = '';
-                    option.textContent = 'No taxes available for this branch';
-                    taxSelect.appendChild(option);
+                if (!branchId) {
+                    taxSelect.innerHTML = '<option value="">Select Tax (Optional)</option>';
+                    return;
                 }
                 
-                taxSelect.disabled = false;
-            })
-            .catch(error => {
-                console.error('Error loading taxes:', error);
-                taxSelect.innerHTML = '<option value="">Error loading taxes</option>';
-                taxSelect.disabled = false;
+                // Show loading
+                taxSelect.innerHTML = '<option value="">Loading taxes...</option>';
+                taxSelect.disabled = true;
+                
+                // Fetch taxes for first selected branch
+                fetch('<?= BASE_URL ?>ajax/get_applicable_taxes.php?branch_id=' + branchId)
+                    .then(response => response.json())
+                    .then(data => {
+                        taxSelect.innerHTML = '<option value="">Select Tax (Optional)</option>';
+                        
+                        if (data.success && data.taxes && data.taxes.length > 0) {
+                            data.taxes.forEach(tax => {
+                                const option = document.createElement('option');
+                                option.value = tax.taxID;
+                                option.textContent = `${tax.taxName || 'Tax'} (${tax.taxPercent || 0}%) - Code: ${tax.taxCode || ''}`;
+                                taxSelect.appendChild(option);
+                            });
+                        } else {
+                            const option = document.createElement('option');
+                            option.value = '';
+                            option.textContent = 'No taxes available for selected branch(es)';
+                            taxSelect.appendChild(option);
+                        }
+                        
+                        taxSelect.disabled = false;
+                    })
+                    .catch(error => {
+                        console.error('Error loading taxes:', error);
+                        taxSelect.innerHTML = '<option value="">Error loading taxes</option>';
+                        taxSelect.disabled = false;
+                    });
             });
+        });
+    }
+    
+    // Initialize branch rows visibility - show rows for checked branches
+    const branchCheckboxes2 = document.querySelectorAll('.branch-available');
+    branchCheckboxes2.forEach(cb => {
+        const branchId = cb.id.replace('branch_available_', '');
+        if (cb.checked) {
+            const row = document.getElementById('branchRow_' + branchId);
+            if (row) {
+                row.style.display = '';
+            }
+        }
+    });
+});
+
+// Form validation
+function validateBranchSelection() {
+    const checkedBranches = document.querySelectorAll('.branch-available:checked');
+    if (checkedBranches.length === 0) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Branch Selection Required',
+            text: 'Please select at least one branch where this product will be available.'
+        });
+        return false;
+    }
+    
+    // Validate that all selected branches have cost price and selling price
+    let hasError = false;
+    let errorMessage = '';
+    checkedBranches.forEach(cb => {
+        const branchId = cb.id.replace('branch_available_', '');
+        const costPrice = document.getElementById('branch_cost_price_' + branchId);
+        const sellingPrice = document.getElementById('branch_selling_price_' + branchId);
+        
+        if (!costPrice || parseFloat(costPrice.value) <= 0) {
+            hasError = true;
+            errorMessage = 'Cost Price is required for all selected branches.';
+        }
+        if (!sellingPrice || parseFloat(sellingPrice.value) <= 0) {
+            hasError = true;
+            errorMessage = 'Selling Price is required for all selected branches.';
+        }
+    });
+    
+    if (hasError) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Validation Error',
+            text: errorMessage
+        });
+        return false;
+    }
+    
+    return true;
+}
+
+// Branch selection and stock control functions
+function toggleAllBranchAvailability() {
+    const selectAll = document.getElementById('selectAllBranches');
+    const checkboxes = document.querySelectorAll('.branch-available');
+    checkboxes.forEach(cb => {
+        cb.checked = selectAll.checked;
+        const branchId = cb.id.replace('branch_available_', '');
+        toggleBranchRow(branchId);
     });
 }
 
-// Initialize on page load if category is already selected
+function toggleBranchRow(branchId) {
+    const checkbox = document.getElementById('branch_available_' + branchId);
+    const row = document.getElementById('branchRow_' + branchId);
+    
+    if (checkbox && checkbox.checked && row) {
+        row.style.display = '';
+    } else if (row) {
+        row.style.display = 'none';
+    }
+}
+
+function toggleStockControl() {
+    const stockControl = document.getElementById('stockControl');
+    const stockHeader = document.getElementById('stockHeader');
+    const reorderHeader = document.getElementById('reorderHeader');
+    const stockCells = document.querySelectorAll('.stock-control-cell');
+    
+    if (stockControl.checked) {
+        if (stockHeader) stockHeader.style.display = '';
+        if (reorderHeader) reorderHeader.style.display = '';
+        stockCells.forEach(cell => {
+            cell.style.display = '';
+        });
+    } else {
+        if (stockHeader) stockHeader.style.display = 'none';
+        if (reorderHeader) reorderHeader.style.display = 'none';
+        stockCells.forEach(cell => {
+            cell.style.display = 'none';
+        });
+    }
+}
+
+// Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     if (categoryId.value) {
         const selectedItem = categoryDropdown.querySelector('.category-item[data-id="' + categoryId.value + '"]');
@@ -798,7 +922,14 @@ document.addEventListener('DOMContentLoaded', function() {
             updateDynamicFields(selectedItem.dataset.name);
         }
     }
+    
+    // Initialize branch rows visibility based on stock control and selected branches
+    const stockControl = document.getElementById('stockControl');
+    if (stockControl && stockControl.checked) {
+        toggleStockControl();
+    }
 });
 </script>
+
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>

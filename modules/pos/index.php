@@ -28,6 +28,8 @@ if (empty($sessionCart)) {
     unset($_SESSION['pos_discount']);
     unset($_SESSION['pos_customer']);
     unset($_SESSION['pos_delivery_cost']);
+    // Also clear wholesale sale flag when starting a new sale
+    unset($_SESSION['is_wholesale_sale']);
 }
 
 // Get POS settings
@@ -1896,6 +1898,26 @@ window.addToCartFromCard = function(cardElement) {
 };
 
 function addToCart(id, name, price, stock) {
+    // Check if product requires specific list
+    fetch('<?= BASE_URL ?>ajax/get_product_info.php?product_id=' + id)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.requires_specific_list) {
+                // Product requires specific list - show selection modal
+                showSpecificListSelectionModal(id, name, price, stock);
+            } else {
+                // Normal product - add directly to cart
+                addToCartDirect(id, name, price, stock);
+            }
+        })
+        .catch(error => {
+            console.error('Error checking product:', error);
+            // Fallback: add directly
+            addToCartDirect(id, name, price, stock);
+        });
+}
+
+function addToCartDirect(id, name, price, stock) {
     const existing = cart.find(item => item.id === id);
     const cartLayout = '<?= $cartLayout ?? "increase_qty" ?>';
     
@@ -1917,6 +1939,296 @@ function addToCart(id, name, price, stock) {
         }
     }
     updateCart();
+}
+
+function showSpecificListSelectionModal(productId, productName, price, stock) {
+    // Check if product can be sold (qty must equal count of specific list)
+    fetch('<?= BASE_URL ?>ajax/get_product_specific_list.php?product_id=' + productId + '&status=available')
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success || data.count === 0) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'No Available Items',
+                    html: `No available items for this product. Please add product specific list entries first.<br><br>
+                           <a href="<?= BASE_URL ?>modules/products/view.php?id=${productId}" target="_blank" 
+                              style="display: inline-block; padding: 8px 16px; background-color: #0d6efd; color: white; text-decoration: none; border-radius: 4px; margin-top: 10px;">
+                               <i class="bi bi-box-arrow-up-right"></i> Go to Product Page
+                           </a>`,
+                    confirmButtonText: 'OK',
+                    showCancelButton: false
+                });
+                return;
+            }
+            
+            if (data.count !== stock) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Stock Mismatch',
+                    html: `Product quantity (${stock}) does not match available items (${data.count}).<br>Please ensure quantity equals the number of product_specific_list entries.`,
+                    confirmButtonText: 'OK'
+                });
+                return;
+            }
+            
+            // Show selection modal
+            const entries = data.entries || [];
+            let modalHtml = `
+                <div class="mb-3">
+                    <h5>${escapeHtml(productName)}</h5>
+                    <p class="text-muted">Select items to sell (${entries.length} available)</p>
+                </div>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th width="30"><input type="checkbox" id="selectAll" onchange="toggleSelectAllSpecificItems()"></th>
+                                <th>Serial</th>
+                                <th>Color</th>
+                                <th>Storage</th>
+                                <th>IMEI</th>
+                                <th>Price</th>
+                            </tr>
+                        </thead>
+                        <tbody id="specificListTableBody">
+            `;
+            
+            entries.forEach((entry, index) => {
+                // Format color display: show actual color if hex, or name if it's a name
+                let colorDisplay = 'N/A';
+                if (entry.color) {
+                    const colorValue = entry.color.trim();
+                    if (/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(colorValue)) {
+                        // It's a hex color - show the actual color
+                        colorDisplay = `<span style="display: inline-block; width: 20px; height: 20px; background-color: ${escapeHtml(colorValue)}; border: 1px solid #ddd; border-radius: 3px; vertical-align: middle;" title="${escapeHtml(colorValue)}"></span>`;
+                    } else {
+                        // It's a color name - show the name
+                        colorDisplay = escapeHtml(colorValue);
+                    }
+                }
+                
+                // Get price from specific item, fallback to product price
+                const itemPrice = entry.selling_price && parseFloat(entry.selling_price) > 0 
+                    ? parseFloat(entry.selling_price) 
+                    : price;
+                
+                modalHtml += `
+                    <tr>
+                        <td><input type="checkbox" class="specific-item-checkbox" value="${entry.id}" data-entry='${JSON.stringify(entry)}' data-price="${itemPrice}"></td>
+                        <td>${escapeHtml(entry.serial_number || 'N/A')}</td>
+                        <td>${colorDisplay}</td>
+                        <td>${escapeHtml(entry.storage || 'N/A')}</td>
+                        <td>${escapeHtml(entry.imei || 'N/A')}</td>
+                        <td>${formatCurrency(itemPrice)}</td>
+                    </tr>
+                `;
+            });
+            
+            modalHtml += `
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-3">
+                    <label>Selected: <span id="selectedCount">0</span> / ${entries.length}</label>
+                    <input type="number" class="form-control" id="specificQuantity" min="0" max="${entries.length}" value="1" onchange="handleSpecificQuantityChange()">
+                    <small class="text-muted">Enter quantity or select items manually using checkboxes</small>
+                </div>
+            `;
+            
+            Swal.fire({
+                title: 'Select Items',
+                html: modalHtml,
+                showCancelButton: true,
+                confirmButtonText: 'Add to Cart',
+                cancelButtonText: 'Cancel',
+                width: '800px',
+                didOpen: () => {
+                    // Add event listeners to checkboxes
+                    document.querySelectorAll('.specific-item-checkbox').forEach(cb => {
+                        cb.addEventListener('change', function() {
+                            // Manual checkbox change - don't auto-sync with quantity
+                            isUpdatingFromQuantity = false;
+                            updateSpecificSelection();
+                            
+                            // Update quantity input to match selected count
+                            const selected = document.querySelectorAll('.specific-item-checkbox:checked').length;
+                            const quantityInput = document.getElementById('specificQuantity');
+                            if (quantityInput) {
+                                quantityInput.value = selected;
+                            }
+                        });
+                    });
+                    
+                    // Initialize - select first item by default
+                    const checkboxes = document.querySelectorAll('.specific-item-checkbox');
+                    if (checkboxes.length > 0) {
+                        checkboxes[0].checked = true;
+                    }
+                    updateSpecificSelection();
+                },
+                preConfirm: () => {
+                    const selected = Array.from(document.querySelectorAll('.specific-item-checkbox:checked'))
+                        .map(cb => {
+                            try {
+                                return JSON.parse(cb.dataset.entry);
+                            } catch (e) {
+                                console.error('Error parsing entry data:', e, cb.dataset.entry);
+                                return null;
+                            }
+                        })
+                        .filter(entry => entry !== null);
+                    
+                    const quantity = parseInt(document.getElementById('specificQuantity').value) || 0;
+                    
+                    if (selected.length === 0) {
+                        Swal.showValidationMessage('Please select at least one item');
+                        return false;
+                    }
+                    
+                    if (selected.length !== quantity) {
+                        Swal.showValidationMessage(`Please select exactly ${quantity} item(s). Currently selected: ${selected.length}`);
+                        return false;
+                    }
+                    
+                    return {selected, quantity: selected.length};
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    const {selected, quantity} = result.value;
+                    // Add each specific item as a separate cart line with its own price
+                    selected.forEach(entry => {
+                        // Check if this specific item is already in cart
+                        const alreadyInCart = cart.some(item => 
+                            item.specific_item_id === entry.id || 
+                            (item.requires_specific_list && 
+                             item.specific_list_entries && 
+                             item.specific_list_entries.length === 1 &&
+                             item.specific_list_entries[0].id === entry.id)
+                        );
+                        
+                        if (alreadyInCart) {
+                            Swal.fire({
+                                icon: 'warning',
+                                title: 'Item Already in Cart',
+                                text: 'This specific item is already in your cart. Please select a different item.',
+                                timer: 2000,
+                                showConfirmButton: false
+                            });
+                            return; // Skip adding this duplicate
+                        }
+                        
+                        // Get price from specific item, fallback to product price
+                        const itemPrice = entry.selling_price && parseFloat(entry.selling_price) > 0 
+                            ? parseFloat(entry.selling_price) 
+                            : price;
+                        
+                        // Create a unique identifier for this specific item
+                        const itemName = productName + 
+                            (entry.storage ? ' (' + entry.storage + ')' : '') +
+                            (entry.color && !entry.color.match(/^#/) ? ' - ' + entry.color : '');
+                        
+                        cart.push({
+                            id: productId,
+                            name: itemName,
+                            price: itemPrice,
+                            quantity: 1,
+                            stock: 1,
+                            requires_specific_list: true,
+                            specific_list_entries: [entry], // Single entry per cart line
+                            specific_item_id: entry.id,
+                            wholesale_price: entry.wholesale_price && parseFloat(entry.wholesale_price) > 0 
+                                ? parseFloat(entry.wholesale_price) 
+                                : null
+                        });
+                    });
+                    updateCart();
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error loading specific list:', error);
+            Swal.fire('Error', 'Failed to load product details', 'error');
+        });
+}
+
+// Track if we're updating from quantity change (to avoid conflicts)
+let isUpdatingFromQuantity = false;
+
+function toggleSelectAllSpecificItems() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.specific-item-checkbox');
+    const isChecked = selectAll.checked;
+    
+    checkboxes.forEach(cb => {
+        cb.checked = isChecked;
+    });
+    
+    // Update quantity to match selected count
+    const selectedCount = isChecked ? checkboxes.length : 0;
+    const quantityInput = document.getElementById('specificQuantity');
+    if (quantityInput) {
+        quantityInput.value = selectedCount;
+    }
+    
+    updateSpecificSelection();
+}
+
+function updateSpecificSelection() {
+    const checkboxes = Array.from(document.querySelectorAll('.specific-item-checkbox'));
+    const selected = checkboxes.filter(cb => cb.checked).length;
+    const quantityInput = document.getElementById('specificQuantity');
+    const selectedCountSpan = document.getElementById('selectedCount');
+    
+    if (selectedCountSpan) {
+        selectedCountSpan.textContent = selected;
+    }
+    
+    // Update select all checkbox state
+    const selectAll = document.getElementById('selectAll');
+    if (selectAll) {
+        selectAll.checked = selected > 0 && selected === checkboxes.length;
+        selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+    }
+    
+    // If quantity was changed (not manual checkbox click), sync checkboxes to quantity
+    if (isUpdatingFromQuantity && quantityInput) {
+        const quantity = parseInt(quantityInput.value) || 0;
+        
+        if (quantity === 0) {
+            // Deselect all
+            checkboxes.forEach(cb => cb.checked = false);
+            if (selectAll) selectAll.checked = false;
+        } else if (quantity > 0 && quantity <= checkboxes.length) {
+            // Select first N items
+            checkboxes.forEach((cb, index) => {
+                cb.checked = index < quantity;
+            });
+            if (selectAll) {
+                selectAll.checked = quantity === checkboxes.length;
+                selectAll.indeterminate = false;
+            }
+        }
+        
+        // Update selected count after sync
+        const newSelected = checkboxes.filter(cb => cb.checked).length;
+        if (selectedCountSpan) {
+            selectedCountSpan.textContent = newSelected;
+        }
+        
+        isUpdatingFromQuantity = false;
+    }
+}
+
+// Separate function for quantity change
+function handleSpecificQuantityChange() {
+    isUpdatingFromQuantity = true;
+    updateSpecificSelection();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function removeFromCart(index) {
@@ -1972,6 +2284,11 @@ function validateQuantity(index, input) {
     }
 }
 
+// Format currency helper
+function formatCurrency(amount) {
+    return '$' + parseFloat(amount).toFixed(2);
+}
+
 function updateCart() {
     const cartItems = document.getElementById('cartItems');
     const cartCount = document.getElementById('cartCount');
@@ -2002,21 +2319,28 @@ function updateCart() {
         const lineTotal = item.price * item.quantity;
         subtotal += lineTotal;
         
+        // For specific list items, disable quantity controls (qty is always 1 per item)
+        const isSpecificItem = item.requires_specific_list && item.specific_list_entries && item.specific_list_entries.length === 1;
+        
         html += `
             <div class="cart-item">
                 <div class="cart-item-info">
                     <div class="cart-item-name">${item.name}</div>
-                    <div class="cart-item-price">${item.price.toFixed(2)} × ${item.quantity}</div>
+                    <div class="cart-item-price">${formatCurrency(item.price)}${isSpecificItem ? '' : ' × ' + item.quantity}</div>
                 </div>
                 <div class="cart-item-actions">
-                    <div class="qty-control">
-                        <button class="qty-btn touch-friendly" onclick="updateQuantity(${index}, -1)" title="Decrease">-</button>
-                        <input type="number" class="qty-input" value="${item.quantity}" min="1" max="${item.stock}" 
-                               onchange="setQuantity(${index}, this.value)" 
-                               onblur="validateQuantity(${index}, this)"
-                               data-index="${index}">
-                        <button class="qty-btn touch-friendly" onclick="updateQuantity(${index}, 1)" title="Increase">+</button>
-                    </div>
+                    ${isSpecificItem ? `
+                        <span class="badge bg-info">Qty: 1</span>
+                    ` : `
+                        <div class="qty-control">
+                            <button class="qty-btn touch-friendly" onclick="updateQuantity(${index}, -1)" title="Decrease">-</button>
+                            <input type="number" class="qty-input" value="${item.quantity}" min="1" max="${item.stock}" 
+                                   onchange="setQuantity(${index}, this.value)" 
+                                   onblur="validateQuantity(${index}, this)"
+                                   data-index="${index}">
+                            <button class="qty-btn touch-friendly" onclick="updateQuantity(${index}, 1)" title="Increase">+</button>
+                        </div>
+                    `}
                     <button class="btn btn-sm btn-danger touch-friendly" onclick="removeFromCart(${index})" title="Remove">
                         <i class="bi bi-x"></i>
                     </button>

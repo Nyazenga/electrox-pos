@@ -28,7 +28,8 @@ try {
     // Get products for the specified branch - handle both General category (product_name) and others (brand/model)
     $allProducts = $db->getRows("SELECT p.*, 
                              COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
-                             c.name as category_name 
+                             c.name as category_name,
+                             COALESCE(p.requires_specific_list, 0) as requires_specific_list
                              FROM products p 
                              LEFT JOIN product_categories c ON p.category_id = c.id 
                              WHERE p.status = 'Active' 
@@ -70,7 +71,9 @@ try {
             'category_name' => $product['category_name'] ?? 'N/A',
             'quantity_in_stock' => intval($product['quantity_in_stock'] ?? 0),
             'cost_price' => floatval($product['cost_price'] ?? 0),
-            'selling_price' => floatval($product['selling_price'] ?? 0)
+            'selling_price' => floatval($product['selling_price'] ?? 0),
+            'requires_specific_list' => intval($product['requires_specific_list'] ?? 0),
+            'is_unique' => intval($product['requires_specific_list'] ?? 0) // For backward compatibility
         ];
     }
     

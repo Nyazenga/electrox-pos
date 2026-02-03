@@ -83,24 +83,19 @@ $headers = [
     'Product Name', // Required for General category, leave empty for others
     'Brand', // Required for non-General categories, leave empty for General
     'Model', // Required for non-General categories, leave empty for General
-    'Color', // Optional (hex code like #FF0000 or color name)
-    'Storage', // For smartphones/laptops/tablets (e.g., "128GB", "256GB")
-    'Battery Health', // For smartphones/tablets/wearables (0-100)
-    'SIM Configuration', // For smartphones (e.g., "Dual SIM", "Single SIM")
-    'Serial Number', // For unique products (smartphones/laptops) - one per product
-    'IMEI', // For smartphones - one per product
     'Batch Number', // For General category products with batch tracking
     'Expiry Date', // For General category (YYYY-MM-DD format)
     'Weight', // For General category (numeric, e.g., 2.5)
     'Unit of Measure', // For General category (e.g., "kg", "g", "L", "ml")
-    'Manufacturer', // For General category
+    'Manufacturer', // For General category only
     'Barcode', // Optional (product barcode)
     'Description', // Optional (product description)
     'Specifications', // Optional (detailed specifications)
     'Cost Price', // Required (numeric, e.g., 10.50)
     'Selling Price', // Required (numeric, e.g., 15.00)
-    'Quantity in Stock', // Required (numeric, will be forced to 1 for unique products)
-    'Reorder Level', // Required (numeric, will be forced to 0 for unique products)
+    'Wholesale Price', // Optional (numeric, e.g., 12.00) - Price for dealer/wholesale sales
+    'Quantity in Stock', // Required (numeric, e.g., 10)
+    'Reorder Level', // Required (numeric, e.g., 5)
     'Tax ID', // Optional (numeric tax ID from fiscal config)
     'Status' // Active or Inactive (default: Active)
 ];
@@ -125,12 +120,6 @@ if ($generalCategory) {
         'Sugar White 2kg', // Product Name (required for General)
         '', // Brand (empty for General)
         '', // Model (empty for General)
-        '#FFFFFF', // Color
-        '', // Storage (not used for General)
-        '', // Battery Health (not used for General)
-        '', // SIM Configuration (not used for General)
-        '', // Serial Number (not used for General)
-        '', // IMEI (not used for General)
         'BATCH001', // Batch Number (optional for General)
         date('Y-m-d', strtotime('+1 year')), // Expiry Date
         '2.5', // Weight
@@ -141,6 +130,7 @@ if ($generalCategory) {
         '2kg pack', // Specifications
         '5.00', // Cost Price
         '8.00', // Selling Price
+        '7.00', // Wholesale Price
         '50', // Quantity in Stock
         '10', // Reorder Level
         '', // Tax ID (optional)
@@ -163,24 +153,19 @@ if ($smartphoneCategory) {
         '', // Product Name (empty for non-General)
         'Apple', // Brand (required)
         'iPhone 15 Pro', // Model (required)
-        'Space Gray', // Color
-        '256GB', // Storage
-        '100', // Battery Health
-        'Dual SIM', // SIM Configuration
-        'SN123456789', // Serial Number (required for unique products)
-        '123456789012345', // IMEI (required for smartphones)
         '', // Batch Number (not used)
         '', // Expiry Date (not used)
         '', // Weight (not used)
         '', // Unit of Measure (not used)
-        '', // Manufacturer (not used)
+        '', // Manufacturer (not used for smartphones - use product_specific_list)
         '1234567890124', // Barcode
         'Latest iPhone model', // Description
         'A17 Pro chip, 6.1 inch display', // Specifications
         '800.00', // Cost Price
         '1200.00', // Selling Price
-        '1', // Quantity in Stock (will be forced to 1 for unique products)
-        '0', // Reorder Level (will be forced to 0 for unique products)
+        '1000.00', // Wholesale Price
+        '10', // Quantity in Stock (individual instances added via GRN/Stock Take)
+        '5', // Reorder Level
         '', // Tax ID (optional)
         'Active' // Status
     ];
@@ -201,24 +186,19 @@ if ($laptopCategory) {
         '', // Product Name (empty for non-General)
         'Dell', // Brand
         'XPS 15', // Model
-        'Silver', // Color
-        '512GB SSD', // Storage
-        '', // Battery Health (optional for laptops)
-        '', // SIM Configuration (not used)
-        'SN987654321', // Serial Number (required for unique products)
-        '', // IMEI (not used for laptops)
         '', // Batch Number (not used)
         '', // Expiry Date (not used)
         '', // Weight (not used)
         '', // Unit of Measure (not used)
-        '', // Manufacturer (not used)
+        '', // Manufacturer (not used for laptops - use product_specific_list)
         '1234567890125', // Barcode
         'Premium laptop', // Description
         'Intel i7, 16GB RAM, 15.6 inch', // Specifications
         '1200.00', // Cost Price
         '1800.00', // Selling Price
-        '1', // Quantity in Stock (will be forced to 1)
-        '0', // Reorder Level (will be forced to 0)
+        '1500.00', // Wholesale Price
+        '5', // Quantity in Stock (individual instances added via GRN/Stock Take)
+        '2', // Reorder Level
         '', // Tax ID (optional)
         'Active' // Status
     ];

@@ -33,9 +33,9 @@ require_once APP_PATH . '/includes/header.php';
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Trade-Ins</h2>
-    <?php if ($auth->hasPermission('tradeins.create')): ?>
-        <a href="add.php" class="btn btn-primary"><i class="bi bi-plus-circle"></i> New Trade-In</a>
-    <?php endif; ?>
+    <div class="alert alert-info mb-0">
+        <i class="bi bi-info-circle"></i> All trade-ins are processed from the POS page.
+    </div>
 </div>
 
 <div class="card">

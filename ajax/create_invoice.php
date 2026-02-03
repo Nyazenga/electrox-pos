@@ -131,7 +131,9 @@ try {
         'due_date' => $dueDate,
         'status' => 'Draft', // Use 'Draft' instead of 'Pending' to match enum
         'notes' => $input['notes'] ?? null,
-        'terms' => $input['terms'] ?? null
+        'terms' => $input['terms'] ?? null,
+        'terms_id' => isset($input['terms_id']) && $input['terms_id'] ? intval($input['terms_id']) : null,
+        'banking_details_included' => isset($input['banking_details_included']) ? intval($input['banking_details_included']) : 1
     ];
     
     try {
@@ -185,11 +187,22 @@ try {
             
             // Get product cost if product_id exists
             if ($item['product_id']) {
-                $product = $db->getRow("SELECT cost_price FROM products WHERE id = :id", [':id' => $item['product_id']]);
+                $product = $db->getRow("SELECT cost_price, requires_specific_list FROM products WHERE id = :id", [':id' => $item['product_id']]);
                 if ($product) {
                     $itemData['cost_price'] = $product['cost_price'] ?? 0;
                     if ($itemData['unit_price'] > 0) {
                         $itemData['profit_margin'] = (($itemData['unit_price'] - $itemData['cost_price']) / $itemData['unit_price']) * 100;
+                    }
+                    
+                    // Handle product_specific_list entries if required
+                    $requiresSpecificList = !empty($product['requires_specific_list']);
+                    $specificListEntries = $item['specific_list_entries'] ?? [];
+                    
+                    if ($requiresSpecificList) {
+                        // Validate specific list entries
+                        if (empty($specificListEntries) || count($specificListEntries) !== $item['quantity']) {
+                            throw new Exception("Product '{$description}' requires specific instance details for all {$item['quantity']} items.");
+                        }
                     }
                 }
             }
@@ -199,6 +212,26 @@ try {
                 if (!$itemInsertId || $itemInsertId === false) {
                     error_log("Failed to insert invoice item. Item data: " . json_encode($itemData));
                     throw new Exception('Failed to create invoice item');
+                }
+                
+                // Store specific_list_entries for products requiring specific list
+                // These will be used when converting invoice to sale
+                if ($requiresSpecificList && !empty($specificListEntries)) {
+                    // Store as JSON in a notes field or create a separate table entry
+                    // For now, we'll store it in a JSON field if available, or skip
+                    // The convert to sale will handle the actual product_specific_list updates
+                    try {
+                        // Check if invoice_items has a notes or metadata column
+                        $columnCheck = $db->getRow("SHOW COLUMNS FROM invoice_items WHERE Field IN ('notes', 'metadata', 'specific_list_data')");
+                        if ($columnCheck) {
+                            $db->update('invoice_items', [
+                                'notes' => json_encode(['specific_list_entries' => $specificListEntries])
+                            ], ['id' => $itemInsertId]);
+                        }
+                    } catch (Exception $e) {
+                        // Column doesn't exist - we'll handle this in convert to sale
+                        error_log("Could not store specific_list_entries in invoice_items: " . $e->getMessage());
+                    }
                 }
             } catch (Exception $itemError) {
                 error_log("Invoice item insert exception: " . $itemError->getMessage());

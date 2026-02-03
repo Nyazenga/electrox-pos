@@ -36,11 +36,16 @@ if ($data) {
     unset($_SESSION['pos_delivery_cost']);
 }
 
+// Always clear wholesale sale flag when clearing cart
+unset($_SESSION['is_wholesale_sale']);
+
 // Ensure discount and delivery cost are always cleared if cart is empty
 if (empty($_SESSION['pos_cart'])) {
     $_SESSION['pos_discount'] = ['type' => null, 'amount' => 0];
     $_SESSION['pos_customer'] = null;
     $_SESSION['pos_delivery_cost'] = 0;
+    // Also clear wholesale flag if cart is empty
+    unset($_SESSION['is_wholesale_sale']);
 }
 
 echo json_encode(['success' => true]);

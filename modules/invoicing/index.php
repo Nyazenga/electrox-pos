@@ -217,6 +217,17 @@ function createInvoice() {
                                     </button>
                                     <?php endif; ?>
                                 <?php endif; ?>
+                                <?php if ($auth->hasPermission('invoicing.delete') || $auth->hasPermission('invoices.delete')): ?>
+                                    <?php
+                                    // Check if invoice can be deleted (not paid, no sales, no payments)
+                                    $canDelete = ($invoice['status'] !== 'Paid');
+                                    ?>
+                                    <?php if ($canDelete): ?>
+                                    <button type="button" class="btn btn-danger" onclick="deleteInvoice(<?= $invoice['id'] ?>, <?= json_encode($invoice['invoice_number']) ?>)" title="Delete Invoice">
+                                        <i class="bi bi-trash"></i> Delete
+                                    </button>
+                                    <?php endif; ?>
+                                <?php endif; ?>
                             </div>
                         </td>
                     </tr>
@@ -228,6 +239,9 @@ function createInvoice() {
 
 
 <script>
+// Base URL for AJAX calls
+var BASE_URL_JS = '<?php echo defined('BASE_URL') ? htmlspecialchars(BASE_URL, ENT_QUOTES, 'UTF-8') : ''; ?>';
+
 // Display error and warning messages from session - wait for DOM and SweetAlert to load
 document.addEventListener('DOMContentLoaded', function() {
     <?php if (isset($_SESSION['error_message'])): ?>
@@ -258,6 +272,70 @@ document.addEventListener('DOMContentLoaded', function() {
         <?php unset($_SESSION['warning_message']); ?>
     <?php endif; ?>
 });
+
+function deleteInvoice(invoiceId, invoiceNumber) {
+    Swal.fire({
+        title: 'Delete Invoice?',
+        html: 'Are you sure you want to delete invoice <strong>' + invoiceNumber + '</strong>?<br><br>This action cannot be undone.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, Delete',
+        cancelButtonText: 'Cancel'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'Deleting...',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+            
+            fetch(BASE_URL_JS + 'ajax/delete_invoice.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({invoice_id: invoiceId}),
+                credentials: 'same-origin'
+            })
+            .then(async r => {
+                const contentType = r.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await r.text();
+                    console.error('Non-JSON response:', text);
+                    throw new Error('Server returned non-JSON response');
+                }
+                return r.json();
+            })
+            .then(result => {
+                if (result.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Deleted!',
+                        text: result.message || 'Invoice deleted successfully',
+                        timer: 1500,
+                        showConfirmButton: false
+                    }).then(() => {
+                        window.location.reload();
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: result.message || 'Failed to delete invoice'
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Delete error:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'An error occurred while deleting the invoice'
+                });
+            });
+        }
+    });
+}
 
 function convertToSale(invoiceId) {
     Swal.fire({

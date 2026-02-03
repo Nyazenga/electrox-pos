@@ -95,21 +95,16 @@ try {
             continue;
         }
         
-        // CRITICAL: Unique products (with serial/IMEI) must always have qty=1
-        // They cannot be changed through stock take - each is a unique item
-        if (productHasSerialOrImei($product, $db)) {
-            // Force qty=1 for unique products - ignore counted stock
-            $countedStock = 1;
-        }
-        
         // If negative stock is not allowed and counted stock would be negative, skip
         if (!$allowNegativeStock && $countedStock < 0) {
             continue;
         }
         
-        // Overwrite stock level (stock take overwrites, GRN adds)
+        // Overwrite stock level for all products (stock take overwrites, GRN adds)
+        // For products requiring specific list, quantity_in_stock should match the counted stock
+        // The product_specific_list entries should be managed separately to match this quantity
         $db->update('products', [
-            'quantity_in_stock' => $countedStock
+            'quantity_in_stock' => intval($countedStock)
         ], ['id' => $productId]);
     }
     

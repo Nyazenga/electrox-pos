@@ -18,6 +18,32 @@ $customer = $_SESSION['pos_customer'] ?? null;
 $discount = $_SESSION['pos_discount'] ?? ['type' => null, 'amount' => 0];
 $fromInvoice = isset($_GET['from_invoice']) || isset($_SESSION['invoice_to_sale']);
 $invoiceData = $_SESSION['invoice_to_sale'] ?? null;
+$fromLaybye = isset($_GET['from_laybye']) || isset($_SESSION['laybye_to_sale']);
+$laybyeData = $_SESSION['laybye_to_sale'] ?? null;
+
+// Only use wholesale flag if explicitly set AND cart has wholesale prices applied
+// Default to false to prevent unwanted wholesale mode
+$isWholesaleSale = false;
+if (isset($_SESSION['is_wholesale_sale']) && $_SESSION['is_wholesale_sale'] === true) {
+    // Verify that cart actually has wholesale prices applied
+    $hasWholesalePrices = false;
+    if (!empty($cart)) {
+        foreach ($cart as $item) {
+            if (isset($item['is_wholesale']) && $item['is_wholesale'] === true) {
+                $hasWholesalePrices = true;
+                break;
+            }
+        }
+    }
+    // Only set to true if cart has wholesale prices, otherwise clear the flag
+    if ($hasWholesalePrices) {
+        $isWholesaleSale = true;
+    } else {
+        // Cart doesn't have wholesale prices, clear the flag
+        unset($_SESSION['is_wholesale_sale']);
+        $isWholesaleSale = false;
+    }
+}
 
 if (empty($cart)) {
     redirectTo('modules/pos/index.php');
@@ -221,6 +247,10 @@ require_once APP_PATH . '/includes/header.php';
     background: #9ca3af;
     cursor: not-allowed;
     opacity: 0.5;
+}
+
+.charge-btn.flex-fill {
+    flex: 1;
 }
 
 .change-display {
@@ -712,7 +742,17 @@ require_once APP_PATH . '/includes/header.php';
 }
 </style>
 
-<?php if ($fromInvoice && $invoiceData): ?>
+<?php if ($fromLaybye && $laybyeData): ?>
+<div class="alert alert-info mb-3" style="margin: 20px; border-left: 4px solid #0d6efd;">
+    <div class="d-flex align-items-center">
+        <i class="bi bi-info-circle me-2" style="font-size: 24px;"></i>
+        <div>
+            <strong>Completing Laybye</strong><br>
+            <small>Laybye #<?= escapeHtml($laybyeData['laybye_number'] ?? '') ?>. Please select specific product items (IMEI, Serial Numbers, etc.) for products that require them. After payment is processed, stock will be deducted, the sale will be fiscalized, and the laybye will be marked as completed.</small>
+        </div>
+    </div>
+</div>
+<?php elseif ($fromInvoice && $invoiceData): ?>
 <div class="alert alert-info mb-3" style="margin: 20px; border-left: 4px solid #0d6efd;">
     <div class="d-flex align-items-center">
         <i class="bi bi-info-circle me-2" style="font-size: 24px;"></i>
@@ -728,19 +768,45 @@ require_once APP_PATH . '/includes/header.php';
     <div class="payment-left">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h5>Order Summary</h5>
-            <button class="btn btn-sm btn-secondary" onclick="window.location.href='<?= $fromInvoice ? BASE_URL . 'modules/invoicing/index.php' : 'index.php' ?>'">
+            <button class="btn btn-sm btn-secondary" onclick="window.location.href='<?= $fromLaybye ? BASE_URL . 'modules/sales/laybyes.php' : ($fromInvoice ? BASE_URL . 'modules/invoicing/index.php' : 'index.php') ?>'">
                 <i class="bi bi-arrow-left"></i> Back
             </button>
         </div>
         
         <div class="cart-items" style="flex: 1; overflow-y: auto; margin-bottom: 20px;" id="cartItemsContainer">
             <?php foreach ($cart as $index => $item): ?>
-                <div class="cart-item mb-3" data-item-index="<?= $index ?>">
+                <?php
+                $requiresSpecificList = isset($item['requires_specific_list']) && $item['requires_specific_list'];
+                $hasSpecificEntries = isset($item['specific_list_entries']) && !empty($item['specific_list_entries']);
+                ?>
+                <div class="cart-item mb-3" data-item-index="<?= $index ?>" data-product-id="<?= $item['product_id'] ?? $item['id'] ?>" data-requires-specific-list="<?= $requiresSpecificList ? '1' : '0' ?>">
                     <div class="cart-item-info">
-                        <div class="cart-item-name"><?= escapeHtml($item['name']) ?></div>
-                        <div class="cart-item-price" data-base-price="<?= $item['price'] ?>" data-quantity="<?= $item['quantity'] ?>">
-                            <?= formatCurrency($item['price']) ?> × <?= $item['quantity'] ?>
+                        <div class="cart-item-name">
+                            <?= escapeHtml($item['name']) ?>
+                            <?php if ($requiresSpecificList && !$hasSpecificEntries): ?>
+                                <span class="badge bg-warning text-dark ms-2" title="Specific items need to be selected">
+                                    <i class="bi bi-exclamation-triangle"></i> Select Items
+                                </span>
+                            <?php elseif ($hasSpecificEntries): ?>
+                                <span class="badge bg-success ms-2" title="Specific items selected">
+                                    <i class="bi bi-check-circle"></i> Selected
+                                </span>
+                            <?php endif; ?>
                         </div>
+                        <?php 
+                        // For specific items, show individual prices
+                        $isSpecificItem = $requiresSpecificList && $hasSpecificEntries && count($item['specific_list_entries']) === 1;
+                        ?>
+                        <div class="cart-item-price" data-base-price="<?= $item['price'] ?>" data-quantity="<?= $item['quantity'] ?>">
+                            <?= formatCurrency($item['price']) ?><?= $isSpecificItem ? '' : ' × ' . $item['quantity'] ?>
+                        </div>
+                        <?php if ($requiresSpecificList): ?>
+                            <div class="mt-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectSpecificItems(<?= $index ?>, <?= $item['product_id'] ?? $item['id'] ?>, '<?= escapeHtml($item['name']) ?>', <?= $item['quantity'] ?>)">
+                                    <i class="bi bi-list-check"></i> <?= $hasSpecificEntries ? 'Change Items' : 'Select Items' ?>
+                                </button>
+                            </div>
+                        <?php endif; ?>
                     </div>
                     <div class="text-end">
                         <strong class="cart-item-total" data-base-total="<?= $item['price'] * $item['quantity'] ?>">
@@ -777,8 +843,8 @@ require_once APP_PATH . '/includes/header.php';
     
     <div class="payment-right">
         <div class="payment-header">
-            <button class="btn btn-link" onclick="window.location.href='<?= $fromInvoice ? BASE_URL . 'modules/invoicing/index.php' : 'index.php' ?>'">
-                <i class="bi bi-arrow-left"></i> <?= $fromInvoice ? 'Invoices' : 'Payment' ?>
+            <button class="btn btn-link" onclick="window.location.href='<?= $fromLaybye ? BASE_URL . 'modules/sales/laybyes.php' : ($fromInvoice ? BASE_URL . 'modules/invoicing/index.php' : 'index.php') ?>'">
+                <i class="bi bi-arrow-left"></i> <?= $fromLaybye ? 'Laybyes' : ($fromInvoice ? 'Invoices' : 'Payment') ?>
             </button>
             <button class="btn btn-primary" id="splitBtn" onclick="toggleSplitPayment()">SPLIT</button>
         </div>
@@ -837,6 +903,34 @@ require_once APP_PATH . '/includes/header.php';
         </div>
         <?php endif; ?>
         
+        <?php 
+        // Check if user has wholesale sale permission
+        $hasWholesalePermission = $auth->hasPermission('sales.wholesale');
+        
+        // Check if any products in cart have wholesale prices
+        $hasWholesalePrices = false;
+        if ($hasWholesalePermission && !empty($cart)) {
+            foreach ($cart as $item) {
+                $product = $db->getRow("SELECT wholesale_price FROM products WHERE id = :id", [':id' => $item['id']]);
+                if ($product && !empty($product['wholesale_price']) && floatval($product['wholesale_price']) > 0) {
+                    $hasWholesalePrices = true;
+                    break;
+                }
+            }
+        }
+        ?>
+        <?php if ($hasWholesalePermission && $hasWholesalePrices): ?>
+        <div class="mb-3" style="padding: 12px; background: #fff3cd; border-radius: 8px; border: 1px solid #ffc107;">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="wholesaleSale" onchange="toggleWholesaleSale()" style="width: 3em; height: 1.5em;" <?= $isWholesaleSale ? 'checked' : '' ?>>
+                <label class="form-check-label fw-bold" for="wholesaleSale" style="color: #856404;">
+                    Wholesale/Dealer Sale
+                </label>
+            </div>
+            <small class="d-block text-muted mt-1">Uses wholesale price and marks as pending payment</small>
+        </div>
+        <?php endif; ?>
+        
         <div class="amount-due mb-3" id="amountPaidSection">
             <div class="amount-due-label">Amount Paid</div>
             <div class="amount-due-value" id="amountPaidDisplay">$0.00</div>
@@ -874,9 +968,14 @@ require_once APP_PATH . '/includes/header.php';
             </div>
         </div>
         
-        <button class="charge-btn touch-friendly" onclick="processCharge()" id="chargeBtn" disabled style="opacity: 0.5; cursor: not-allowed;">
-            Process Payment
-        </button>
+        <div class="d-flex gap-2">
+            <button class="charge-btn touch-friendly flex-fill" onclick="processCharge(false)" id="chargeBtn" disabled style="opacity: 0.5; cursor: not-allowed;">
+                Process Payment (Fiscalized)
+            </button>
+            <button class="charge-btn touch-friendly flex-fill" onclick="processCharge(true)" id="chargeBtnNoFiscal" disabled style="opacity: 0.5; cursor: not-allowed; background: #6c757d;">
+                Process Payment (Non-Fiscal)
+            </button>
+        </div>
     </div>
 </div>
 
@@ -916,7 +1015,8 @@ require_once APP_PATH . '/includes/header.php';
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-secondary" id="processSplitBtn" onclick="processSplitPayment()" disabled style="opacity: 0.5; cursor: not-allowed;">Process All Payments</button>
+                <button type="button" class="btn btn-primary" id="processSplitBtn" onclick="processSplitPayment(false)" disabled style="opacity: 0.5; cursor: not-allowed;">Process All Payments (Fiscalized)</button>
+                <button type="button" class="btn btn-secondary" id="processSplitBtnNoFiscal" onclick="processSplitPayment(true)" disabled style="opacity: 0.5; cursor: not-allowed;">Process All Payments (Non-Fiscal)</button>
             </div>
         </div>
     </div>
@@ -943,6 +1043,22 @@ let paymentTermUpdateHandler = null;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
+    // Ensure wholesale checkbox state matches server-side state
+    const wholesaleCheckbox = document.getElementById('wholesaleSale');
+    if (wholesaleCheckbox) {
+        const serverWholesaleState = <?= $isWholesaleSale ? 'true' : 'false' ?>;
+        wholesaleCheckbox.checked = serverWholesaleState;
+        
+        // If checkbox is checked but cart doesn't have wholesale prices, uncheck it
+        // This handles the case where flag persists but cart was cleared
+        if (wholesaleCheckbox.checked) {
+            // Check if any cart item has wholesale flag
+            const cartHasWholesale = <?= json_encode(!empty($cart) && array_reduce($cart, function($carry, $item) { return $carry || (isset($item['is_wholesale']) && $item['is_wholesale'] === true); }, false)) ?>;
+            if (!cartHasWholesale) {
+                wholesaleCheckbox.checked = false;
+            }
+        }
+    }
     updateCurrencyDisplay();
     updateAmountDue();
     
@@ -1221,7 +1337,7 @@ function updateSplitRemaining() {
     }
 }
 
-// Real-time validation for split payments
+    // Real-time validation for split payments
 function validateSplitPayment() {
     let totalPaidBase = 0;
     let hasErrors = false;
@@ -1241,8 +1357,9 @@ function validateSplitPayment() {
         splitPayments[i].base_amount = baseAmount.toFixed(2);
     }
     
-    // Get the process button
+    // Get the process buttons
     const processBtn = document.getElementById('processSplitBtn');
+    const processBtnNoFiscal = document.getElementById('processSplitBtnNoFiscal');
     
     // Validate: total must be >= cart total (in base currency), all amounts > 0
     const isValid = !hasErrors && totalPaidBase >= totalAmount;
@@ -1260,6 +1377,18 @@ function validateSplitPayment() {
             processBtn.style.cursor = 'not-allowed';
             processBtn.classList.remove('btn-primary');
             processBtn.classList.add('btn-secondary');
+        }
+    }
+    
+    if (processBtnNoFiscal) {
+        if (isValid) {
+            processBtnNoFiscal.disabled = false;
+            processBtnNoFiscal.style.opacity = '1';
+            processBtnNoFiscal.style.cursor = 'pointer';
+        } else {
+            processBtnNoFiscal.disabled = true;
+            processBtnNoFiscal.style.opacity = '0.5';
+            processBtnNoFiscal.style.cursor = 'not-allowed';
         }
     }
     
@@ -1385,7 +1514,7 @@ function removeSplitPayment(index) {
     validateSplitPayment(); // Revalidate after removal
 }
 
-function processSplitPayment() {
+function processSplitPayment(skipFiscalization = false) {
     // Final validation (button should already be disabled if invalid, but double-check)
     let totalPaidBase = 0;
     const usedMethods = [];
@@ -1457,11 +1586,12 @@ function processSplitPayment() {
     const isCreditSale = putOnAccount && putOnAccount.checked;
     const creditSaleData = isCreditSale ? {
         is_credit_sale: true,
-        payment_term_id: document.getElementById('paymentTermId')?.value || null
+        payment_term_id: document.getElementById('paymentTermId')?.value || null,
+        skip_fiscalization: skipFiscalization
     } : null;
     
     // Process all split payments
-    processPayment(paymentsToProcess, creditSaleData);
+    processPayment(paymentsToProcess, creditSaleData, skipFiscalization);
 }
 
 let keypadInputValue = '0.00';
@@ -1572,6 +1702,15 @@ function updateAmountDue() {
             chargeBtn.style.background = 'var(--primary-blue)';
             chargeBtn.style.color = 'white';
             console.log('Button ENABLED');
+            
+            // Also enable the non-fiscal button
+            const chargeBtnNoFiscal = document.getElementById('chargeBtnNoFiscal');
+            if (chargeBtnNoFiscal) {
+                chargeBtnNoFiscal.removeAttribute('disabled');
+                chargeBtnNoFiscal.disabled = false;
+                chargeBtnNoFiscal.style.opacity = '1';
+                chargeBtnNoFiscal.style.cursor = 'pointer';
+            }
         } else {
             chargeBtn.setAttribute('disabled', 'disabled');
             chargeBtn.disabled = true;
@@ -1579,6 +1718,15 @@ function updateAmountDue() {
             chargeBtn.style.cursor = 'not-allowed';
             chargeBtn.style.background = '#9ca3af';
             console.log('Button DISABLED');
+            
+            // Also disable the non-fiscal button
+            const chargeBtnNoFiscal = document.getElementById('chargeBtnNoFiscal');
+            if (chargeBtnNoFiscal) {
+                chargeBtnNoFiscal.setAttribute('disabled', 'disabled');
+                chargeBtnNoFiscal.disabled = true;
+                chargeBtnNoFiscal.style.opacity = '0.5';
+                chargeBtnNoFiscal.style.cursor = 'not-allowed';
+            }
         }
     }
 }
@@ -1664,10 +1812,45 @@ function toggleCreditSale() {
     updateAmountDue();
 }
 
-function processCharge() {
+function toggleWholesaleSale() {
+    const wholesaleCheckbox = document.getElementById('wholesaleSale');
+    if (!wholesaleCheckbox) return;
+    
+    const isWholesale = wholesaleCheckbox.checked;
+    
+    // Store the state in session to persist across page reloads
+    fetch('<?= BASE_URL ?>ajax/get_cart_with_wholesale.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({use_wholesale: isWholesale})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Reload page to update prices
+            window.location.reload();
+        } else {
+            // If failed, revert checkbox state
+            wholesaleCheckbox.checked = !isWholesale;
+            Swal.fire('Error', data.message || 'Failed to update cart prices', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        // Revert checkbox state on error
+        wholesaleCheckbox.checked = !isWholesale;
+        Swal.fire('Error', 'An error occurred while updating cart prices', 'error');
+    });
+}
+
+function processCharge(skipFiscalization = false) {
     // Check if credit sale is enabled and selected
     const putOnAccount = document.getElementById('putOnAccount');
     const isCreditSale = putOnAccount && putOnAccount.checked;
+    
+    // Check if wholesale sale is selected
+    const wholesaleCheckbox = document.getElementById('wholesaleSale');
+    const isWholesale = wholesaleCheckbox && wholesaleCheckbox.checked;
     
     if (isCreditSale) {
         // Validate customer
@@ -1693,6 +1876,17 @@ function processCharge() {
         const paidBase = convertToBase(paid, currencyId);
         
         // Process payment (can be 0 for full credit, or partial payment)
+        const saleData = {
+            is_credit_sale: true,
+            payment_term_id: paymentTermId.value,
+            skip_fiscalization: skipFiscalization
+        };
+        
+        if (isWholesale) {
+            saleData.is_wholesale_sale = true;
+            saleData.is_pending_payment = true;
+        }
+        
         processPayment([{
             method: selectedMethod,
             amount: paid,
@@ -1700,10 +1894,33 @@ function processCharge() {
             exchange_rate: exchangeRate,
             original_amount: paid,
             base_amount: paidBase.toFixed(2)
-        }], {
-            is_credit_sale: true,
-            payment_term_id: paymentTermId.value
-        });
+        }], saleData);
+        return;
+    }
+    
+    // Check if wholesale sale
+    if (isWholesale) {
+        // For wholesale sales, payment can be 0 (pending payment)
+        const saleData = {
+            is_wholesale_sale: true,
+            is_pending_payment: true,
+            skip_fiscalization: skipFiscalization
+        };
+        
+        const paid = parseFloat(amountPaid) || 0;
+        const currencyId = selectedCurrencyId || baseCurrencyId;
+        const currency = getCurrencyById(currencyId);
+        const exchangeRate = currency && currency.id != baseCurrencyId ? parseFloat(currency.exchange_rate) : 1.0;
+        const paidBase = convertToBase(paid, currencyId);
+        
+        processPayment([{
+            method: selectedMethod,
+            amount: paid,
+            currency_id: currencyId,
+            exchange_rate: exchangeRate,
+            original_amount: paid,
+            base_amount: paidBase.toFixed(2)
+        }], saleData);
         return;
     }
     
@@ -1731,7 +1948,7 @@ function processCharge() {
     // Get exchange rate
     const exchangeRate = currency && currency.id != baseCurrencyId ? parseFloat(currency.exchange_rate) : 1.0;
     
-    // Process payment
+    // Process payment with skip_fiscalization flag
     processPayment([{
         method: selectedMethod,
         amount: paid,
@@ -1739,7 +1956,7 @@ function processCharge() {
         exchange_rate: exchangeRate,
         original_amount: paid,
         base_amount: paidBase.toFixed(2)
-    }]);
+    }], null, skipFiscalization);
 }
 
 // Helper function to format ZIMRA error messages for display
@@ -1793,7 +2010,7 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function processPayment(payments, creditSaleData = null) {
+function processPayment(payments, creditSaleData = null, skipFiscalization = false) {
     Swal.fire({
         title: 'Processing Payment...',
         allowOutsideClick: false,
@@ -1807,13 +2024,25 @@ function processPayment(payments, creditSaleData = null) {
         customer: <?= json_encode($customer) ?>,
         discount: <?= json_encode($discount) ?>,
         delivery_cost: <?= $deliveryCost ?>,
-        payments: payments
+        payments: payments,
+        skip_fiscalization: skipFiscalization ? 1 : 0
     };
     
     // Add credit sale data if provided
     if (creditSaleData) {
         requestData.is_credit_sale = creditSaleData.is_credit_sale;
         requestData.payment_term_id = creditSaleData.payment_term_id;
+        // Override skip_fiscalization if provided in creditSaleData
+        if (creditSaleData.skip_fiscalization !== undefined) {
+            requestData.skip_fiscalization = creditSaleData.skip_fiscalization ? 1 : 0;
+        }
+        // Add wholesale sale flags if present
+        if (creditSaleData.is_wholesale_sale !== undefined) {
+            requestData.is_wholesale_sale = creditSaleData.is_wholesale_sale ? 1 : 0;
+        }
+        if (creditSaleData.is_pending_payment !== undefined) {
+            requestData.is_pending_payment = creditSaleData.is_pending_payment ? 1 : 0;
+        }
     }
     
     fetch('<?= BASE_URL ?>ajax/process_sale.php', {
@@ -1856,24 +2085,20 @@ function processPayment(payments, creditSaleData = null) {
                     if (data.receipt_id) {
                         // Store last sale ID for receipt printing
                         sessionStorage.setItem('lastSaleId', data.receipt_id);
-                        // Open receipt in new window for printing with print parameter
-                        const receiptWindow = window.open('<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1', '_blank');
-                        
-                        // Redirect based on source
-                        <?php if ($fromInvoice): ?>
-                        Swal.fire({
-                            title: 'Invoice Converted!',
-                            html: 'The proforma invoice has been converted to a sale, stock deducted, and fiscalized successfully.<br><br>Invoice status updated to Paid.',
-                            icon: 'success',
-                            confirmButtonText: 'View Invoices'
-                        }).then(() => {
-                            window.location.href = '<?= BASE_URL ?>modules/invoicing/index.php';
-                        });
-                        <?php else: ?>
-                        window.location.href = 'index.php';
-                        <?php endif; ?>
+                        // Navigate to receipt in same window for printing
+                        window.location.href = '<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1';
                     } else {
-                        <?php if ($fromInvoice): ?>
+                        // Redirect based on source
+                        <?php if ($fromLaybye): ?>
+                        Swal.fire({
+                            title: 'Laybye Completed!',
+                            html: 'The laybye has been converted to a sale, stock deducted, and fiscalized successfully.<br><br>Laybye status updated to Completed.',
+                            icon: 'success',
+                            confirmButtonText: 'View Laybyes'
+                        }).then(() => {
+                            window.location.href = '<?= BASE_URL ?>modules/sales/laybyes.php';
+                        });
+                        <?php elseif ($fromInvoice): ?>
                         window.location.href = '<?= BASE_URL ?>modules/invoicing/index.php';
                         <?php else: ?>
                         window.location.href = 'index.php';
@@ -1894,53 +2119,19 @@ function processPayment(payments, creditSaleData = null) {
                         ? '<p style="color: #28a745;"><strong>✓ Receipt fiscalized successfully with ZIMRA</strong></p>' 
                         : '';
                     
-                    // Open receipt window immediately (before SweetAlert to avoid popup blocker)
-                    const receiptWindow = window.open('<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1', '_blank');
-                    
-                    // Check if window was blocked
-                    if (!receiptWindow || receiptWindow.closed || typeof receiptWindow.closed == 'undefined') {
-                        // Popup was blocked - show message and redirect to receipt page
-                        Swal.fire({
-                            title: 'Success!',
-                            html: (data.fiscal_details && data.fiscal_details.fiscalized 
-                                ? '<p style="color: #28a745;"><strong>✓ Receipt fiscalized successfully with ZIMRA</strong></p>' 
-                                : '') + '<p>Payment processed successfully. Please allow popups to view receipt automatically, or click OK to view receipt.</p>',
-                            icon: 'success',
-                            confirmButtonText: 'View Receipt',
-                            showCancelButton: true,
-                            cancelButtonText: 'Continue'
-                        }).then((result) => {
-                            if (result.isConfirmed) {
-                                window.location.href = '<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1';
-                            } else {
-                                <?php if ($fromInvoice): ?>
-                                window.location.href = '<?= BASE_URL ?>modules/invoicing/index.php';
-                                <?php else: ?>
-                                window.location.href = 'index.php';
-                                <?php endif; ?>
-                            }
-                        });
-                    } else {
-                        // Window opened successfully
-                        Swal.fire({
-                            title: 'Success!',
-                            html: (data.fiscal_details && data.fiscal_details.fiscalized 
-                                ? '<p style="color: #28a745;"><strong>✓ Receipt fiscalized successfully with ZIMRA</strong></p>' 
-                                : '') + '<p>Payment processed successfully. Receipt is opening...</p>',
-                            icon: 'success',
-                            timer: 2000,
-                            timerProgressBar: true,
-                            showConfirmButton: false,
-                            allowOutsideClick: true
-                        }).then(() => {
-                            // Redirect based on source
-                            <?php if ($fromInvoice): ?>
-                            window.location.href = '<?= BASE_URL ?>modules/invoicing/index.php';
-                            <?php else: ?>
-                            window.location.href = 'index.php';
-                            <?php endif; ?>
-                        });
-                    }
+                    // Navigate to receipt in same window for printing
+                    Swal.fire({
+                        title: 'Success!',
+                        html: (data.fiscal_details && data.fiscal_details.fiscalized 
+                            ? '<p style="color: #28a745;"><strong>✓ Receipt fiscalized successfully with ZIMRA</strong></p>' 
+                            : '') + '<p>Payment processed successfully. Redirecting to receipt...</p>',
+                        icon: 'success',
+                        timer: 1500,
+                        showConfirmButton: false,
+                        allowOutsideClick: false
+                    }).then(() => {
+                        window.location.href = '<?= BASE_URL ?>modules/pos/receipt.php?id=' + data.receipt_id + '&print=1';
+                    });
                 } else {
                     <?php if ($fromInvoice): ?>
                     Swal.fire({
@@ -2027,6 +2218,271 @@ function showReceiptOptions(receiptId) {
     });
 }
 
+// Function to select specific items for products that require them
+function selectSpecificItems(itemIndex, productId, productName, requiredQuantity) {
+    // Fetch available specific list items
+    fetch('<?= BASE_URL ?>ajax/get_product_specific_list.php?product_id=' + productId)
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                Swal.fire('Error', data.message || 'Failed to load product items', 'error');
+                return;
+            }
+            
+            // Filter available items (not sold)
+            const availableEntries = (data.entries || []).filter(entry => entry.status === 'available');
+            
+            if (availableEntries.length === 0) {
+                Swal.fire('Error', 'No available items found for this product', 'error');
+                return;
+            }
+            
+            if (availableEntries.length < requiredQuantity) {
+                Swal.fire('Warning', `Only ${availableEntries.length} items available, but ${requiredQuantity} required.`, 'warning');
+            }
+            
+            // Get currently selected items from cart
+            const cart = <?= json_encode($cart) ?>;
+            const currentItem = cart[itemIndex];
+            const currentlySelectedIds = [];
+            if (currentItem && currentItem.specific_list_entries) {
+                currentItem.specific_list_entries.forEach(entry => {
+                    if (entry.id) {
+                        currentlySelectedIds.push(entry.id);
+                    }
+                });
+            }
+            
+            // Get all specific item IDs already in cart (from other items)
+            const allCartSpecificIds = [];
+            cart.forEach((item, idx) => {
+                if (idx !== itemIndex && item.specific_list_entries) {
+                    item.specific_list_entries.forEach(entry => {
+                        if (entry.id) {
+                            allCartSpecificIds.push(entry.id);
+                        }
+                    });
+                }
+            });
+            
+            // Build modal HTML
+            let modalHtml = `
+                <div class="mb-3">
+                    <h5>${escapeHtml(productName)}</h5>
+                    <p class="text-muted">Select ${requiredQuantity} item(s) to sell (${availableEntries.length} available)</p>
+                </div>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th width="30"><input type="checkbox" id="selectAllSpecific" onchange="toggleSelectAllSpecificItems()"></th>
+                                <th>Serial</th>
+                                <th>Color</th>
+                                <th>Storage</th>
+                                <th>IMEI</th>
+                                <th>Price</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="specificListTableBody">
+            `;
+            
+            availableEntries.forEach((entry, index) => {
+                // Format color display: show actual color if hex, or name if it's a name
+                let colorDisplay = 'N/A';
+                if (entry.color) {
+                    const colorValue = entry.color.trim();
+                    if (/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(colorValue)) {
+                        // It's a hex color - show the actual color
+                        colorDisplay = `<span style="display: inline-block; width: 20px; height: 20px; background-color: ${escapeHtml(colorValue)}; border: 1px solid #ddd; border-radius: 3px; vertical-align: middle;" title="${escapeHtml(colorValue)}"></span>`;
+                    } else {
+                        // It's a color name - show the name
+                        colorDisplay = escapeHtml(colorValue);
+                    }
+                }
+                
+                // Check if this item is currently selected
+                const isCurrentlySelected = currentlySelectedIds.includes(entry.id);
+                const isInOtherCartItem = allCartSpecificIds.includes(entry.id);
+                
+                // Get price from specific item
+                const itemPrice = entry.selling_price && parseFloat(entry.selling_price) > 0 
+                    ? parseFloat(entry.selling_price) 
+                    : (currentItem ? currentItem.price : 0);
+                
+                modalHtml += `
+                    <tr ${isInOtherCartItem ? 'style="background-color: #fff3cd;"' : ''}>
+                        <td>
+                            <input type="checkbox" 
+                                   class="specific-item-checkbox" 
+                                   value="${entry.id}" 
+                                   data-entry='${JSON.stringify(entry)}'
+                                   ${isCurrentlySelected ? 'checked' : ''}
+                                   ${isInOtherCartItem ? 'disabled title="Already in cart"' : ''}>
+                        </td>
+                        <td>${escapeHtml(entry.serial_number || 'N/A')}</td>
+                        <td>${colorDisplay}</td>
+                        <td>${escapeHtml(entry.storage || 'N/A')}</td>
+                        <td>${escapeHtml(entry.imei || 'N/A')}</td>
+                        <td>${formatCurrency(itemPrice)}</td>
+                        <td>
+                            ${isCurrentlySelected ? '<span class="badge bg-success">Selected</span>' : ''}
+                            ${isInOtherCartItem ? '<span class="badge bg-warning">In Cart</span>' : ''}
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            modalHtml += `
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-3">
+                    <label class="form-label">Quantity: <span id="selectedCount">0</span> / ${requiredQuantity}</label>
+                </div>
+            `;
+            
+            Swal.fire({
+                title: 'Select Specific Items',
+                html: modalHtml,
+                width: '700px',
+                showCancelButton: true,
+                confirmButtonText: 'Confirm Selection',
+                cancelButtonText: 'Cancel',
+                didOpen: () => {
+                    // Add event listeners
+                    document.querySelectorAll('.specific-item-checkbox').forEach(cb => {
+                        cb.addEventListener('change', function() {
+                            // Don't allow checking disabled items
+                            if (this.disabled) {
+                                this.checked = false;
+                                Swal.showValidationMessage('This item is already in your cart and cannot be selected again.');
+                                return;
+                            }
+                            
+                            const selectedCount = Array.from(document.querySelectorAll('.specific-item-checkbox:checked:not(:disabled)')).length;
+                            
+                            // Prevent selecting more than required quantity
+                            if (selectedCount > requiredQuantity) {
+                                this.checked = false;
+                                updateSpecificSelection();
+                                Swal.showValidationMessage(`You can only select ${requiredQuantity} item(s). Please uncheck an item first.`);
+                                return;
+                            }
+                            
+                            updateSpecificSelection();
+                        });
+                    });
+                    
+                    // Initialize selection count
+                    updateSpecificSelection();
+                },
+                preConfirm: () => {
+                    const selected = Array.from(document.querySelectorAll('.specific-item-checkbox:checked'))
+                        .map(cb => {
+                            if (cb.disabled) {
+                                return null; // Skip disabled items (already in cart)
+                            }
+                            return JSON.parse(cb.getAttribute('data-entry'));
+                        })
+                        .filter(entry => entry !== null);
+                    
+                    if (selected.length !== requiredQuantity) {
+                        Swal.showValidationMessage(`Please select exactly ${requiredQuantity} item(s). Some items may be disabled because they're already in your cart.`);
+                        return false;
+                    }
+                    
+                    // Check for duplicates in other cart items
+                    const selectedIds = selected.map(e => e.id);
+                    const duplicates = selectedIds.filter(id => allCartSpecificIds.includes(id));
+                    if (duplicates.length > 0) {
+                        Swal.showValidationMessage(`Some selected items are already in your cart. Please select different items.`);
+                        return false;
+                    }
+                    
+                    return { selected, quantity: selected.length };
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    const {selected, quantity} = result.value;
+                    
+                    // Update cart item in session via AJAX
+                    const cart = <?= json_encode($cart) ?>;
+                    
+                    // For specific items, update price from the selected entry
+                    if (selected.length === 1) {
+                        const selectedEntry = selected[0];
+                        // Use specific item selling price if available
+                        if (selectedEntry.selling_price && parseFloat(selectedEntry.selling_price) > 0) {
+                            cart[itemIndex].price = parseFloat(selectedEntry.selling_price);
+                        }
+                        // Store wholesale price for later use
+                        if (selectedEntry.wholesale_price && parseFloat(selectedEntry.wholesale_price) > 0) {
+                            cart[itemIndex].wholesale_price = parseFloat(selectedEntry.wholesale_price);
+                        } else {
+                            cart[itemIndex].wholesale_price = null;
+                        }
+                        // Store specific item ID
+                        cart[itemIndex].specific_item_id = selectedEntry.id;
+                    }
+                    
+                    cart[itemIndex].specific_list_entries = selected;
+                    cart[itemIndex].quantity = quantity;
+                    
+                    // Update session cart
+                    fetch('<?= BASE_URL ?>ajax/update_pos_cart.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ cart: cart })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Reload page to show updated cart
+                            window.location.reload();
+                        } else {
+                            Swal.fire('Error', data.message || 'Failed to update cart', 'error');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        Swal.fire('Error', 'An error occurred while updating cart', 'error');
+                    });
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error loading specific list:', error);
+            Swal.fire('Error', 'Failed to load product details', 'error');
+        });
+}
+
+function toggleSelectAllSpecificItems() {
+    const selectAll = document.getElementById('selectAllSpecific');
+    const checkboxes = document.querySelectorAll('.specific-item-checkbox');
+    const isChecked = selectAll.checked;
+    
+    checkboxes.forEach(cb => {
+        cb.checked = isChecked;
+    });
+    
+    updateSpecificSelection();
+}
+
+// Format currency helper
+function formatCurrency(amount) {
+    return '$' + parseFloat(amount).toFixed(2);
+}
+
+function updateSpecificSelection() {
+    const checkboxes = document.querySelectorAll('.specific-item-checkbox');
+    const selectedCount = Array.from(checkboxes).filter(cb => cb.checked && !cb.disabled).length;
+    const countEl = document.getElementById('selectedCount');
+    if (countEl) {
+        countEl.textContent = selectedCount;
+    }
+}
+
 // Ensure functions are available globally immediately
 window.selectPaymentMethod = selectPaymentMethod;
 window.toggleSplitPayment = toggleSplitPayment;
@@ -2041,6 +2497,9 @@ window.removeSplitPayment = removeSplitPayment;
 window.processSplitPayment = processSplitPayment;
 window.updateAmountDue = updateAmountDue;
 window.toggleCreditSale = toggleCreditSale;
+window.selectSpecificItems = selectSpecificItems;
+window.toggleSelectAllSpecificItems = toggleSelectAllSpecificItems;
+window.updateSpecificSelection = updateSpecificSelection;
 </script>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>

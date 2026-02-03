@@ -107,6 +107,7 @@ $defaultTerms = getSetting('invoice_default_terms', '');
 $invoiceFooterText = getSetting('invoice_footer_text', 'Thank you for your business!');
 
 // Calculate VAT breakdown for items
+// Initialize totals - will be calculated from items, or use stored totals if items are missing
 $totalExclVAT = 0;
 $totalVAT = 0;
 $totalInclVAT = 0;
@@ -123,9 +124,13 @@ if ($invoice['subtotal'] > 0 && $invoice['discount_amount'] > 0 && $invoice['dis
     $globalDiscountPercent = ($invoice['discount_amount'] / $invoice['subtotal']) * 100;
 }
 
+// Process all items - allow items with any quantity (including 0) for proforma invoices
 foreach ($invoiceItems as &$item) {
     $unitPrice = floatval($item['unit_price'] ?? 0); // Original price WITH tax if pricesIncludeTax
     $quantity = intval($item['quantity'] ?? 1);
+    
+    // Allow items with quantity 0 (for out-of-stock products in proforma invoices)
+    // Only "Convert to Sale" should check stock availability
     
     // Get product-specific tax rate
     $productTaxId = $item['product_tax_id'] ?? null;
@@ -173,36 +178,58 @@ foreach ($invoiceItems as &$item) {
         $lineTotalInclVAT = $lineSubtotal + $lineVAT;
     }
     
-    // Unit price excluding VAT
-    $item['unit_price_excl_vat'] = $priceWithoutTax / $quantity;
+    // Unit price excluding VAT - handle division by zero safely for quantity 0 items
+    $item['unit_price_excl_vat'] = $quantity > 0 ? ($priceWithoutTax / $quantity) : $unitPrice;
     $item['line_total_excl_vat'] = $priceWithoutTax;
     $item['line_vat'] = $lineVAT;
     $item['line_total_incl_vat'] = $lineTotalInclVAT;
     $item['tax_rate'] = $itemTaxRate; // Store tax rate for grouping
     
-    $totalExclVAT += $priceWithoutTax;
-    $totalVAT += $lineVAT;
-    $totalInclVAT += $lineTotalInclVAT;
+    // Only add to totals if quantity > 0 (items with quantity 0 shouldn't affect totals)
+    if ($quantity > 0) {
+        $totalExclVAT += $priceWithoutTax;
+        $totalVAT += $lineVAT;
+        $totalInclVAT += $lineTotalInclVAT;
+    }
 }
 unset($item);
 
-// Group taxes by tax rate for display (like POS receipt)
-// Use the tax amounts already calculated from items (which show original prices)
-// These are already rounded per item, so we just sum them
-$taxGroups = [];
-foreach ($invoiceItems as $item) {
-    $taxRate = $item['tax_rate'] ?? 0;
-    $taxAmount = $item['line_vat'] ?? 0; // This is already rounded per item
+// If no items exist but invoice has totals, use stored totals from invoice table
+// This handles cases where items were deleted but totals remain
+if (empty($invoiceItems) && floatval($invoice['total_amount'] ?? 0) > 0) {
+    // Use stored totals from invoice table
+    $totalExclVAT = floatval($invoice['subtotal'] ?? 0);
+    $totalVAT = floatval($invoice['tax_amount'] ?? 0);
+    $totalInclVAT = floatval($invoice['total_amount'] ?? 0);
     
-    if ($taxAmount > 0) {
-        $key = number_format($taxRate, 1);
-        if (!isset($taxGroups[$key])) {
-            $taxGroups[$key] = [
-                'rate' => $taxRate,
-                'amount' => 0
-            ];
+    // Create a simple tax group if tax exists
+    $taxGroups = [];
+    if ($totalVAT > 0 && $totalExclVAT > 0) {
+        $taxRate = ($totalVAT / $totalExclVAT) * 100;
+        $taxGroups[number_format($taxRate, 1)] = [
+            'rate' => $taxRate,
+            'amount' => $totalVAT
+        ];
+    }
+} else {
+    // Group taxes by tax rate for display (like POS receipt)
+    // Use the tax amounts already calculated from items (which show original prices)
+    // These are already rounded per item, so we just sum them
+    $taxGroups = [];
+    foreach ($invoiceItems as $item) {
+        $taxRate = $item['tax_rate'] ?? 0;
+        $taxAmount = $item['line_vat'] ?? 0; // This is already rounded per item
+        
+        if ($taxAmount > 0) {
+            $key = number_format($taxRate, 1);
+            if (!isset($taxGroups[$key])) {
+                $taxGroups[$key] = [
+                    'rate' => $taxRate,
+                    'amount' => 0
+                ];
+            }
+            $taxGroups[$key]['amount'] += $taxAmount;
         }
-        $taxGroups[$key]['amount'] += $taxAmount;
     }
 }
 
@@ -362,15 +389,50 @@ if ($usePDF) {
     $pdf->SetFont('helvetica', '', 9);
     $pdf->MultiCell(95, 5, htmlspecialchars($companyAddress), 0, 'L', false, 0);
     
-    // Contact info - position below logo area to avoid overlap
+    // Contact info and invoice details - continuous, no gaps, labels in bold
+    // Position below logo area to avoid overlap
     $contactStartY = max($pdf->GetY(), $logoBottomY + 3);
     $pdf->SetXY(15, $contactStartY);
+    $pdf->SetFont('helvetica', '', 9);
+    
     if ($companyPhone) {
-        $pdf->Cell(95, 5, 'Contact Number: ' . htmlspecialchars($companyPhone), 0, 1, 'L');
+        $pdf->SetFont('helvetica', 'B', 9);
+        $pdf->Cell(30, 5, 'Contact Number:', 0, 0, 'L');
+        $pdf->SetFont('helvetica', '', 9);
+        $pdf->Cell(0, 5, htmlspecialchars($companyPhone), 0, 1, 'L');
     }
     if ($companyEmail) {
-        $pdf->Cell(95, 5, 'Email: ' . htmlspecialchars($companyEmail), 0, 1, 'L');
+        $pdf->SetFont('helvetica', 'B', 9);
+        $pdf->Cell(30, 5, 'Email:', 0, 0, 'L');
+        $pdf->SetFont('helvetica', '', 9);
+        $pdf->Cell(0, 5, htmlspecialchars($companyEmail), 0, 1, 'L');
     }
+    
+    // TIN # and VAT No. - continuous after Email, no gap
+    if ($showTaxId && $companyTIN) {
+        $pdf->SetFont('helvetica', 'B', 9);
+        $pdf->Cell(30, 5, 'TIN #:', 0, 0, 'L');
+        $pdf->SetFont('helvetica', '', 9);
+        $pdf->Cell(0, 5, htmlspecialchars($companyTIN), 0, 1, 'L');
+    }
+    if ($showTaxId && $companyVAT) {
+        $pdf->SetFont('helvetica', 'B', 9);
+        $pdf->Cell(30, 5, 'VAT No.:', 0, 0, 'L');
+        $pdf->SetFont('helvetica', '', 9);
+        $pdf->Cell(0, 5, htmlspecialchars($companyVAT), 0, 1, 'L');
+    }
+    
+    // Date and Invoice Ref # - continuous after TIN/VAT, no gap, labels in bold
+    $pdf->SetFont('helvetica', 'B', 9);
+    $pdf->Cell(30, 5, 'Date:', 0, 0, 'L');
+    $pdf->SetFont('helvetica', '', 9);
+    $pdf->Cell(0, 5, date('d/m/Y', strtotime($invoice['invoice_date'])), 0, 1, 'L');
+    
+    $pdf->SetFont('helvetica', 'B', 9);
+    $pdf->Cell(30, 5, 'Invoice Ref #:', 0, 0, 'L');
+    $pdf->SetFont('helvetica', '', 9);
+    $pdf->Cell(0, 5, htmlspecialchars($invoice['invoice_number']), 0, 1, 'L');
+    
     $leftSectionEndY = $pdf->GetY();
     
     // Invoice type and tagline on right - below logo
@@ -390,54 +452,24 @@ if ($usePDF) {
     $nextY = max($leftSectionEndY, $rightSectionEndY);
     $pdf->SetY($nextY);
     
-    // Horizontal line
-    $pdf->Line(15, $pdf->GetY(), 195, $pdf->GetY());
-    $pdf->Ln(8);
+    // No horizontal line needed - client details are now bordered
+    $pdf->Ln(5);
     
     // Header HTML for compatibility (not used in PDF but kept for structure)
     $headerHtml = '';
     
-    // Invoice Meta Section
-    $pdf->SetFont('helvetica', '', 9);
-    $pdf->Cell(95, 5, '', 0, 0, 'L'); // Spacer
-    $pdf->Cell(0, 5, 'Date: ' . date('d/m/Y', strtotime($invoice['invoice_date'])), 0, 1, 'R');
-    $pdf->Cell(95, 5, '', 0, 0, 'L'); // Spacer
-    $pdf->Cell(0, 5, 'Invoice Ref #: ' . htmlspecialchars($invoice['invoice_number']), 0, 1, 'R');
-    if ($showTaxId && $companyTIN) {
-        $pdf->Cell(95, 5, '', 0, 0, 'L'); // Spacer
-        $pdf->Cell(0, 5, 'TIN #: ' . htmlspecialchars($companyTIN), 0, 1, 'R');
-    }
-    if ($showTaxId && $companyVAT) {
-        $pdf->Cell(95, 5, '', 0, 0, 'L'); // Spacer
-        $pdf->Cell(0, 5, 'VAT No.: ' . htmlspecialchars($companyVAT), 0, 1, 'R');
-    }
-    $pdf->Ln(8);
-    $pdf->Line(15, $pdf->GetY(), 195, $pdf->GetY());
-    $pdf->Ln(10);
-    
     // Meta HTML for compatibility
     $metaHtml = '';
     
-    // Client Details Section - Template-specific styling
-    if ($invoiceTemplate === 'minimal') {
-        $pdf->SetFillColor(245, 245, 245);
-        $pdf->SetTextColor(50, 50, 50);
-    } elseif ($invoiceTemplate === 'elegant') {
-        $pdf->SetFillColor($primaryRgb[0], $primaryRgb[1], $primaryRgb[2]);
-        $pdf->SetTextColor(255, 255, 255);
-    } else {
-        $pdf->SetFillColor(233, 236, 239);
-        $pdf->SetTextColor(0, 0, 0);
-    }
-    $pdf->SetFont('helvetica', 'B', 10);
-    $pdf->Cell(0, 8, 'CLIENT DETAILS', 1, 1, 'L', true);
-    $pdf->SetFont('helvetica', '', 9);
-    $pdf->SetFillColor($clientBgColor[0], $clientBgColor[1], $clientBgColor[2]);
-    $pdf->SetTextColor(0, 0, 0); // Reset text color
-    
-    // Client Name
-    $pdf->Cell(95, 8, 'Client Name: ' . htmlspecialchars($clientName), 1, 0, 'L', true);
-    $pdf->Cell(0, 8, '', 1, 1, 'L', true);
+    // Client Details Section - Simple bordered text format (like banking details)
+    // Use black borders with thinner line width for all templates
+    $pdf->SetDrawColor(0, 0, 0);
+    $pdf->SetLineWidth(0.2);
+    $clientStartY = $pdf->GetY();
+    $pdf->SetFont('helvetica', 'B', 9);
+    $pdf->Cell(0, 6, 'CLIENT DETAILS', 0, 1, 'L');
+    $pdf->SetFont('helvetica', '', 8);
+    $pdf->Cell(0, 5, 'Client Name: ' . htmlspecialchars($clientName), 0, 1, 'L');
     
     // Address (if available)
     if (!empty($invoice['address'])) {
@@ -445,42 +477,40 @@ if ($usePDF) {
         foreach ($addressLines as $line) {
             $line = trim($line);
             if ($line) {
-                $pdf->Cell(0, 8, 'Address: ' . htmlspecialchars($line), 1, 1, 'L', true);
+                $pdf->Cell(0, 5, 'Address: ' . htmlspecialchars($line), 0, 1, 'L');
             }
         }
     }
     
-    // Phone and Email in one row
-    $contactInfo = '';
+    // Phone and Email
     if (!empty($invoice['phone'])) {
-        $contactInfo .= 'Phone: ' . htmlspecialchars($invoice['phone']);
+        $pdf->Cell(0, 5, 'Phone: ' . htmlspecialchars($invoice['phone']), 0, 1, 'L');
     }
     if (!empty($invoice['email'])) {
-        if ($contactInfo) $contactInfo .= ' | ';
-        $contactInfo .= 'Email: ' . htmlspecialchars($invoice['email']);
-    }
-    if ($contactInfo) {
-        $pdf->Cell(0, 8, $contactInfo, 1, 1, 'L', true);
+        $pdf->Cell(0, 5, 'Email: ' . htmlspecialchars($invoice['email']), 0, 1, 'L');
     }
     
     // Tax Information
     if ($invoice['customer_tin'] || $invoice['customer_vat']) {
-        $clientTaxInfo = '';
         if ($invoice['customer_tin']) {
-            $clientTaxInfo .= 'Client TIN #: ' . htmlspecialchars($invoice['customer_tin']);
+            $pdf->Cell(0, 5, 'Client TIN #: ' . htmlspecialchars($invoice['customer_tin']), 0, 1, 'L');
         }
         if ($invoice['customer_vat']) {
-            if ($clientTaxInfo) $clientTaxInfo .= ' | ';
-            $clientTaxInfo .= 'Client VAT No.: ' . htmlspecialchars($invoice['customer_vat']);
+            $pdf->Cell(0, 5, 'Client VAT No.: ' . htmlspecialchars($invoice['customer_vat']), 0, 1, 'L');
         }
-        $pdf->Cell(0, 8, $clientTaxInfo, 1, 1, 'L', true);
     }
     
     // Sales Rep
     if ($salesRep) {
-        $pdf->Cell(0, 8, 'Sales Rep: ' . htmlspecialchars($salesRep), 1, 1, 'L', true);
+        $pdf->Cell(0, 5, 'Sales Rep: ' . htmlspecialchars($salesRep), 0, 1, 'L');
     }
-    $pdf->Ln(8);
+    
+    $clientEndY = $pdf->GetY();
+    // Draw black border around client details
+    $pdf->Rect(15, $clientStartY - 2, 180, $clientEndY - $clientStartY + 2);
+    // Ensure Y position is correct after border
+    $pdf->SetY($clientEndY);
+    $pdf->Ln(5);
     
     // Client HTML for compatibility
     $clientHtml = '';
@@ -509,6 +539,7 @@ if ($usePDF) {
     $pdf->SetFont('helvetica', '', 9);
     $pdf->SetFillColor(255, 255, 255);
     
+    // Display all items (including items with quantity 0 for out-of-stock products)
     foreach ($invoiceItems as $item) {
         // Handle product description: General category uses product_name, others use brand+model
         if ($item['product_id']) {
@@ -619,38 +650,27 @@ if ($usePDF) {
         $pdf->Ln(8);
     }
     
-    // Banking Details - Template-specific styling
-    if ($bankName && $bankAccount) {
-        if ($invoiceTemplate === 'minimal') {
-            $pdf->SetFillColor(250, 250, 250);
-        } elseif ($invoiceTemplate === 'elegant') {
-            $pdf->SetFillColor(255, 255, 255);
-        } else {
-            $pdf->SetFillColor(233, 236, 239);
-        }
+    // Banking Details - Only show if banking_details_included is true
+    $bankingDetailsIncluded = isset($invoice['banking_details_included']) ? intval($invoice['banking_details_included']) : 1;
+    if ($bankingDetailsIncluded && $bankName && $bankAccount) {
+        $pdf->Ln(5);
+        // Banking details in a bordered box format (like address) - black borders with thinner line width for all templates
+        $pdf->SetDrawColor(0, 0, 0);
+        $pdf->SetLineWidth(0.2);
+        $startY = $pdf->GetY();
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(0, 8, 'Nostro Banking Details', 1, 1, 'L', true);
+        $pdf->Cell(0, 6, 'Banking Details', 0, 1, 'L');
         $pdf->SetFont('helvetica', '', 8);
-        if ($invoiceTemplate === 'minimal') {
-            $pdf->SetFillColor(255, 255, 255);
-        } elseif ($invoiceTemplate === 'elegant') {
-            $pdf->SetFillColor(250, 250, 250);
-        } else {
-            $pdf->SetFillColor(248, 249, 250);
-        }
-        $pdf->Cell(45, 8, 'Company:', 1, 0, 'L', true);
-        $pdf->Cell(45, 8, htmlspecialchars($companyName), 1, 0, 'L');
-        $pdf->Cell(45, 8, 'Account No.:', 1, 0, 'L', true);
-        $pdf->Cell(0, 8, htmlspecialchars($bankAccount), 1, 1, 'L');
-        $pdf->Cell(45, 8, 'Bank Name:', 1, 0, 'L', true);
-        $pdf->Cell(45, 8, htmlspecialchars($bankName), 1, 0, 'L');
+        $pdf->Cell(0, 5, 'Company: ' . htmlspecialchars($companyName), 0, 1, 'L');
+        $pdf->Cell(0, 5, 'Account No.: ' . htmlspecialchars($bankAccount), 0, 1, 'L');
+        $pdf->Cell(0, 5, 'Bank: ' . htmlspecialchars($bankName), 0, 1, 'L');
         if ($bankBranch) {
-            $pdf->Cell(45, 8, 'Branch:', 1, 0, 'L', true);
-            $pdf->Cell(0, 8, htmlspecialchars($bankBranch), 1, 1, 'L');
-        } else {
-            $pdf->Cell(0, 8, '', 1, 1, 'L');
+            $pdf->Cell(0, 5, 'Branch: ' . htmlspecialchars($bankBranch), 0, 1, 'L');
         }
-        $pdf->Ln(8);
+        $endY = $pdf->GetY();
+        // Draw black border around banking details
+        $pdf->Rect(15, $startY - 2, 180, $endY - $startY + 2);
+        $pdf->Ln(5);
     }
     
     // Fiscal Information Section (if fiscalized) - Get early for header placement
@@ -1192,6 +1212,16 @@ if ($usePDF) {
                 <?php if ($companyEmail): ?>
                     <p><strong>Email:</strong> <?= escapeHtml($companyEmail) ?></p>
                 <?php endif; ?>
+                <?php if ($showTaxId && $companyTIN): ?>
+                    <p><strong>TIN #:</strong> <?= escapeHtml($companyTIN) ?></p>
+                <?php endif; ?>
+                <?php if ($showTaxId && $companyVAT): ?>
+                    <p><strong>VAT No.:</strong> <?= escapeHtml($companyVAT) ?></p>
+                <?php endif; ?>
+                
+                <!-- Invoice Details on left side -->
+                <p style="margin-top: 10px;"><strong>Date:</strong> <?= date('d/m/Y', strtotime($invoice['invoice_date'])) ?></p>
+                <p><strong>Invoice Ref #:</strong> <?= escapeHtml($invoice['invoice_number']) ?></p>
             </div>
             <div class="logo-section-right">
                 <?php if ($showLogo && $invoiceLogo): 
@@ -1209,34 +1239,7 @@ if ($usePDF) {
             </div>
         </div>
         
-        <!-- Invoice Meta Information - Date, Ref, TIN, VAT on right -->
-        <div class="invoice-meta-section">
-            <div class="invoice-meta-left">
-                <!-- Empty for spacing -->
-            </div>
-            <div class="invoice-meta-right">
-                <div class="invoice-meta-item">
-                    <span class="invoice-meta-label">Date:</span>
-                    <span><?= date('d/m/Y', strtotime($invoice['invoice_date'])) ?></span>
-                </div>
-                <div class="invoice-meta-item">
-                    <span class="invoice-meta-label">Invoice Ref #:</span>
-                    <span><?= escapeHtml($invoice['invoice_number']) ?></span>
-                </div>
-                <?php if ($showTaxId && $companyTIN): ?>
-                <div class="invoice-meta-item">
-                    <span class="invoice-meta-label">TIN #:</span>
-                    <span><?= escapeHtml($companyTIN) ?></span>
-                </div>
-                <?php endif; ?>
-                <?php if ($showTaxId && $companyVAT): ?>
-                <div class="invoice-meta-item">
-                    <span class="invoice-meta-label">VAT No.:</span>
-                    <span><?= escapeHtml($companyVAT) ?></span>
-                </div>
-                <?php endif; ?>
-            </div>
-        </div>
+        <!-- Invoice Meta Information moved to left side under company details -->
         
         <!-- Client Section -->
         <div class="client-section">
@@ -1339,11 +1342,14 @@ if ($usePDF) {
         </div>
         <?php endif; ?>
         
-        <!-- Banking Details -->
-        <?php if ($bankName && $bankAccount): ?>
-        <div class="banking-section">
-            <h6>Nostro Banking Details</h6>
-            <div class="banking-grid">
+        <!-- Banking Details - Only show if banking_details_included is true -->
+        <?php 
+        $bankingDetailsIncluded = isset($invoice['banking_details_included']) ? intval($invoice['banking_details_included']) : 1;
+        if ($bankingDetailsIncluded && $bankName && $bankAccount): 
+        ?>
+        <div class="banking-section" style="border: 1px solid #c8c8c8; padding: 10px; margin-top: 10px;">
+            <h6 style="margin: 0 0 8px 0; font-weight: bold;">Banking Details</h6>
+            <div style="line-height: 1.8;">
                 <div><strong>Company:</strong> <?= escapeHtml($companyName) ?></div>
                 <div><strong>Account No.:</strong> <?= escapeHtml($bankAccount) ?></div>
                 <div><strong>Bank:</strong> <?= escapeHtml($bankName) ?></div>

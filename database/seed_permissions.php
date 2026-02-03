@@ -24,6 +24,19 @@ $permissions = [
     ['sales.credit_sales', 'View and manage credit sales'],
     ['sales.settle_account', 'Settle credit sale accounts'],
     
+    // Laybyes permissions
+    ['sales.laybyes', 'View and manage laybyes'],
+    ['sales.laybyes.create', 'Create new laybyes'],
+    ['sales.laybyes.edit', 'Edit laybyes'],
+    ['sales.laybyes.complete', 'Complete laybyes'],
+    ['sales.laybyes.cancel', 'Cancel laybyes'],
+    ['sales.laybyes.add_payment', 'Add payments to laybyes'],
+    ['reports.laybyes', 'View laybye reports'],
+    
+    // Wholesale/Dealer Sales permissions
+    ['sales.wholesale', 'Process wholesale/dealer sales'],
+    ['reports.wholesale', 'View wholesale sales reports'],
+    
     // Price Change Tracking
     ['reports.price_change_history', 'View price change history'],
     

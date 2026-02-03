@@ -208,8 +208,12 @@ try {
         $receiptNumber = $branchPrefix . '-' . $datePart . '-' . $seqPadded . '-' . $randomSuffix;
     }
     
+    // Check if fiscalization should be skipped
+    $skipFiscalization = isset($input['skip_fiscalization']) && ($input['skip_fiscalization'] == 1 || $input['skip_fiscalization'] === true || $input['skip_fiscalization'] === '1');
+    
     // Check if fiscalization is enabled - if so, verify fiscal day is open BEFORE creating sale
-    if ($branchId) {
+    // Skip this check if skip_fiscalization flag is set (non-fiscal sales don't need fiscal day to be open)
+    if ($branchId && !$skipFiscalization) {
         $primaryDb = Database::getPrimaryInstance();
         $branch = $primaryDb->getRow(
             "SELECT id, fiscalization_enabled FROM branches WHERE id = :id",
@@ -326,6 +330,10 @@ try {
     $isCreditSale = isset($input['is_credit_sale']) && $input['is_credit_sale'] === true;
     $paymentTermId = isset($input['payment_term_id']) ? intval($input['payment_term_id']) : null;
     
+    // Check if this is a wholesale sale
+    $isWholesaleSale = isset($input['is_wholesale_sale']) && $input['is_wholesale_sale'] === true;
+    $isPendingPayment = isset($input['is_pending_payment']) && $input['is_pending_payment'] === true;
+    
     // Validate credit sale requirements
     if ($isCreditSale) {
         // Validate customer is selected
@@ -348,6 +356,8 @@ try {
     
     $saleData = [
         'receipt_number' => $receiptNumber,
+        'is_wholesale_sale' => $isWholesaleSale ? 1 : 0,
+        'is_pending_payment' => $isPendingPayment ? 1 : 0,
         'shift_id' => $shift['id'],
         'branch_id' => $branchId,
         'user_id' => $userId,
@@ -458,6 +468,9 @@ try {
         }
     }
     
+    // Check if cart contains trade-in products (should not be fiscalized)
+    $hasTradeInProducts = false;
+    
     // Create sale items
     foreach ($input['cart'] as $item) {
         $product = $db->getRow("SELECT p.*, pc.tax_id as category_tax_id 
@@ -465,10 +478,100 @@ try {
                                  LEFT JOIN product_categories pc ON p.category_id = pc.id 
                                  WHERE p.id = :id", [':id' => $item['id']]);
         
+        if (!$product) {
+            throw new Exception("Product not found: {$item['id']}");
+        }
+        
+        // Check if product is a trade-in product
+        if (!empty($product['is_trade_in']) && $product['is_trade_in'] == 1) {
+            $hasTradeInProducts = true;
+        }
+        
+        // Validate if product can be sold (for products requiring specific list)
+        $requiresSpecificList = productRequiresSpecificList($product, $db);
+        if ($requiresSpecificList) {
+            if (!canSellProduct($item['id'], $branchId, $db)) {
+                throw new Exception("Product '{$item['name']}' cannot be sold. Quantity must equal the number of available product_specific_list entries.");
+            }
+            
+            // Validate specific list entries are provided
+            $specificListEntries = $item['specific_list_entries'] ?? [];
+            if (empty($specificListEntries) || count($specificListEntries) !== $item['quantity']) {
+                throw new Exception("Product '{$item['name']}' requires specific instance details for all {$item['quantity']} items.");
+            }
+        }
+        
+        // Check if product has specific list entries with their own prices
+        $specificItemPrices = [];
+        $useSpecificItemPrices = false;
+        $totalSpecificPrice = 0;
+        
+        if ($requiresSpecificList && !empty($specificListEntries)) {
+            // Get prices from specific list entries
+            foreach ($specificListEntries as $entry) {
+                $specificId = intval($entry['id'] ?? 0);
+                if ($specificId <= 0) {
+                    // Try to find by serial number or IMEI
+                    if (!empty($entry['serial_number'])) {
+                        $existing = $db->getRow(
+                            "SELECT id, selling_price, wholesale_price FROM product_specific_list WHERE serial_number = :serial AND product_id = :product_id AND branch_id = :branch_id AND status = 'available'",
+                            [':serial' => $entry['serial_number'], ':product_id' => $product['id'], ':branch_id' => $branchId]
+                        );
+                        if ($existing) {
+                            $specificId = $existing['id'];
+                            $entry = $existing;
+                        }
+                    } elseif (!empty($entry['imei'])) {
+                        $existing = $db->getRow(
+                            "SELECT id, selling_price, wholesale_price FROM product_specific_list WHERE imei = :imei AND product_id = :product_id AND branch_id = :branch_id AND status = 'available'",
+                            [':imei' => $entry['imei'], ':product_id' => $product['id'], ':branch_id' => $branchId]
+                        );
+                        if ($existing) {
+                            $specificId = $existing['id'];
+                            $entry = $existing;
+                        }
+                    }
+                }
+                
+                if ($specificId > 0) {
+                    $specificItem = $db->getRow(
+                        "SELECT selling_price, wholesale_price FROM product_specific_list WHERE id = :id",
+                        [':id' => $specificId]
+                    );
+                    if ($specificItem) {
+                        // Use wholesale price if wholesale sale and available, otherwise use selling price
+                        if ($isWholesaleSale && !empty($specificItem['wholesale_price']) && floatval($specificItem['wholesale_price']) > 0) {
+                            $price = floatval($specificItem['wholesale_price']);
+                            $specificItemPrices[] = $price;
+                            $totalSpecificPrice += $price;
+                        } elseif (!empty($specificItem['selling_price']) && floatval($specificItem['selling_price']) > 0) {
+                            $price = floatval($specificItem['selling_price']);
+                            $specificItemPrices[] = $price;
+                            $totalSpecificPrice += $price;
+                        }
+                    }
+                }
+            }
+            
+            // If we have specific item prices for all items, use them
+            if (!empty($specificItemPrices) && count($specificItemPrices) === $item['quantity']) {
+                $useSpecificItemPrices = true;
+            }
+        }
+        
+        // Check if wholesale price should be used (fallback to product-level prices)
+        $useWholesalePrice = !$useSpecificItemPrices && $isWholesaleSale && !empty($product['wholesale_price']) && floatval($product['wholesale_price']) > 0;
+        
         // Calculate unit price without tax for storage
-        // If prices_include_tax is true, the item['price'] already includes tax, so extract tax
-        // If prices_include_tax is false, the item['price'] does NOT include tax, so use as-is
-        $unitPriceWithTax = $item['price'];
+        // Priority: Specific item prices > Product wholesale price > Product selling price > Cart price
+        if ($useSpecificItemPrices) {
+            // Use average of specific item prices (all prices are tax-inclusive)
+            $unitPriceWithTax = $totalSpecificPrice / count($specificItemPrices);
+        } elseif ($useWholesalePrice) {
+            $unitPriceWithTax = floatval($product['wholesale_price']);
+        } else {
+            $unitPriceWithTax = $item['price'];
+        }
         $unitPriceWithoutTax = $unitPriceWithTax;
         
         if ($pricesIncludeTax) {
@@ -512,48 +615,72 @@ try {
             throw new Exception('Failed to create sale item: ' . $db->getLastError());
         }
         
-        // Handle stock update - unique products get DEACTIVATED when sold (not deleted, to preserve reports/invoices)
-        if (function_exists('productHasSerialOrImei') && productHasSerialOrImei($product, $db)) {
-            // Unique product: DEACTIVATE it when sold (status='Inactive', quantity_in_stock=0)
-            // We deactivate instead of delete to preserve:
-            // - Sales reports that JOIN products table for cost_price, product_code, category
-            // - Invoice history and product references
-            // - Profit calculations that depend on p.cost_price
-            // - Product filtering in reports
-            $previousQuantity = (int)($product['quantity_in_stock'] ?? 0);
-            
-            // Deactivate product and set stock to 0
-            try {
-                $db->update('products', [
-                    'status' => 'Inactive',
-                    'quantity_in_stock' => 0,
-                    'updated_by' => $_SESSION['user_id'] ?? null,
-                    'updated_at' => date('Y-m-d H:i:s')
-                ], ['id' => $item['id']]);
+        // Handle product_specific_list entries if required
+        if ($requiresSpecificList && !empty($specificListEntries)) {
+            foreach ($specificListEntries as $entry) {
+                $specificId = intval($entry['id'] ?? 0);
+                if ($specificId <= 0) {
+                    // Try to find by serial number or IMEI
+                    if (!empty($entry['serial_number'])) {
+                        $existing = $db->getRow(
+                            "SELECT id FROM product_specific_list WHERE serial_number = :serial AND product_id = :product_id AND branch_id = :branch_id AND status = 'available'",
+                            [':serial' => $entry['serial_number'], ':product_id' => $product['id'], ':branch_id' => $branchId]
+                        );
+                        if ($existing) {
+                            $specificId = $existing['id'];
+                        }
+                    } elseif (!empty($entry['imei'])) {
+                        $existing = $db->getRow(
+                            "SELECT id FROM product_specific_list WHERE imei = :imei AND product_id = :product_id AND branch_id = :branch_id AND status = 'available'",
+                            [':imei' => $entry['imei'], ':product_id' => $product['id'], ':branch_id' => $branchId]
+                        );
+                        if ($existing) {
+                            $specificId = $existing['id'];
+                        }
+                    }
+                }
                 
-                // Create stock movement record (for audit trail)
-                $db->insert('stock_movements', [
-                    'product_id' => $item['id'],
-                    'branch_id' => $branchId,
-                    'movement_type' => 'Sale',
-                    'quantity' => -$item['quantity'],
-                    'previous_quantity' => $previousQuantity,
-                    'new_quantity' => 0,
-                    'user_id' => $_SESSION['user_id'] ?? null,
-                    'created_at' => date('Y-m-d H:i:s')
-                ]);
-            } catch (Exception $updateError) {
-                // Log but don't fail the sale
-                error_log("Error deactivating unique product {$item['id']} after sale: " . $updateError->getMessage());
+                if ($specificId > 0) {
+                    // DELETE the product_specific_list entry when sold (not just mark as sold)
+                    // This ensures it never appears in any lists again
+                    $deleted = $db->delete('product_specific_list', ['id' => $specificId]);
+                    if (!$deleted) {
+                        error_log("Failed to delete product_specific_list entry {$specificId} after sale");
+                        // Fallback: Mark as sold if delete fails
+                        $db->update('product_specific_list', [
+                            'status' => 'sold',
+                            'sale_item_id' => $itemId
+                        ], ['id' => $specificId]);
+                    }
+                }
             }
+            
+            // Update product quantity to match count of available entries
+            $count = getProductSpecificListCount($product['id'], $branchId, 'available', $db);
+            $db->update('products', ['quantity_in_stock' => $count], ['id' => $product['id']]);
+            
+            // Create stock movement record
+            $previousQuantity = (int)($product['quantity_in_stock'] ?? 0);
+            $db->insert('stock_movements', [
+                'product_id' => $product['id'],
+                'branch_id' => $branchId,
+                'movement_type' => 'Sale',
+                'quantity' => -$item['quantity'],
+                'previous_quantity' => $previousQuantity,
+                'new_quantity' => $count,
+                'user_id' => $_SESSION['user_id'] ?? null,
+                'created_at' => date('Y-m-d H:i:s')
+            ]);
+            
+            error_log("PROCESS SALE: Updated product {$product['id']} quantity from {$previousQuantity} to {$count} (sold {$item['quantity']} items from product_specific_list)");
         } else {
             // Normal product: Update stock using updateStock function
-        if (function_exists('updateStock')) {
-            try {
-                updateStock($item['id'], -$item['quantity'], $branchId, 'Sale', true);
-            } catch (Exception $stockError) {
-                // Log stock update error but don't fail the sale
-                error_log("Stock update error for product {$item['id']}: " . $stockError->getMessage());
+            if (function_exists('updateStock')) {
+                try {
+                    updateStock($item['id'], -$item['quantity'], $branchId, 'Sale', true);
+                } catch (Exception $stockError) {
+                    // Log stock update error but don't fail the sale
+                    error_log("Stock update error for product {$item['id']}: " . $stockError->getMessage());
                 }
             }
         }
@@ -733,6 +860,37 @@ try {
         }
     }
     
+    // Handle laybye completion - update laybye status to completed and link sale to laybye
+    if (isset($_SESSION['laybye_to_sale']) && !empty($_SESSION['laybye_to_sale']['laybye_id'])) {
+        $laybyeId = intval($_SESSION['laybye_to_sale']['laybye_id']);
+        try {
+            $primaryDb = Database::getPrimaryInstance();
+            
+            // Update laybye status to completed
+            $primaryDb->update('laybyes', [
+                'status' => 'completed',
+                'completed_at' => date('Y-m-d H:i:s'),
+                'sale_id' => $saleId
+            ], ['id' => $laybyeId]);
+            
+            // Link sale to laybye (if laybye_id column exists in sales table)
+            try {
+                $db->update('sales', ['laybye_id' => $laybyeId, 'is_laybye' => 1], ['id' => $saleId]);
+            } catch (Exception $e) {
+                // Column might not exist, that's okay
+                error_log("Could not link sale to laybye (column may not exist): " . $e->getMessage());
+            }
+            
+            error_log("PROCESS SALE: Laybye $laybyeId marked as Completed and linked to sale $saleId");
+            
+            // Clear laybye conversion session data
+            unset($_SESSION['laybye_to_sale']);
+        } catch (Exception $laybyeError) {
+            // Log error but don't fail the sale
+            error_log("Failed to update laybye status: " . $laybyeError->getMessage());
+        }
+    }
+    
     // Log activity outside of transaction (in case it fails, we don't want to rollback the sale)
     try {
         logActivity($userId, 'pos_sale', ['sale_id' => $saleId, 'receipt_number' => $receiptNumber, 'amount' => $total]);
@@ -753,7 +911,12 @@ try {
     $fiscalizationSuccess = false;
     $fiscalizationError = null;
     
-    if ($branchId) {
+    // Skip fiscalization if sale contains trade-in products OR if skip_fiscalization flag is set
+    if ($hasTradeInProducts) {
+        error_log("FISCALIZATION: ✗ Sale contains trade-in products, skipping fiscalization (trade-ins should not be fiscalized)");
+    } else if ($skipFiscalization) {
+        error_log("FISCALIZATION: ✗ skip_fiscalization flag is set, skipping fiscalization (non-fiscal sale requested)");
+    } else if ($branchId) {
         error_log("PROCESS SALE: Branch ID is set, proceeding with fiscalization check");
         error_log("FISCALIZATION: Attempting to fiscalize sale $saleId for branch $branchId");
         try {
@@ -826,9 +989,11 @@ try {
             $fiscalizationError = 'Fatal Fiscalization Error: ' . $errorMessage;
         }
     } else {
-        error_log("FISCALIZATION: ✗ branchId is null or empty (" . var_export($branchId, true) . "), skipping fiscalization");
-        error_log("FISCALIZATION: Session branch_id = " . ($_SESSION['branch_id'] ?? 'NOT SET'));
-        error_log("FISCALIZATION: This is why fiscalization was not called!");
+        if (!$hasTradeInProducts) {
+            error_log("FISCALIZATION: ✗ branchId is null or empty (" . var_export($branchId, true) . "), skipping fiscalization");
+            error_log("FISCALIZATION: Session branch_id = " . ($_SESSION['branch_id'] ?? 'NOT SET'));
+            error_log("FISCALIZATION: This is why fiscalization was not called!");
+        }
     }
     error_log("PROCESS SALE: FISCALIZATION CHECK END");
     error_log("========================================");

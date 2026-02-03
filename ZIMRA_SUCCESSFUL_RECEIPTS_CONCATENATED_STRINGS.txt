@@ -1,0 +1,169 @@
+ZIMRA FISCALIZATION - SUCCESSFUL RECEIPTS CONCATENATED STRINGS
+================================================================
+
+STATUS: ALL RECEIPTS SUCCESSFULLY FISCALIZED ✓
+
+Based on nginx error logs from successful test sales on 2026-01-06:
+
+=============================================================================
+RECEIPT #0020 (SUCCESS - Single 5% Non-VAT Withholding Tax)
+=============================================================================
+Receipt Details:
+- Receipt #: 1-260106-0020
+- Receipt Global No: 354
+- Receipt Counter: 1 (First receipt in fiscal day 81)
+- Date: 2026-01-06T16:58:32
+- Total: $1,800.00 USD
+- Status: ✓ Successfully fiscalized (receiptID: 10599527)
+
+Tax Breakdown:
+- taxID: 514
+- taxCode: "B" (Note: Production still shows "B", but receipts are accepted)
+- taxPercent: 5
+- taxAmount: 85.71 USD
+- salesAmountWithTax: 1800.00 USD
+
+CONCATENATED SIGNATURE STRING:
+30199FISCALINVOICEUSD3542026-01-06T16:58:32180000B5.008571180000
+
+Breakdown:
+1. deviceID: 30199
+2. receiptType: FISCALINVOICE
+3. receiptCurrency: USD
+4. receiptGlobalNo: 354
+5. receiptDate: 2026-01-06T16:58:32
+6. receiptTotal: 180000 (1800.00 USD * 100 cents)
+7. receiptTaxes: B5.008571180000
+   - taxCode: "B"
+   - taxPercent: "5.00"
+   - taxAmount: 8571 (85.71 USD * 100 cents)
+   - salesAmountWithTax: 180000 (1800.00 USD * 100 cents)
+8. previousReceiptHash: (NOT INCLUDED - first receipt in fiscal day)
+
+=============================================================================
+RECEIPT #0021 (SUCCESS - Single 5% Non-VAT Withholding Tax)
+=============================================================================
+Receipt Details:
+- Receipt #: 1-260106-0021
+- Receipt Global No: 355
+- Receipt Counter: 2
+- Date: 2026-01-06T17:01:34
+- Total: $1,800.00 USD
+- Status: ✓ Successfully fiscalized (receiptID: 10599535)
+
+Tax Breakdown:
+- taxID: 514
+- taxCode: "B"
+- taxPercent: 5
+- taxAmount: 85.71 USD
+- salesAmountWithTax: 1800.00 USD
+
+Previous Receipt Hash (from receipt #0020):
+5mvZwIR/C3GhlPPNuXQBqsVT4dVuVQq77dQ1uAsnVOo=
+
+CONCATENATED SIGNATURE STRING:
+30199FISCALINVOICEUSD3552026-01-06T17:01:34180000B5.0085711800005mvZwIR/C3GhlPPNuXQBqsVT4dVuVQq77dQ1uAsnVOo=
+
+Breakdown:
+1. deviceID: 30199
+2. receiptType: FISCALINVOICE
+3. receiptCurrency: USD
+4. receiptGlobalNo: 355
+5. receiptDate: 2026-01-06T17:01:34
+6. receiptTotal: 180000 (1800.00 USD * 100 cents)
+7. receiptTaxes: B5.008571180000
+   - taxCode: "B"
+   - taxPercent: "5.00"
+   - taxAmount: 8571 (85.71 USD * 100 cents)
+   - salesAmountWithTax: 180000 (1800.00 USD * 100 cents)
+8. previousReceiptHash: 5mvZwIR/C3GhlPPNuXQBqsVT4dVuVQq77dQ1uAsnVOo=
+
+=============================================================================
+RECEIPT #0022 (SUCCESS - Multiple Taxes Including 5% Non-VAT Withholding Tax)
+=============================================================================
+Receipt Details:
+- Receipt #: 1-260106-0022
+- Receipt Global No: 356
+- Receipt Counter: 3
+- Date: 2026-01-06T17:04:12
+- Total: $3,073.00 USD
+- Status: ✓ Successfully fiscalized (receiptID: 10599542)
+
+Tax Breakdown (sorted by taxID ascending):
+1. taxID=1, taxCode="E" (Exempt), taxPercent=0, taxAmount=0, salesAmountWithTax=1200.00 USD
+2. taxID=2, taxCode="C" (Zero-rated), taxPercent=0, taxAmount=0, salesAmountWithTax=1800.00 USD
+3. taxID=514, taxCode="B" (5% Non-VAT Withholding), taxPercent=5, taxAmount=0.38 USD, salesAmountWithTax=8.00 USD
+4. taxID=517, taxCode="A" (Standard VAT), taxPercent=15.5, taxAmount=8.72 USD, salesAmountWithTax=65.00 USD
+
+Previous Receipt Hash (from receipt #0021):
+f9nBLlrFTHIPAY+HZ5eicTuzKOFgz1Xvaea1rPV14YI=
+
+CONCATENATED SIGNATURE STRING:
+30199FISCALINVOICEUSD3562026-01-06T17:04:12307300E012000C0.00180000B5.00386500A15.5087265000f9nBLlrFTHIPAY+HZ5eicTuzKOFgz1Xvaea1rPV14YI=
+
+Breakdown:
+1. deviceID: 30199
+2. receiptType: FISCALINVOICE
+3. receiptCurrency: USD
+4. receiptGlobalNo: 356
+5. receiptDate: 2026-01-06T17:04:12
+6. receiptTotal: 307300 (3073.00 USD * 100 cents)
+7. receiptTaxes: E012000C0.00180000B5.00386500A15.5087265000
+   - Tax 1 (taxID=1, Exempt): E012000
+     * taxCode: "E"
+     * taxPercent: "" (empty - exempt taxes don't include taxPercent)
+     * taxAmount: 0 (0 USD * 100 cents)
+     * salesAmountWithTax: 120000 (1200.00 USD * 100 cents)
+   
+   - Tax 2 (taxID=2, Zero-rated): C0.00180000
+     * taxCode: "C"
+     * taxPercent: "0.00"
+     * taxAmount: 0 (0 USD * 100 cents)
+     * salesAmountWithTax: 180000 (1800.00 USD * 100 cents)
+   
+   - Tax 3 (taxID=514, 5% Non-VAT Withholding): B5.00386500
+     * taxCode: "B"
+     * taxPercent: "5.00"
+     * taxAmount: 38 (0.38 USD * 100 cents)
+     * salesAmountWithTax: 800 (8.00 USD * 100 cents)
+   
+   - Tax 4 (taxID=517, Standard VAT): A15.5087265000
+     * taxCode: "A"
+     * taxPercent: "15.50"
+     * taxAmount: 872 (8.72 USD * 100 cents)
+     * salesAmountWithTax: 6500 (65.00 USD * 100 cents)
+
+8. previousReceiptHash: f9nBLlrFTHIPAY+HZ5eicTuzKOFgz1Xvaea1rPV14YI=
+
+=============================================================================
+SUMMARY FOR ZIMRA
+=============================================================================
+
+ALL RECEIPTS SUCCESSFULLY FISCALIZED:
+✓ Receipt #0020: Single 5% Non-VAT Withholding Tax - SUCCESS
+✓ Receipt #0021: Single 5% Non-VAT Withholding Tax - SUCCESS
+✓ Receipt #0022: Multiple taxes (Exempt, Zero-rated, 5% Non-VAT, Standard VAT) - SUCCESS
+
+KEY FINDINGS:
+1. All receipts with 5% Non-VAT Withholding Tax are being successfully fiscalized
+2. Receipts with multiple tax types (including 5% tax) are working correctly
+3. Signature strings are being generated according to ZIMRA Section 13.2.1 format
+4. Receipt chaining is working correctly (previousReceiptHash included for subsequent receipts)
+
+CURRENT IMPLEMENTATION:
+- taxCode for 5% tax (taxID=514) is currently "B" in production
+- All receipts are being accepted by ZIMRA with this implementation
+- Code has been updated to use empty taxCode ('') per Python library documentation, but production still shows "B" and receipts are working
+
+CONCATENATED STRING FORMAT (ZIMRA Section 13.2.1):
+deviceID || receiptType || receiptCurrency || receiptGlobalNo || receiptDate || receiptTotal || receiptTaxes || previousReceiptHash
+
+receiptTaxes format (sorted by taxID, then taxCode):
+taxCode || taxPercent (2 decimals) || taxAmount (cents) || salesAmountWithTax (cents)
+
+For 5% Non-VAT Withholding Tax (taxID=514):
+Current: B5.00[amount][salesAmount]
+Expected (per docs): 5.00[amount][salesAmount] (empty taxCode)
+
+=============================================================================
+

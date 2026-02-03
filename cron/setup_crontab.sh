@@ -25,6 +25,9 @@ cat >> /tmp/crontab_new.txt <<EOF
 
 # Low Stock Notifications - Daily at 8:30 AM
 30 8 * * * cd $CRON_DIR/.. && $PHP_BIN cron/low_stock_notifications.php >> /var/log/electrox_cron_lowstock.log 2>&1
+
+# Laybye Payment Reminders - Monthly on the 1st at 9:00 AM
+0 9 1 * * cd $CRON_DIR/.. && $PHP_BIN cron/laybye_payment_reminders.php >> /var/log/electrox_cron_laybye.log 2>&1
 EOF
 
 # Install new crontab

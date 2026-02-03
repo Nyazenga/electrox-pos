@@ -66,12 +66,9 @@ if ($initialBranchId) {
                              [':branch_id' => $initialBranchId]);
     if ($allProducts === false) $allProducts = [];
     
-    // Filter out unique products (products with serial_number or imei)
-    foreach ($allProducts as $product) {
-        if (!productHasSerialOrImei($product, $db)) {
-            $products[] = $product;
-        }
-    }
+    // Include all products - products requiring specific list can now be added via GRN
+    // They will need to provide specific instance details
+    $products = $allProducts;
 }
 
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
@@ -228,8 +225,8 @@ require_once APP_PATH . '/includes/header.php';
                             <i class="bi bi-plus-circle"></i> Create New Product
                         </a>
                     </div>
-                    <div class="alert alert-info mb-3" style="font-size: 0.875rem;">
-                        <i class="bi bi-info-circle"></i> <strong>Note:</strong> Unique products (with serial numbers or IMEI) cannot be added via GRN. They must be added individually via Products management.
+                    <div class="alert alert-info mb-3" style="font-size: 0.875rem; display: none;" id="specificListInfo">
+                        <i class="bi bi-info-circle"></i> <strong>Note:</strong> This product requires individual instance tracking. You'll need to provide details (color, storage, serial number, IMEI, etc.) for each item.
                     </div>
                     <div class="position-relative">
                         <input type="text" class="form-control" id="product_search" placeholder="Type to search products..." autocomplete="off">
@@ -246,7 +243,10 @@ require_once APP_PATH . '/includes/header.php';
                                data-id="<?= $product['id'] ?>"
                                data-name="<?= escapeHtml($productDisplayName) ?>"
                                data-cost="<?= $product['cost_price'] ?? 0 ?>"
-                               data-selling="<?= $product['selling_price'] ?? 0 ?>">
+                               data-selling="<?= $product['selling_price'] ?? 0 ?>"
+                               data-wholesale="<?= $product['wholesale_price'] ?? '' ?>"
+                               data-requires-specific="<?= (productRequiresSpecificList($product, $db) ? '1' : '0') ?>"
+                               data-category="<?= escapeHtml($product['category_name'] ?? '') ?>">
                                 <strong><?= escapeHtml($productDisplayName) ?></strong>
                                 <br>
                                 <small class="text-muted">
@@ -264,7 +264,25 @@ require_once APP_PATH . '/includes/header.php';
                 <div class="row mb-3">
                     <div class="col-md-12">
                         <label class="form-label">Quantity *</label>
-                        <input type="number" class="form-control" id="item_quantity" min="1" value="1" required>
+                        <input type="number" class="form-control" id="item_quantity" min="1" value="1" required onchange="handleQuantityChange()">
+                        <small class="text-muted" id="quantityHelp">Enter the number of items to receive</small>
+                    </div>
+                </div>
+                
+                <!-- Product Specific List Entries (for products requiring specific list) -->
+                <div id="specificListEntries" style="display: none;">
+                    <div class="alert alert-warning mb-3">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <strong>Required:</strong> Please provide details for each item below.
+                    </div>
+                    <div class="mb-2 d-flex justify-content-between align-items-center">
+                        <label class="form-label mb-0">Item Details</label>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addSpecificListEntry()">
+                            <i class="bi bi-plus-circle"></i> Add Entry
+                        </button>
+                    </div>
+                    <div id="specificListContainer" class="border rounded p-3" style="max-height: 400px; overflow-y: auto;">
+                        <!-- Entries will be added here -->
                     </div>
                 </div>
                 <div class="row mb-3">
@@ -275,6 +293,13 @@ require_once APP_PATH . '/includes/header.php';
                     <div class="col-md-6">
                         <label class="form-label">Selling Price *</label>
                         <input type="number" class="form-control" id="item_selling_price" step="0.01" min="0" required>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <label class="form-label">Wholesale Price</label>
+                        <input type="number" class="form-control" id="item_wholesale_price" step="0.01" min="0" placeholder="Optional">
+                        <small class="text-muted">Price for dealer/wholesale sales</small>
                     </div>
                 </div>
             </div>
@@ -306,20 +331,44 @@ document.addEventListener('DOMContentLoaded', function() {
             'quantity' => intval($item['quantity']),
             'cost_price' => floatval($item['cost_price']),
             'selling_price' => floatval($item['selling_price']),
+            'wholesale_price' => !empty($item['wholesale_price']) ? floatval($item['wholesale_price']) : null,
             'total' => floatval($item['cost_price']) * intval($item['quantity'])
         ];
     }, $grnItems)) ?>;
     
-    existingItems.forEach(function(item) {
-        grnItems.push({
-            id: itemCounter++,
-            product_id: item.product_id,
-            product_name: item.product_name,
-            quantity: item.quantity,
-            cost_price: item.cost_price,
-            selling_price: item.selling_price,
-            total: item.total
+    // Load requires_specific_list for existing items
+    Promise.all(existingItems.map(item => {
+        return fetch('<?= BASE_URL ?>ajax/get_product_info.php?product_id=' + item.product_id)
+            .then(r => r.json())
+            .then(data => {
+                const requiresSpecific = (data.success && data.product && (data.product.requires_specific_list == 1 || data.requires_specific_list)) ? 1 : 0;
+                return {
+                    ...item,
+                    requires_specific_list: requiresSpecific
+                };
+            })
+            .catch(() => {
+                return {
+                    ...item,
+                    requires_specific_list: 0
+                };
+            });
+    })).then(items => {
+        items.forEach(function(item) {
+            grnItems.push({
+                id: itemCounter++,
+                product_id: item.product_id,
+                product_name: item.product_name,
+                quantity: item.quantity,
+                cost_price: item.cost_price,
+                selling_price: item.selling_price,
+                wholesale_price: item.wholesale_price || null,
+                total: item.total,
+                requires_specific_list: item.requires_specific_list || 0
+            });
         });
+        renderItems();
+        updateTotal();
     });
     
     renderItems();
@@ -377,12 +426,31 @@ document.addEventListener('DOMContentLoaded', function() {
             const name = item.getAttribute('data-name');
             const cost = parseFloat(item.getAttribute('data-cost'));
             const selling = parseFloat(item.getAttribute('data-selling'));
+            const requiresSpecific = item.getAttribute('data-requires-specific') === '1';
+            const category = item.getAttribute('data-category') || '';
             
             document.getElementById('selected_product_id').value = id;
             productSearch.value = name;
             document.getElementById('item_cost_price').value = cost.toFixed(2);
             document.getElementById('item_selling_price').value = selling.toFixed(2);
+            const wholesale = item.getAttribute('data-wholesale') || '';
+            document.getElementById('item_wholesale_price').value = wholesale ? parseFloat(wholesale).toFixed(2) : '';
             productDropdown.style.display = 'none';
+            
+            // Show/hide specific list section
+            const specificListSection = document.getElementById('specificListEntries');
+            const specificListInfo = document.getElementById('specificListInfo');
+            if (requiresSpecific) {
+                specificListSection.style.display = 'block';
+                specificListInfo.style.display = 'block';
+                // Clear existing entries
+                document.getElementById('specificListContainer').innerHTML = '';
+                // Add entries based on quantity
+                handleQuantityChange();
+            } else {
+                specificListSection.style.display = 'none';
+                specificListInfo.style.display = 'none';
+            }
         }
     });
     
@@ -511,11 +579,172 @@ function addItem() {
     // Note: item_serial_numbers field removed - serial numbers not used in this form
     const itemCostPrice = document.getElementById('item_cost_price');
     const itemSellingPrice = document.getElementById('item_selling_price');
+    const itemWholesalePrice = document.getElementById('item_wholesale_price');
     if (itemCostPrice) itemCostPrice.value = '';
     if (itemSellingPrice) itemSellingPrice.value = '';
+    if (itemWholesalePrice) itemWholesalePrice.value = '';
     
     const modal = new bootstrap.Modal(document.getElementById('addItemModal'));
     modal.show();
+}
+
+let specificListEntries = [];
+
+function handleQuantityChange() {
+    const productId = document.getElementById('selected_product_id').value;
+    const quantity = parseInt(document.getElementById('item_quantity').value) || 1;
+    const requiresSpecific = document.getElementById('specificListEntries').style.display !== 'none';
+    
+    if (!requiresSpecific || !productId) {
+        return;
+    }
+    
+    // Ensure we have the right number of entries
+    while (specificListEntries.length < quantity) {
+        addSpecificListEntry();
+    }
+    while (specificListEntries.length > quantity) {
+        removeSpecificListEntry(specificListEntries.length - 1);
+    }
+}
+
+function addSpecificListEntry() {
+    const index = specificListEntries.length;
+    const entryId = 'entry_' + Date.now() + '_' + index;
+    
+    specificListEntries.push({
+        id: entryId,
+        color: '',
+        storage: '',
+        sim_configuration: '',
+        serial_number: '',
+        imei: '',
+        battery_health: '',
+        manufacturer: '',
+        warranty_months: 0,
+        warranty_terms: '',
+        condition: 'New',
+        trade_in_eligible: false
+    });
+    
+    renderSpecificListEntries();
+}
+
+function removeSpecificListEntry(index) {
+    specificListEntries.splice(index, 1);
+    renderSpecificListEntries();
+}
+
+function renderSpecificListEntries() {
+    const container = document.getElementById('specificListContainer');
+    container.innerHTML = '';
+    
+    specificListEntries.forEach((entry, index) => {
+        const entryDiv = document.createElement('div');
+        entryDiv.className = 'border rounded p-3 mb-3';
+        entryDiv.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong>Item ${index + 1}</strong>
+                <button type="button" class="btn btn-sm btn-danger" onclick="removeSpecificListEntry(${index})">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <label class="form-label small">Color</label>
+                    <input type="text" class="form-control form-control-sm" 
+                           data-index="${index}" data-field="color" 
+                           value="${entry.color || ''}" 
+                           onchange="updateSpecificEntry(${index}, 'color', this.value)">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Storage</label>
+                    <input type="text" class="form-control form-control-sm" 
+                           data-index="${index}" data-field="storage" 
+                           value="${entry.storage || ''}" 
+                           placeholder="e.g., 128GB"
+                           onchange="updateSpecificEntry(${index}, 'storage', this.value)">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">SIM Config</label>
+                    <select class="form-select form-select-sm" 
+                            data-index="${index}" data-field="sim_configuration" 
+                            onchange="updateSpecificEntry(${index}, 'sim_configuration', this.value)">
+                        <option value="">Select</option>
+                        <option value="Single SIM" ${entry.sim_configuration === 'Single SIM' ? 'selected' : ''}>Single SIM</option>
+                        <option value="Dual SIM" ${entry.sim_configuration === 'Dual SIM' ? 'selected' : ''}>Dual SIM</option>
+                        <option value="eSIM" ${entry.sim_configuration === 'eSIM' ? 'selected' : ''}>eSIM</option>
+                        <option value="Dual SIM + eSIM" ${entry.sim_configuration === 'Dual SIM + eSIM' ? 'selected' : ''}>Dual SIM + eSIM</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Serial Number *</label>
+                    <input type="text" class="form-control form-control-sm" 
+                           data-index="${index}" data-field="serial_number" 
+                           value="${entry.serial_number || ''}" 
+                           required
+                           onchange="updateSpecificEntry(${index}, 'serial_number', this.value)">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">IMEI</label>
+                    <input type="text" class="form-control form-control-sm" 
+                           data-index="${index}" data-field="imei" 
+                           value="${entry.imei || ''}" 
+                           maxlength="15"
+                           onchange="updateSpecificEntry(${index}, 'imei', this.value)">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Battery Health (%)</label>
+                    <input type="number" class="form-control form-control-sm" 
+                           data-index="${index}" data-field="battery_health" 
+                           value="${entry.battery_health || ''}" 
+                           min="0" max="100"
+                           onchange="updateSpecificEntry(${index}, 'battery_health', this.value)">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Manufacturer</label>
+                    <input type="text" class="form-control form-control-sm" 
+                           data-index="${index}" data-field="manufacturer" 
+                           value="${entry.manufacturer || ''}" 
+                           onchange="updateSpecificEntry(${index}, 'manufacturer', this.value)">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Warranty (Months)</label>
+                    <input type="number" class="form-control form-control-sm" 
+                           data-index="${index}" data-field="warranty_months" 
+                           value="${entry.warranty_months || 0}" 
+                           min="0"
+                           onchange="updateSpecificEntry(${index}, 'warranty_months', this.value)">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Condition</label>
+                    <select class="form-select form-select-sm" 
+                            data-index="${index}" data-field="condition" 
+                            onchange="updateSpecificEntry(${index}, 'condition', this.value)">
+                        <option value="New" ${entry.condition === 'New' ? 'selected' : ''}>New</option>
+                        <option value="Refurbished" ${entry.condition === 'Refurbished' ? 'selected' : ''}>Refurbished</option>
+                        <option value="Used" ${entry.condition === 'Used' ? 'selected' : ''}>Used</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Trade-in Eligible</label>
+                    <div class="form-check mt-2">
+                        <input type="checkbox" class="form-check-input" 
+                               data-index="${index}" data-field="trade_in_eligible" 
+                               ${entry.trade_in_eligible ? 'checked' : ''}
+                               onchange="updateSpecificEntry(${index}, 'trade_in_eligible', this.checked)">
+                    </div>
+                </div>
+            </div>
+        `;
+        container.appendChild(entryDiv);
+    });
+}
+
+function updateSpecificEntry(index, field, value) {
+    if (index >= 0 && index < specificListEntries.length) {
+        specificListEntries[index][field] = value;
+    }
 }
 
 function confirmAddItem() {
@@ -524,22 +753,29 @@ function confirmAddItem() {
     const quantity = parseInt(document.getElementById('item_quantity').value);
     const costPrice = parseFloat(document.getElementById('item_cost_price').value);
     const sellingPrice = parseFloat(document.getElementById('item_selling_price').value);
+    const wholesalePrice = document.getElementById('item_wholesale_price').value ? parseFloat(document.getElementById('item_wholesale_price').value) : null;
+    const requiresSpecific = document.getElementById('specificListEntries').style.display !== 'none';
     
     if (!productId || !productName || !quantity || !costPrice || !sellingPrice) {
         Swal.fire('Error', 'Please fill in all required fields', 'error');
         return;
     }
     
-    // Check if product is unique (client-side validation - server will also check)
-    // Note: Unique products should already be filtered out, but this is a safety check
-    const selectedProductItem = document.querySelector(`.product-item[data-id="${productId}"]`);
-    if (!selectedProductItem) {
-        Swal.fire({
-            icon: 'error',
-            title: 'Invalid Product',
-            html: 'This product cannot be added via GRN. Unique products (with serial numbers or IMEI) must be added individually via Products management.'
-        });
-        return;
+    // Validate specific list entries if required
+    if (requiresSpecific) {
+        if (specificListEntries.length !== quantity) {
+            Swal.fire('Error', `Please provide details for all ${quantity} items`, 'error');
+            return;
+        }
+        
+        // Validate each entry has at least serial number or IMEI
+        for (let i = 0; i < specificListEntries.length; i++) {
+            const entry = specificListEntries[i];
+            if (!entry.serial_number && !entry.imei) {
+                Swal.fire('Error', `Item ${i + 1} must have either Serial Number or IMEI`, 'error');
+                return;
+            }
+        }
     }
     
     const item = {
@@ -549,12 +785,22 @@ function confirmAddItem() {
         quantity: quantity,
         cost_price: costPrice,
         selling_price: sellingPrice,
-        total: costPrice * quantity
+        wholesale_price: wholesalePrice,
+        total: costPrice * quantity,
+        requires_specific_list: requiresSpecific,
+        specific_list_entries: requiresSpecific ? specificListEntries : []
     };
     
+    // requires_specific_list is already set from the product selection
     grnItems.push(item);
     renderItems();
     updateTotal();
+    
+    // Reset modal
+    specificListEntries = [];
+    document.getElementById('specificListContainer').innerHTML = '';
+    document.getElementById('specificListEntries').style.display = 'none';
+    document.getElementById('specificListInfo').style.display = 'none';
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('addItemModal'));
     modal.hide();
@@ -609,6 +855,11 @@ function renderItems() {
             </td>
             <td class="text-end">$${item.total.toFixed(2)}</td>
             <td>
+                ${item.requires_specific_list ? `
+                    <button type="button" class="btn btn-sm btn-info me-1" onclick="manageSpecificItemsForGRN(${index}, ${item.product_id}, '${escapeHtml(item.product_name)}')" title="Manage Specific Items">
+                        <i class="bi bi-list-ul"></i>
+                    </button>
+                ` : ''}
                 <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(${index})">
                     <i class="bi bi-trash"></i>
                 </button>
@@ -663,6 +914,12 @@ function updateItemField(index, field, value) {
 function updateTotal() {
     const total = grnItems.reduce((sum, item) => sum + item.total, 0);
     document.getElementById('total_value').textContent = '$' + total.toFixed(2);
+}
+
+function manageSpecificItemsForGRN(itemIndex, productId, productName) {
+    // Open product page in new tab to manage specific items
+    const url = '<?= BASE_URL ?>modules/products/view.php?id=' + productId;
+    window.open(url, '_blank');
 }
 
 function escapeHtml(text) {

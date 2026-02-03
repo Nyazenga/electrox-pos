@@ -49,11 +49,19 @@ if (!$product) {
     exit;
 }
 
-// CRITICAL: Unique products (with serial/IMEI) must always have qty=1
-// They cannot be changed through stock take - each is a unique item
-if (productHasSerialOrImei($product, $db)) {
-    // Force qty=1 for unique products - ignore counted stock
-    $countedStock = 1;
+// For products requiring specific list, we need to handle product_specific_list entries
+$requiresSpecificList = productRequiresSpecificList($product, $db);
+$specificListEntries = json_decode($_POST['specific_list_entries'] ?? '[]', true) ?: [];
+
+if ($requiresSpecificList) {
+    // Validate specific list entries if provided
+    if (!empty($specificListEntries) && count($specificListEntries) !== $countedStock) {
+        echo json_encode([
+            'success' => false, 
+            'message' => "For this product type, please provide details for all {$countedStock} items."
+        ]);
+        exit;
+    }
 }
 
 $allowNegativeStock = getSetting('allow_negative_stock', '0') == '1';
@@ -117,10 +125,64 @@ try {
         throw new Exception('Failed to create stock take item: ' . $primaryDb->getLastError());
     }
     
-    // Overwrite stock level
+    // Handle product_specific_list entries if required
+    if ($requiresSpecificList && !empty($specificListEntries)) {
+        foreach ($specificListEntries as $entry) {
+            $specificData = [
+                'product_id' => $productId,
+                'branch_id' => $branchId,
+                'color' => !empty($entry['color']) ? sanitizeInput($entry['color']) : null,
+                'storage' => !empty($entry['storage']) ? sanitizeInput($entry['storage']) : null,
+                'sim_configuration' => !empty($entry['sim_configuration']) ? sanitizeInput($entry['sim_configuration']) : null,
+                'serial_number' => !empty($entry['serial_number']) ? sanitizeInput($entry['serial_number']) : null,
+                'imei' => !empty($entry['imei']) ? sanitizeInput($entry['imei']) : null,
+                'battery_health' => !empty($entry['battery_health']) ? intval($entry['battery_health']) : null,
+                'manufacturer' => !empty($entry['manufacturer']) ? sanitizeInput($entry['manufacturer']) : null,
+                'warranty_months' => !empty($entry['warranty_months']) ? intval($entry['warranty_months']) : 0,
+                'warranty_terms' => !empty($entry['warranty_terms']) ? sanitizeInput($entry['warranty_terms']) : null,
+                'condition' => !empty($entry['condition']) ? sanitizeInput($entry['condition']) : 'New',
+                'trade_in_eligible' => !empty($entry['trade_in_eligible']) ? 1 : 0,
+                'status' => 'available',
+                'stock_take_item_id' => $itemId,
+                'created_by' => $userId
+            ];
+            
+            // Check for duplicate serial/IMEI
+            if (!empty($specificData['serial_number'])) {
+                $existing = $db->getRow(
+                    "SELECT id FROM product_specific_list WHERE serial_number = :serial AND branch_id = :branch_id",
+                    [':serial' => $specificData['serial_number'], ':branch_id' => $branchId]
+                );
+                if ($existing) {
+                    throw new Exception("Serial number {$specificData['serial_number']} already exists");
+                }
+            }
+            
+            if (!empty($specificData['imei'])) {
+                $existing = $db->getRow(
+                    "SELECT id FROM product_specific_list WHERE imei = :imei AND branch_id = :branch_id",
+                    [':imei' => $specificData['imei'], ':branch_id' => $branchId]
+                );
+                if ($existing) {
+                    throw new Exception("IMEI {$specificData['imei']} already exists");
+                }
+            }
+            
+            $specificId = $db->insert('product_specific_list', $specificData);
+            if (!$specificId) {
+                throw new Exception('Failed to create product specific list entry');
+            }
+        }
+        
+        // Update product quantity to match count of available entries
+        $count = getProductSpecificListCount($productId, $branchId, 'available', $db);
+        $db->update('products', ['quantity_in_stock' => $count], ['id' => $productId]);
+    } else {
+        // Normal product: Overwrite stock level
     $db->update('products', [
         'quantity_in_stock' => $countedStock
     ], ['id' => $productId]);
+    }
     
     $db->commitTransaction();
     $primaryDb->commitTransaction();

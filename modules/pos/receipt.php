@@ -21,7 +21,7 @@ if (!$id) {
 $usePDF = isset($_GET['pdf']) && $_GET['pdf'] == '1';
 
 $db = Database::getInstance();
-$sale = $db->getRow("SELECT s.*, c.first_name, c.last_name, c.email, c.phone, c.address, c.company_name, b.branch_name, b.address as branch_address, b.phone as branch_phone, u.first_name as cashier_first, u.last_name as cashier_last,
+$sale = $db->getRow("SELECT s.*, c.first_name, c.last_name, c.email, c.phone, c.address, c.company_name, c.tin, c.vat_number, c.city, b.branch_name, b.address as branch_address, b.phone as branch_phone, u.first_name as cashier_first, u.last_name as cashier_last,
                       pt.name as payment_term_name, pt.days as payment_term_days
                       FROM sales s 
                       LEFT JOIN customers c ON s.customer_id = c.id 
@@ -55,6 +55,16 @@ $items = $db->getRows("SELECT * FROM sale_items WHERE sale_id = :id", [':id' => 
 if ($items === false) {
     $items = [];
 }
+
+// Get product_specific_list entries for each sale item
+foreach ($items as &$item) {
+    $specificEntries = $db->getRows(
+        "SELECT * FROM product_specific_list WHERE sale_item_id = :sale_item_id ORDER BY id",
+        [':sale_item_id' => $item['id']]
+    );
+    $item['specific_list_entries'] = $specificEntries !== false ? $specificEntries : [];
+}
+unset($item);
 
 // Get payments - ALWAYS fetch directly from sale_payments first to ensure we get them
 $payments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $id]);
@@ -304,6 +314,39 @@ if ($usePDF) {
         $unitPrice = floatval($item['unit_price']);
         $totalPrice = floatval($item['total_price']);
         
+        // Add serial numbers and other details if available
+        if (!empty($item['specific_list_entries'])) {
+            $description .= "\n";
+            foreach ($item['specific_list_entries'] as $entry) {
+                $details = [];
+                if (!empty($entry['serial_number'])) {
+                    $details[] = "Serial: " . htmlspecialchars($entry['serial_number']);
+                }
+                if (!empty($entry['imei'])) {
+                    $details[] = "IMEI: " . htmlspecialchars($entry['imei']);
+                }
+                if (!empty($entry['color'])) {
+                    $colorValue = trim($entry['color']);
+                    // For PDF receipts, if it's a hex color, don't show the hex value
+                    // If it's a color name, show the name
+                    if (preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $colorValue)) {
+                        // It's a hex color - don't display hex value, just show "Color"
+                        // (The actual color will be visible in HTML version as a colored box)
+                        $details[] = "Color: [Color]";
+                    } else {
+                        // It's a color name - show the name
+                        $details[] = "Color: " . htmlspecialchars($colorValue);
+                    }
+                }
+                if (!empty($entry['storage'])) {
+                    $details[] = "Storage: " . htmlspecialchars($entry['storage']);
+                }
+                if (!empty($details)) {
+                    $description .= "  " . implode(" | ", $details) . "\n";
+                }
+            }
+        }
+        
         // Convert to payment currency if needed (for PDF display)
         if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
             $unitPrice = $unitPrice * $exchangeRate;
@@ -313,29 +356,25 @@ if ($usePDF) {
         $startX = $pdf->GetX();
         $startY = $pdf->GetY();
         
-        $lineHeight = 6;
+        $lineHeight = 5;
         $minHeight = 8;
         
         $pdf->SetFont('helvetica', '', 9);
         $textWidth = $pdf->GetStringWidth($description);
         $cellWidth = 100;
         
-        if ($textWidth <= $cellWidth) {
-            $actualRowHeight = $minHeight;
-            $pdf->Cell(100, $actualRowHeight, $description, 1, 0, 'L');
-        } else {
-            $testY = $pdf->GetY();
-            $pdf->MultiCell(100, $lineHeight, $description, 0, 'L', false, 0);
-            $measuredHeight = $pdf->GetY() - $testY;
-            $actualRowHeight = max($minHeight, $measuredHeight);
-            
-            $pdf->SetXY($startX, $startY);
-            $pdf->MultiCell(100, $lineHeight, $description, 1, 'L', false, 0);
-            
-            $descEndY = $pdf->GetY();
-            if ($descEndY < $startY + $actualRowHeight) {
-                $pdf->SetY($startY + $actualRowHeight);
-            }
+        // Calculate height needed for description (including serial numbers)
+        $testY = $pdf->GetY();
+        $pdf->MultiCell(100, $lineHeight, $description, 0, 'L', false, 0);
+        $measuredHeight = $pdf->GetY() - $testY;
+        $actualRowHeight = max($minHeight, $measuredHeight);
+        
+        $pdf->SetXY($startX, $startY);
+        $pdf->MultiCell(100, $lineHeight, $description, 1, 'L', false, 0);
+        
+        $descEndY = $pdf->GetY();
+        if ($descEndY < $startY + $actualRowHeight) {
+            $pdf->SetY($startY + $actualRowHeight);
         }
         
         $pdf->SetXY($startX + 100, $startY);
@@ -1113,7 +1152,7 @@ body, html {
         <div><strong>Cashier:</strong> <?= escapeHtml(($sale['cashier_first'] ?? '') . ' ' . ($sale['cashier_last'] ?? '')) ?></div>
     </div>
     
-    <?php if ($sale['first_name'] || $sale['last_name'] || $sale['company_name'] || !empty($sale['phone']) || !empty($sale['address'])): ?>
+    <?php if ($sale['first_name'] || $sale['last_name'] || $sale['company_name'] || !empty($sale['phone']) || !empty($sale['address']) || !empty($sale['email']) || !empty($sale['tin']) || !empty($sale['vat_number'])): ?>
     <div class="customer-details-section" style="margin: 12px 0; padding: 0; font-size: 11px; line-height: 1.6;">
         <div style="font-weight: bold; margin-bottom: 4px;">Customer Details:</div>
         <?php 
@@ -1124,8 +1163,22 @@ body, html {
         <?php if (!empty($sale['phone'])): ?>
             <div style="margin-bottom: 4px;"><strong>Phone:</strong> <?= escapeHtml($sale['phone']) ?></div>
         <?php endif; ?>
+        <?php if (!empty($sale['email'])): ?>
+            <div style="margin-bottom: 4px;"><strong>Email:</strong> <?= escapeHtml($sale['email']) ?></div>
+        <?php endif; ?>
         <?php if (!empty($sale['address'])): ?>
-            <div style="margin-bottom: 4px;"><strong>Address:</strong> <?= escapeHtml($sale['address']) ?></div>
+            <div style="margin-bottom: 4px;"><strong>Address:</strong> <?= escapeHtml($sale['address']) ?><?= !empty($sale['city']) ? ', ' . escapeHtml($sale['city']) : '' ?></div>
+        <?php endif; ?>
+        <?php if (!empty($sale['tin']) || !empty($sale['vat_number'])): ?>
+            <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #ddd;">
+                <div style="font-weight: bold; margin-bottom: 4px;">Tax Details:</div>
+                <?php if (!empty($sale['tin'])): ?>
+                    <div style="margin-bottom: 4px;"><strong>TIN:</strong> <?= escapeHtml($sale['tin']) ?></div>
+                <?php endif; ?>
+                <?php if (!empty($sale['vat_number'])): ?>
+                    <div style="margin-bottom: 4px;"><strong>VAT Number:</strong> <?= escapeHtml($sale['vat_number']) ?></div>
+                <?php endif; ?>
+            </div>
         <?php endif; ?>
     </div>
     <?php endif; ?>
@@ -1203,7 +1256,38 @@ body, html {
                 $totalPriceFormatted = $paymentCurrency ? formatCurrencyAmount($totalPrice, $paymentCurrencyId, $db) : formatCurrency($totalPrice);
             ?>
                 <tr>
-                    <td style="text-align: left; padding: 6px 8px; word-wrap: break-word; word-break: break-word; border-bottom: 1px solid #ddd; white-space: normal; line-height: 1.4;"><?= escapeHtml($item['product_name']) ?></td>
+                    <td style="text-align: left; padding: 6px 8px; word-wrap: break-word; word-break: break-word; border-bottom: 1px solid #ddd; white-space: normal; line-height: 1.4;">
+                        <?= escapeHtml($item['product_name']) ?>
+                        <?php if (!empty($item['specific_list_entries'])): ?>
+                            <div style="font-size: 9px; color: #666; margin-top: 4px;">
+                                <?php foreach ($item['specific_list_entries'] as $entry): ?>
+                                    <div style="margin-top: 2px;">
+                                        <strong>Serial:</strong> <?= escapeHtml($entry['serial_number'] ?? 'N/A') ?>
+                                        <?php if (!empty($entry['imei'])): ?>
+                                            | <strong>IMEI:</strong> <?= escapeHtml($entry['imei']) ?>
+                                        <?php endif; ?>
+                                        <?php if (!empty($entry['color'])): ?>
+                                            | <strong>Color:</strong> 
+                                            <?php 
+                                            $colorValue = trim($entry['color']);
+                                            if (preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $colorValue)): 
+                                                // It's a hex color - show the actual color
+                                            ?>
+                                                <span style="display: inline-block; width: 16px; height: 16px; background-color: <?= escapeHtml($colorValue) ?>; border: 1px solid #ddd; border-radius: 2px; vertical-align: middle;" title="<?= escapeHtml($colorValue) ?>"></span>
+                                            <?php else: 
+                                                // It's a color name - show the name
+                                            ?>
+                                                <?= escapeHtml($colorValue) ?>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                        <?php if (!empty($entry['storage'])): ?>
+                                            | <strong>Storage:</strong> <?= escapeHtml($entry['storage']) ?>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </td>
                     <td style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $item['quantity'] ?></td>
                     <td style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $unitPriceFormatted ?></td>
                     <td style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $totalPriceFormatted ?></td>

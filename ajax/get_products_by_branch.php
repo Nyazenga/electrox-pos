@@ -42,7 +42,8 @@ try {
                              COALESCE(p.product_name, CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, ''))) as display_name,
                              pc.name as category_name,
                              p.tax_id as product_tax_id,
-                             pc.tax_id as category_tax_id
+                             pc.tax_id as category_tax_id,
+                             COALESCE(p.requires_specific_list, 0) as requires_specific_list
                              FROM products p
                              LEFT JOIN product_categories pc ON p.category_id = pc.id
                              WHERE p.status = 'Active' AND p.branch_id = :branch_id

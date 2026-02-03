@@ -97,7 +97,15 @@ jobs:
             # Ensure critical directories have correct permissions
             if [ -d "logs" ]; then
               chmod -R 755 logs/
+              chmod -R 777 logs/*.log 2>/dev/null || true
+              # Ensure www-data/nginx can write to log files
+              chown -R www-data:www-data logs/ 2>/dev/null || chown -R nginx:nginx logs/ 2>/dev/null || true
+            else
+              mkdir -p logs
+              chmod -R 755 logs
+              chown -R www-data:www-data logs/ 2>/dev/null || chown -R nginx:nginx logs/ 2>/dev/null || true
             fi
+            echo "✓ Log directory permissions set"
             if [ -d "assets/uploads" ]; then
               chmod -R 755 assets/uploads/
             fi

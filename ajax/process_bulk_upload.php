@@ -81,12 +81,11 @@ $headers = array_map(function($h) {
 // Log headers for debugging (only if error occurs)
 error_log("BULK UPLOAD DEBUG: Headers read: " . json_encode($headers));
 
-// Expected headers
+// Expected headers (removed fields that are now in product_specific_list)
 $expectedHeaders = [
-    'Category Name', 'Branch Name', 'Product Name', 'Brand', 'Model', 'Color',
-    'Storage', 'Battery Health', 'SIM Configuration', 'Serial Number', 'IMEI',
+    'Category Name', 'Branch Name', 'Product Name', 'Brand', 'Model',
     'Batch Number', 'Expiry Date', 'Weight', 'Unit of Measure', 'Manufacturer',
-    'Barcode', 'Description', 'Specifications', 'Cost Price', 'Selling Price',
+    'Barcode', 'Description', 'Specifications', 'Cost Price', 'Selling Price', 'Wholesale Price',
     'Quantity in Stock', 'Reorder Level', 'Tax ID', 'Status'
 ];
 
@@ -218,22 +217,19 @@ while (($row = fgetcsv($handle)) !== false) {
     $productName = $getValue('Product Name');
     $brand = $getValue('Brand');
     $model = $getValue('Model');
-    $color = $getValue('Color');
-    $storage = $getValue('Storage');
-    $batteryHealth = $getValue('Battery Health');
-    $simConfig = $getValue('SIM Configuration');
-    $serialNumber = $getValue('Serial Number');
-    $imei = $getValue('IMEI');
+    // Note: color, storage, battery_health, sim_configuration, serial_number, imei
+    // are no longer in bulk upload - they go in product_specific_list via GRN/Stock Take
     $batchNumber = $getValue('Batch Number');
     $expiryDate = $getValue('Expiry Date');
     $weight = $getValue('Weight');
     $unitOfMeasure = $getValue('Unit of Measure');
-    $manufacturer = $getValue('Manufacturer');
+    $manufacturer = $getValue('Manufacturer'); // Only for General category
     $barcode = $getValue('Barcode');
     $description = $getValue('Description');
     $specifications = $getValue('Specifications');
     $costPrice = $getValue('Cost Price');
     $sellingPrice = $getValue('Selling Price');
+    $wholesalePrice = $getValue('Wholesale Price');
     $quantityInStock = $getValue('Quantity in Stock');
     $reorderLevel = $getValue('Reorder Level');
     $taxId = $getValue('Tax ID');
@@ -318,22 +314,19 @@ while (($row = fgetcsv($handle)) !== false) {
             'productName' => $productName,
             'brand' => $brand,
             'model' => $model,
-            'color' => $color,
-            'storage' => $storage,
-            'batteryHealth' => $batteryHealth,
-            'simConfig' => $simConfig,
-            'serialNumber' => $serialNumber,
-            'imei' => $imei,
+            // Note: color, storage, batteryHealth, simConfig, serialNumber, imei
+            // are no longer stored here - they go in product_specific_list
             'batchNumber' => $batchNumber,
             'expiryDate' => $expiryDate,
             'weight' => $weight,
             'unitOfMeasure' => $unitOfMeasure,
-            'manufacturer' => $manufacturer,
+            'manufacturer' => $manufacturer, // Only for General category
             'barcode' => $barcode,
             'description' => $description,
             'specifications' => $specifications,
             'costPrice' => $costPrice,
             'sellingPrice' => $sellingPrice,
+            'wholesalePrice' => $wholesalePrice,
             'quantityInStock' => $quantityInStock,
             'reorderLevel' => $reorderLevel,
             'taxId' => $taxId,
@@ -372,68 +365,46 @@ try {
                               strpos($categoryNameLower, 'food') !== false ||
                               strpos($categoryNameLower, 'consumable') !== false ||
                               strpos($categoryNameLower, 'beverage') !== false);
-        $isUniqueProduct = (strpos($categoryNameLower, 'smartphone') !== false || 
-                          strpos($categoryNameLower, 'phone') !== false || 
-                          strpos($categoryNameLower, 'laptop') !== false ||
-                          strpos($categoryNameLower, 'tablet') !== false) ||
-                          !empty($rowData['serialNumber']) || !empty($rowData['imei']);
+        // Check if product requires specific list (smartphones, laptops, tablets, gaming)
+        $requiresSpecificList = (strpos($categoryNameLower, 'smartphone') !== false || 
+                                strpos($categoryNameLower, 'phone') !== false || 
+                                strpos($categoryNameLower, 'laptop') !== false ||
+                                strpos($categoryNameLower, 'tablet') !== false ||
+                                strpos($categoryNameLower, 'gaming') !== false);
         
-        // CRITICAL: Force qty=1 and reorder_level=0 for unique products
-        $quantityInStock = $rowData['quantityInStock'];
-        $reorderLevel = $rowData['reorderLevel'];
-        if ($isUniqueProduct) {
-            $quantityInStock = 1;
-            $reorderLevel = 0;
-        }
-        
-        // Get serial number and IMEI
-        $serialNumber = !empty($rowData['serialNumber']) ? sanitizeInput($rowData['serialNumber']) : null;
-        $imei = !empty($rowData['imei']) ? sanitizeInput($rowData['imei']) : null;
-        
-        // Validate for duplicate serial numbers
-        if (!empty($serialNumber)) {
-            $existingSerial = $db->getRow("SELECT id, product_code FROM products WHERE serial_number = :serial_number", [':serial_number' => $serialNumber]);
-            if ($existingSerial) {
-                throw new Exception('Row ' . $rowData['row'] . ': Serial Number "' . $serialNumber . '" already exists in the database (Product Code: ' . $existingSerial['product_code'] . '). Cannot create duplicate.');
-            }
-        }
-        
-        // Validate for duplicate IMEI
-        if (!empty($imei)) {
-            $existingImei = $db->getRow("SELECT id, product_code FROM products WHERE imei = :imei", [':imei' => $imei]);
-            if ($existingImei) {
-                throw new Exception('Row ' . $rowData['row'] . ': IMEI "' . $imei . '" already exists in the database (Product Code: ' . $existingImei['product_code'] . '). Cannot create duplicate.');
-            }
-        }
+        // Products requiring specific list can have normal quantities
+        // Individual instances will be added via GRN, stock take, or bulk upload
+        $quantityInStock = intval($rowData['quantityInStock'] ?? 0);
+        $reorderLevel = intval($rowData['reorderLevel'] ?? 0);
         
         // Prepare product data
+        // Note: color, storage, sim_configuration, serial_number, imei, battery_health, 
+        // warranty_months, warranty_terms, condition are no longer stored at product level 
+        // for specific products - they go in product_specific_list
+        // Manufacturer is only used for General category products
         $productData = [
             'product_code' => generateProductCode(),
             'category_id' => $category['id'],
             'product_name' => $isGeneralCategory ? sanitizeInput($rowData['productName']) : null,
             'brand' => $isGeneralCategory ? null : sanitizeInput($rowData['brand']),
             'model' => $isGeneralCategory ? null : sanitizeInput($rowData['model']),
-            'color' => sanitizeInput($rowData['color']),
-            'storage' => sanitizeInput($rowData['storage']),
-            'sim_configuration' => sanitizeInput($rowData['simConfig']),
-            'serial_number' => $serialNumber,
-            'imei' => $imei,
             'batch_number' => sanitizeInput($rowData['batchNumber']),
             'expiry_date' => !empty($rowData['expiryDate']) ? date('Y-m-d', strtotime($rowData['expiryDate'])) : null,
             'weight' => !empty($rowData['weight']) && is_numeric($rowData['weight']) ? floatval($rowData['weight']) : null,
             'unit_of_measure' => sanitizeInput($rowData['unitOfMeasure']),
-            'manufacturer' => sanitizeInput($rowData['manufacturer']),
+            'manufacturer' => $isGeneralCategory && !empty($rowData['manufacturer']) ? sanitizeInput($rowData['manufacturer']) : null,
             'barcode' => sanitizeInput($rowData['barcode']),
             'description' => sanitizeInput($rowData['description']),
             'specifications' => sanitizeInput($rowData['specifications']),
             'cost_price' => floatval($rowData['costPrice']),
             'selling_price' => floatval($rowData['sellingPrice']),
-            'quantity_in_stock' => intval($quantityInStock),
-            'reorder_level' => intval($reorderLevel),
+            'wholesale_price' => !empty($rowData['wholesalePrice']) && is_numeric($rowData['wholesalePrice']) ? floatval($rowData['wholesalePrice']) : null,
+            'quantity_in_stock' => $quantityInStock,
+            'reorder_level' => $reorderLevel,
             'branch_id' => $branch['id'],
             'tax_id' => !empty($rowData['taxId']) && is_numeric($rowData['taxId']) && isset($taxMap[$rowData['taxId']]) ? intval($rowData['taxId']) : null,
             'status' => !empty($rowData['status']) && strtolower($rowData['status']) === 'inactive' ? 'Inactive' : 'Active',
-            'battery_health' => !empty($rowData['batteryHealth']) && is_numeric($rowData['batteryHealth']) ? intval($rowData['batteryHealth']) : null,
+            'requires_specific_list' => $requiresSpecificList ? 1 : 0,
             'created_by' => $userId,
             'source' => 'bulk_upload',
             'created_at' => date('Y-m-d H:i:s')
@@ -453,7 +424,7 @@ try {
             'product' => $rowData['productName'] ?: ($rowData['brand'] . ' ' . $rowData['model']),
             'category' => $category['name'],
             'branch' => $branch['branch_name'],
-            'is_unique' => $isUniqueProduct,
+            'requires_specific_list' => $requiresSpecificList,
             'quantity' => $productData['quantity_in_stock'],
             'reorder_level' => $productData['reorder_level']
         ];

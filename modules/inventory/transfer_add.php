@@ -340,6 +340,7 @@ function loadProductsForBranch(branchId) {
                     item.setAttribute('data-name', product.display_name);
                     item.setAttribute('data-stock', product.quantity_in_stock);
                     item.setAttribute('data-is-unique', product.is_unique || 0);
+                    item.setAttribute('data-requires-specific-list', product.requires_specific_list || 0);
                     item.innerHTML = `
                         <strong>${escapeHtml(product.display_name)}</strong>
                         <br>
@@ -384,22 +385,12 @@ function confirmAddItem() {
     const quantity = parseInt(document.getElementById('item_quantity').value);
     const availableStock = parseInt(document.getElementById('item_quantity').max);
     
-    // Get is_unique flag from selected product
+    // Get flags from selected product
     const selectedProductItem = document.querySelector(`#product_dropdown .product-item[data-id="${productId}"]`);
-    const isUnique = selectedProductItem ? (selectedProductItem.getAttribute('data-is-unique') === '1') : false;
+    const requiresSpecificList = selectedProductItem ? (selectedProductItem.getAttribute('data-requires-specific-list') === '1') : false;
     
     if (!productId || !productName || !quantity || quantity <= 0) {
         Swal.fire('Error', 'Please fill in all required fields', 'error');
-        return;
-    }
-    
-    // Validate unique products can only have quantity = 1
-    if (isUnique && quantity > 1) {
-        Swal.fire({
-            icon: 'error',
-            title: 'Invalid Quantity',
-            html: 'Unique products (with serial/IMEI) can only have a quantity of 1.'
-        });
         return;
     }
     
@@ -414,13 +405,24 @@ function confirmAddItem() {
         return;
     }
     
+    // If product requires specific list, show selection modal
+    if (requiresSpecificList) {
+        showSpecificListSelectionModalForTransfer(productId, productName, quantity, availableStock);
+    } else {
+        // Normal product - add directly
+        addTransferItemDirect(productId, productName, quantity, availableStock, false, []);
+    }
+}
+
+function addTransferItemDirect(productId, productName, quantity, availableStock, requiresSpecificList, specificListEntries) {
     const item = {
         id: itemCounter++,
         product_id: productId,
         product_name: productName,
         quantity: quantity,
         available_stock: availableStock,
-        is_unique: isUnique
+        requires_specific_list: requiresSpecificList,
+        specific_list_entries: specificListEntries || []
     };
     
     transferItems.push(item);
@@ -429,6 +431,236 @@ function confirmAddItem() {
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('addItemModal'));
     modal.hide();
+}
+
+function showSpecificListSelectionModalForTransfer(productId, productName, quantity, availableStock, existingIndex = null) {
+    const fromBranchId = document.getElementById('from_branch_id').value;
+    if (!fromBranchId) {
+        Swal.fire('Error', 'Please select a from branch first', 'error');
+        return;
+    }
+    
+    // Fetch available specific list items for this product
+    fetch('<?= BASE_URL ?>ajax/get_product_specific_list.php?product_id=' + productId + '&status=available&branch_id=' + fromBranchId)
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success || !data.entries || data.entries.length === 0) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'No Available Items',
+                    html: `No available items for this product. Please add product specific list entries first.<br><br>
+                           <a href="<?= BASE_URL ?>modules/products/view.php?id=${productId}" target="_blank" 
+                              style="display: inline-block; padding: 8px 16px; background-color: #0d6efd; color: white; text-decoration: none; border-radius: 4px; margin-top: 10px;">
+                               <i class="bi bi-box-arrow-up-right"></i> Go to Product Page
+                           </a>`,
+                    confirmButtonText: 'OK',
+                    showCancelButton: false
+                });
+                return;
+            }
+            
+            const entries = data.entries;
+            
+            // Warn if stock mismatch but still allow selection
+            if (entries.length !== availableStock) {
+                console.warn(`Stock mismatch: Product quantity (${availableStock}) does not match available items (${entries.length})`);
+            }
+            
+            // Show selection modal
+            let modalHtml = `
+                <div class="mb-3">
+                    <h5>${escapeHtml(productName)}</h5>
+                    <p class="text-muted">Select items to transfer (${entries.length} available)</p>
+                </div>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th width="30"><input type="checkbox" id="selectAllTransfer" onchange="toggleSelectAllTransferItems()"></th>
+                                <th>Serial</th>
+                                <th>Color</th>
+                                <th>Storage</th>
+                                <th>IMEI</th>
+                            </tr>
+                        </thead>
+                        <tbody id="specificListTableBodyTransfer">
+            `;
+            
+            entries.forEach((entry, index) => {
+                modalHtml += `
+                    <tr>
+                        <td><input type="checkbox" class="specific-item-checkbox-transfer" value="${entry.id}" data-entry='${JSON.stringify(entry)}'></td>
+                        <td>${escapeHtml(entry.serial_number || 'N/A')}</td>
+                        <td>${escapeHtml(entry.color || 'N/A')}</td>
+                        <td>${escapeHtml(entry.storage || 'N/A')}</td>
+                        <td>${escapeHtml(entry.imei || 'N/A')}</td>
+                    </tr>
+                `;
+            });
+            
+            modalHtml += `
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-3">
+                    <label>Selected: <span id="selectedCountTransfer">0</span> / ${entries.length}</label>
+                    <input type="number" class="form-control" id="specificQuantityTransfer" min="0" max="${entries.length}" value="${quantity}" onchange="handleSpecificQuantityChangeTransfer()">
+                    <small class="text-muted">Enter quantity or select items manually using checkboxes</small>
+                </div>
+            `;
+            
+            Swal.fire({
+                title: 'Select Items to Transfer',
+                html: modalHtml,
+                showCancelButton: true,
+                confirmButtonText: 'Add to Transfer',
+                cancelButtonText: 'Cancel',
+                width: '800px',
+                didOpen: () => {
+                    // Add event listeners to checkboxes
+                    document.querySelectorAll('.specific-item-checkbox-transfer').forEach(cb => {
+                        cb.addEventListener('change', function() {
+                            // Manual checkbox change - don't auto-sync with quantity
+                            isUpdatingFromQuantityTransfer = false;
+                            updateSpecificSelectionTransfer();
+                            
+                            // Update quantity input to match selected count
+                            const selected = document.querySelectorAll('.specific-item-checkbox-transfer:checked').length;
+                            const quantityInput = document.getElementById('specificQuantityTransfer');
+                            if (quantityInput) {
+                                quantityInput.value = selected;
+                            }
+                        });
+                    });
+                    
+                    // Initialize - select first item by default if quantity is 1
+                    const checkboxes = document.querySelectorAll('.specific-item-checkbox-transfer');
+                    if (checkboxes.length > 0 && quantity === 1) {
+                        checkboxes[0].checked = true;
+                    }
+                    updateSpecificSelectionTransfer();
+                },
+                preConfirm: () => {
+                    const selected = Array.from(document.querySelectorAll('.specific-item-checkbox-transfer:checked'))
+                        .map(cb => {
+                            try {
+                                return JSON.parse(cb.dataset.entry);
+                            } catch (e) {
+                                console.error('Error parsing entry data:', e, cb.dataset.entry);
+                                return null;
+                            }
+                        })
+                        .filter(entry => entry !== null);
+                    
+                    const qty = parseInt(document.getElementById('specificQuantityTransfer').value) || 0;
+                    
+                    if (selected.length === 0) {
+                        Swal.showValidationMessage('Please select at least one item');
+                        return false;
+                    }
+                    
+                    if (selected.length !== qty) {
+                        Swal.showValidationMessage(`Please select exactly ${qty} item(s). Currently selected: ${selected.length}`);
+                        return false;
+                    }
+                    
+                    return {selected, quantity: selected.length};
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    const {selected, quantity: qty} = result.value;
+                    if (existingIndex !== null && existingIndex >= 0) {
+                        // Update existing item
+                        const item = transferItems[existingIndex];
+                        item.quantity = qty;
+                        item.specific_list_entries = selected;
+                        renderItems();
+                        updateTotal();
+                    } else {
+                        // Add new item to transfer with specific list entries
+                        addTransferItemDirect(productId, productName, qty, availableStock, true, selected);
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error loading specific list:', error);
+            Swal.fire('Error', 'Failed to load product details', 'error');
+        });
+}
+
+// Track if we're updating from quantity change (to avoid conflicts)
+let isUpdatingFromQuantityTransfer = false;
+
+function toggleSelectAllTransferItems() {
+    const selectAll = document.getElementById('selectAllTransfer');
+    const checkboxes = document.querySelectorAll('.specific-item-checkbox-transfer');
+    const isChecked = selectAll.checked;
+    
+    checkboxes.forEach(cb => {
+        cb.checked = isChecked;
+    });
+    
+    // Update quantity to match selected count
+    const selectedCount = isChecked ? checkboxes.length : 0;
+    const quantityInput = document.getElementById('specificQuantityTransfer');
+    if (quantityInput) {
+        quantityInput.value = selectedCount;
+    }
+    
+    updateSpecificSelectionTransfer();
+}
+
+function updateSpecificSelectionTransfer() {
+    const checkboxes = Array.from(document.querySelectorAll('.specific-item-checkbox-transfer'));
+    const selected = checkboxes.filter(cb => cb.checked).length;
+    const quantityInput = document.getElementById('specificQuantityTransfer');
+    const selectedCountSpan = document.getElementById('selectedCountTransfer');
+    
+    if (selectedCountSpan) {
+        selectedCountSpan.textContent = selected;
+    }
+    
+    // Update select all checkbox state
+    const selectAll = document.getElementById('selectAllTransfer');
+    if (selectAll) {
+        selectAll.checked = selected > 0 && selected === checkboxes.length;
+        selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+    }
+    
+    // If quantity was changed (not manual checkbox click), sync checkboxes to quantity
+    if (isUpdatingFromQuantityTransfer && quantityInput) {
+        const quantity = parseInt(quantityInput.value) || 0;
+        
+        if (quantity === 0) {
+            // Deselect all
+            checkboxes.forEach(cb => cb.checked = false);
+            if (selectAll) selectAll.checked = false;
+        } else if (quantity > 0 && quantity <= checkboxes.length) {
+            // Select first N items
+            checkboxes.forEach((cb, index) => {
+                cb.checked = index < quantity;
+            });
+            if (selectAll) {
+                selectAll.checked = quantity === checkboxes.length;
+                selectAll.indeterminate = false;
+            }
+        }
+        
+        // Update selected count after sync
+        const newSelected = checkboxes.filter(cb => cb.checked).length;
+        if (selectedCountSpan) {
+            selectedCountSpan.textContent = newSelected;
+        }
+        
+        isUpdatingFromQuantityTransfer = false;
+    }
+}
+
+// Separate function for quantity change
+function handleSpecificQuantityChangeTransfer() {
+    isUpdatingFromQuantityTransfer = true;
+    updateSpecificSelectionTransfer();
 }
 
 function removeItem(index) {
@@ -449,8 +681,12 @@ function renderItems() {
     transferItems.forEach((item, index) => {
         const row = document.createElement('tr');
         row.setAttribute('data-item-index', index);
+        const hasSpecificList = item.requires_specific_list && item.specific_list_entries && item.specific_list_entries.length > 0;
         row.innerHTML = `
-            <td>${escapeHtml(item.product_name)}</td>
+            <td>
+                ${escapeHtml(item.product_name)}
+                ${hasSpecificList ? `<br><small class="text-muted">${item.specific_list_entries.length} specific item(s) selected</small>` : ''}
+            </td>
             <td>${item.available_stock}</td>
             <td>
                 <input type="number" 
@@ -460,8 +696,10 @@ function renderItems() {
                        max="${item.available_stock}"
                        step="1"
                        onchange="updateItemField(${index}, 'quantity', this.value)"
-                       ${item.is_unique ? 'max="1" readonly title="Unique products cannot have quantity changed - must be 1"' : ''}
                        style="width: 80px;">
+                ${item.requires_specific_list ? `<br><button type="button" class="btn btn-sm btn-outline-primary mt-1" onclick="manageSpecificItems(${index})" title="Manage Specific Items">
+                    <i class="bi bi-list-ul"></i> Manage Items
+                </button>` : ''}
             </td>
             <td>
                 <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(${index})">
@@ -520,6 +758,11 @@ function updateItemField(index, field, value) {
             return;
         }
         
+        // If product requires specific list, update the selection
+        if (item.requires_specific_list) {
+            // Reopen selection modal to adjust quantity
+            showSpecificListSelectionModalForTransfer(item.product_id, item.product_name, newQuantity, item.available_stock, index);
+        } else {
         item.quantity = newQuantity;
         
         // Update the input field value to match parsed value
@@ -528,11 +771,12 @@ function updateItemField(index, field, value) {
         if (row) {
             const quantityInput = row.querySelector('td:nth-child(3) input');
             if (quantityInput) quantityInput.value = item.quantity;
-        }
     }
     
     // Update total
     updateTotal();
+        }
+    }
 }
 
 function updateTotal() {

@@ -11,11 +11,12 @@ $auth->requirePermission('products.stock_take_reports');
 
 $pageTitle = 'Stock Take Reports';
 
+$db = Database::getInstance();
+$primaryDb = Database::getPrimaryInstance();
+
 // Get base currency for displaying amounts
 $baseCurrency = getBaseCurrency($db);
 $currencyCode = $baseCurrency['code'] ?? 'USD';
-
-$db = Database::getInstance();
 $primaryDb = Database::getPrimaryInstance();
 $branchId = $_SESSION['branch_id'] ?? null;
 $userId = $_SESSION['user_id'] ?? null;

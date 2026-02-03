@@ -730,19 +730,10 @@ function populateBulkUploadModal(data) {
             fields.push('Brand (required)');
             fields.push('Model (required)');
             
+            // Note: Color, Storage, Serial Number, IMEI, Battery Health, SIM Configuration
+            // are no longer in bulk upload - they go in product_specific_list via GRN/Stock Take
             if (isUnique) {
-                fields.push('Serial Number (required for unique products)');
-                if (cat.name.toLowerCase().includes('smartphone') || cat.name.toLowerCase().includes('phone')) {
-                    fields.push('IMEI (required for smartphones)');
-                    fields.push('Storage (e.g., 128GB, 256GB)');
-                    fields.push('Battery Health (0-100)');
-                    fields.push('SIM Configuration (e.g., Dual SIM)');
-                } else if (cat.name.toLowerCase().includes('laptop')) {
-                    fields.push('Storage (e.g., 512GB SSD)');
-                } else if (cat.name.toLowerCase().includes('tablet')) {
-                    fields.push('Storage');
-                    fields.push('Battery Health');
-                }
+                fields.push('Individual instance details (color, storage, serial number, IMEI, etc.) should be added via GRN or Stock Take after product creation');
             }
         }
         
@@ -751,7 +742,7 @@ function populateBulkUploadModal(data) {
                 <div class="card border-primary">
                     <div class="card-header bg-primary text-white">
                         <strong>${escapeHtml(cat.name)}</strong>
-                        ${isUnique ? '<span class="badge bg-warning ms-2">Unique Product</span>' : ''}
+                        ${isUnique ? '<span class="badge bg-info ms-2">Requires Specific Details</span>' : ''}
                         ${isGeneral ? '<span class="badge bg-info ms-2">General Category</span>' : ''}
                     </div>
                     <div class="card-body">
@@ -759,7 +750,7 @@ function populateBulkUploadModal(data) {
                         <ul class="mb-0 small">
                             ${fields.map(f => `<li>${escapeHtml(f)}</li>`).join('')}
                         </ul>
-                        ${isUnique ? '<div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 3px; padding: 8px; margin-top: 10px; font-size: 0.875em; color: #856404;"><strong>Note:</strong> Quantity will be forced to 1 and Reorder Level to 0 for unique products.</div>' : ''}
+                        ${isUnique ? '<div style="background: #d1ecf1; border: 1px solid #0dcaf0; border-radius: 3px; padding: 8px; margin-top: 10px; font-size: 0.875em; color: #055160;"><strong>Note:</strong> This product type requires individual instance details (color, storage, serial number, IMEI, etc.) which should be added via GRN or Stock Take after product creation.</div>' : ''}
                     </div>
                 </div>
             </div>
@@ -931,7 +922,7 @@ function handleBulkUpload() {
                     <ul style="margin-bottom: 0; padding-left: 20px; color: #856404;">
                         <li style="margin-bottom: 8px;"><strong>Category Names:</strong> Must match exactly (case-sensitive). Available categories are listed below.</li>
                         <li style="margin-bottom: 8px;"><strong>Branch Names:</strong> Must match exactly (case-sensitive). Available branches: <span id="branchesList">Loading...</span></li>
-                        <li style="margin-bottom: 8px;"><strong>Unique Products:</strong> Smartphones, Laptops, and Tablets will automatically have Quantity = 1 and Reorder Level = 0, regardless of what you enter.</li>
+                        <li style="margin-bottom: 8px;"><strong>Products Requiring Specific Details:</strong> Smartphones, Laptops, Tablets, and Gaming devices require individual instance details (color, storage, serial number, IMEI, etc.). These details should be added via GRN or Stock Take after product creation.</li>
                         <li style="margin-bottom: 8px;"><strong>General Category:</strong> Requires "Product Name" field. Leave Brand and Model empty.</li>
                         <li style="margin-bottom: 8px;"><strong>Other Categories:</strong> Require "Brand" and "Model" fields. Leave Product Name empty.</li>
                         <li style="margin-bottom: 8px;"><strong>Tax ID:</strong> Optional. Available tax IDs: <span id="taxesList">Loading...</span></li>
@@ -991,24 +982,44 @@ function handleBulkUpload() {
                                         <td>Required for non-General categories, leave empty for General</td>
                                     </tr>
                                     <tr>
-                                        <td><strong>Color</strong></td>
+                                        <td><strong>Batch Number</strong></td>
                                         <td><span class="badge bg-secondary">Optional</span></td>
-                                        <td>Color name or hex code (e.g., #FF0000)</td>
+                                        <td>For General category products with batch tracking</td>
                                     </tr>
                                     <tr>
-                                        <td><strong>Storage</strong></td>
+                                        <td><strong>Expiry Date</strong></td>
                                         <td><span class="badge bg-secondary">Optional</span></td>
-                                        <td>For smartphones/laptops/tablets (e.g., "128GB", "512GB SSD")</td>
+                                        <td>For General category (YYYY-MM-DD format)</td>
                                     </tr>
                                     <tr>
-                                        <td><strong>Serial Number</strong></td>
-                                        <td><span class="badge bg-warning">Conditional</span></td>
-                                        <td>Required for unique products (smartphones/laptops/tablets)</td>
+                                        <td><strong>Weight</strong></td>
+                                        <td><span class="badge bg-secondary">Optional</span></td>
+                                        <td>For General category (numeric, e.g., 2.5)</td>
                                     </tr>
                                     <tr>
-                                        <td><strong>IMEI</strong></td>
-                                        <td><span class="badge bg-warning">Conditional</span></td>
-                                        <td>Required for smartphones</td>
+                                        <td><strong>Unit of Measure</strong></td>
+                                        <td><span class="badge bg-secondary">Optional</span></td>
+                                        <td>For General category (e.g., "kg", "g", "L", "ml")</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Manufacturer</strong></td>
+                                        <td><span class="badge bg-secondary">Optional</span></td>
+                                        <td>For General category only</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Barcode</strong></td>
+                                        <td><span class="badge bg-secondary">Optional</span></td>
+                                        <td>Product barcode</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Description</strong></td>
+                                        <td><span class="badge bg-secondary">Optional</span></td>
+                                        <td>Product description</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Specifications</strong></td>
+                                        <td><span class="badge bg-secondary">Optional</span></td>
+                                        <td>Detailed specifications</td>
                                     </tr>
                                     <tr>
                                         <td><strong>Cost Price</strong></td>
@@ -1023,12 +1034,12 @@ function handleBulkUpload() {
                                     <tr>
                                         <td><strong>Quantity in Stock</strong></td>
                                         <td><span class="badge bg-danger">Yes</span></td>
-                                        <td>Numeric value (will be forced to 1 for unique products)</td>
+                                        <td>Numeric value (normal quantity - specific instances added via GRN/Stock Take)</td>
                                     </tr>
                                     <tr>
                                         <td><strong>Reorder Level</strong></td>
                                         <td><span class="badge bg-danger">Yes</span></td>
-                                        <td>Numeric value (will be forced to 0 for unique products)</td>
+                                        <td>Numeric value (normal reorder level)</td>
                                     </tr>
                                     <tr>
                                         <td><strong>Status</strong></td>

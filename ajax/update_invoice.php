@@ -92,7 +92,9 @@ try {
         'invoice_date' => $input['invoice_date'] ?? date('Y-m-d H:i:s'),
         'due_date' => $dueDate,
         'notes' => $input['notes'] ?? null,
-        'terms' => $input['terms'] ?? null
+        'terms' => $input['terms'] ?? null,
+        'terms_id' => isset($input['terms_id']) && $input['terms_id'] ? intval($input['terms_id']) : null,
+        'banking_details_included' => isset($input['banking_details_included']) ? intval($input['banking_details_included']) : 1
     ];
     
     // Update status based on due date if not paid
@@ -115,39 +117,79 @@ try {
     
     $db->update('invoices', $invoiceData, ['id' => $invoiceId]);
     
-    // Delete existing items
-    $db->executeQuery("DELETE FROM invoice_items WHERE invoice_id = :id", [':id' => $invoiceId]);
+    // Check if description column exists (once, outside the loop)
+    $hasDescriptionColumn = false;
+    try {
+        $columnCheck = $db->getRow("SHOW COLUMNS FROM invoice_items WHERE Field = 'description'");
+        $hasDescriptionColumn = !empty($columnCheck);
+    } catch (Exception $e) {
+        // Column check failed, assume it doesn't exist
+        $hasDescriptionColumn = false;
+    }
     
-    // Insert new items
-    if (!empty($input['items']) && is_array($input['items'])) {
-        foreach ($input['items'] as $item) {
-            $description = $item['description'] ?? '';
-            if ($item['product_id']) {
-                $product = $db->getRow("SELECT brand, model, product_name FROM products WHERE id = :id", [':id' => $item['product_id']]);
-                if ($product) {
-                    $description = $product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? ''));
-                }
-            }
-            
-            $itemData = [
-                'invoice_id' => $invoiceId,
-                'product_id' => $item['product_id'] ?: null,
-                'quantity' => $item['quantity'] ?? 1,
-                'unit_price' => $item['unit_price'] ?? 0,
-                'discount_percentage' => $item['discount_percentage'] ?? 0,
-                'discount_amount' => ($item['quantity'] * $item['unit_price']) * ($item['discount_percentage'] / 100),
-                'line_total' => $item['line_total'] ?? 0,
-                'cost_price' => 0,
-                'profit_margin' => 0
-            ];
-            
-            // Add description if column exists
+    // Delete existing items ONLY if new items are provided
+    // This prevents accidental deletion of items if update is called without items array
+    if (!empty($input['items']) && is_array($input['items']) && count($input['items']) > 0) {
+        $db->executeQuery("DELETE FROM invoice_items WHERE invoice_id = :id", [':id' => $invoiceId]);
+        
+        // Insert new items
+        $insertedCount = 0;
+        $insertErrors = [];
+        
+        foreach ($input['items'] as $index => $item) {
             try {
-                $db->insert('invoice_items', array_merge($itemData, ['description' => $description]));
+                $description = $item['description'] ?? '';
+                if (!empty($item['product_id'])) {
+                    $product = $db->getRow("SELECT brand, model, product_name FROM products WHERE id = :id", [':id' => $item['product_id']]);
+                    if ($product) {
+                        $description = $product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? ''));
+                    }
+                }
+                
+                $itemData = [
+                    'invoice_id' => $invoiceId,
+                    'product_id' => !empty($item['product_id']) ? intval($item['product_id']) : null,
+                    'quantity' => intval($item['quantity'] ?? 1),
+                    'unit_price' => floatval($item['unit_price'] ?? 0),
+                    'discount_percentage' => floatval($item['discount_percentage'] ?? 0),
+                    'discount_amount' => (intval($item['quantity'] ?? 1) * floatval($item['unit_price'] ?? 0)) * (floatval($item['discount_percentage'] ?? 0) / 100),
+                    'line_total' => floatval($item['line_total'] ?? 0),
+                    'cost_price' => 0,
+                    'profit_margin' => 0
+                ];
+                
+                // Add description if column exists
+                if ($hasDescriptionColumn && !empty($description)) {
+                    $itemData['description'] = $description;
+                }
+                
+                $insertResult = $db->insert('invoice_items', $itemData);
+                if ($insertResult) {
+                    $insertedCount++;
+                } else {
+                    $error = $db->getLastError();
+                    $insertErrors[] = "Item " . ($index + 1) . ": " . ($error ?: 'Insert failed');
+                    error_log("Failed to insert invoice item $index for invoice $invoiceId: " . ($error ?: 'Unknown error'));
+                }
             } catch (Exception $e) {
-                // If description column doesn't exist, insert without it
-                $db->insert('invoice_items', $itemData);
+                $insertErrors[] = "Item " . ($index + 1) . ": " . $e->getMessage();
+                error_log("Exception inserting invoice item $index: " . $e->getMessage());
             }
+        }
+        
+        // If no items were inserted, rollback and throw error
+        if ($insertedCount === 0) {
+            $db->rollbackTransaction();
+            $errorMsg = !empty($insertErrors) ? implode('; ', $insertErrors) : 'No items were saved. Please check the item data.';
+            ob_clean();
+            echo json_encode(['success' => false, 'message' => 'Failed to save invoice items: ' . $errorMsg]);
+            ob_end_flush();
+            exit;
+        }
+        
+        // If some items failed, log warning but continue
+        if (!empty($insertErrors)) {
+            error_log("Some invoice items failed to save for invoice $invoiceId: " . implode('; ', $insertErrors));
         }
     }
     

@@ -94,13 +94,14 @@ try {
         $quantity = intval($item['quantity'] ?? 0);
         $costPrice = floatval($item['cost_price'] ?? 0);
         $sellingPrice = floatval($item['selling_price'] ?? 0);
+        $wholesalePrice = !empty($item['wholesale_price']) ? floatval($item['wholesale_price']) : null;
         $serialNumbers = trim($item['serial_numbers'] ?? '');
         
         if ($productId <= 0 || $quantity <= 0) {
             continue;
         }
         
-        // Check if product has serial/IMEI (unique product)
+        // Check if product requires specific list
         $product = $db->getRow(
             "SELECT p.*, pc.name as category_name FROM products p 
              LEFT JOIN product_categories pc ON p.category_id = pc.id 
@@ -108,17 +109,38 @@ try {
             [':id' => $productId]
         );
         
-        // BLOCK: Unique products (with serial/IMEI) cannot be received via GRN
-        // They must be added individually via Products management where each product gets its own record
-        if ($product && productHasSerialOrImei($product, $db)) {
-            $db->rollbackTransaction();
-            ob_end_clean();
-            $productName = $product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')) ?? 'Product #' . $productId;
-            echo json_encode([
-                'success' => false, 
-                'message' => "Unique products (with serial numbers or IMEI) cannot be received via GRN. The product \"{$productName}\" has a serial number or IMEI and must be added individually via Products management."
-            ]);
-            exit;
+        if (!$product) {
+            continue;
+        }
+        
+        $requiresSpecificList = productRequiresSpecificList($product, $db);
+        $specificListEntries = $item['specific_list_entries'] ?? [];
+        
+        // Validate specific list entries if required
+        if ($requiresSpecificList) {
+            if (empty($specificListEntries) || count($specificListEntries) !== $quantity) {
+                $db->rollbackTransaction();
+                ob_end_clean();
+                $productName = $product['product_name'] ?? trim(($product['brand'] ?? '') . ' ' . ($product['model'] ?? '')) ?? 'Product #' . $productId;
+                echo json_encode([
+                    'success' => false, 
+                    'message' => "Product \"{$productName}\" requires individual instance details. Please provide details for all {$quantity} items."
+                ]);
+                exit;
+            }
+            
+            // Validate each entry has serial or IMEI
+            foreach ($specificListEntries as $entry) {
+                if (empty($entry['serial_number']) && empty($entry['imei'])) {
+                    $db->rollbackTransaction();
+                    ob_end_clean();
+                    echo json_encode([
+                        'success' => false, 
+                        'message' => 'Each item must have either Serial Number or IMEI'
+                    ]);
+                    exit;
+                }
+            }
         }
         
         // Create GRN item
@@ -140,16 +162,86 @@ try {
             exit;
         }
         
+        // Create product_specific_list entries if required
+        if ($requiresSpecificList && !empty($specificListEntries)) {
+            foreach ($specificListEntries as $entry) {
+                $specificData = [
+                    'product_id' => $productId,
+                    'branch_id' => $branchId,
+                    'color' => !empty($entry['color']) ? sanitizeInput($entry['color']) : null,
+                    'storage' => !empty($entry['storage']) ? sanitizeInput($entry['storage']) : null,
+                    'sim_configuration' => !empty($entry['sim_configuration']) ? sanitizeInput($entry['sim_configuration']) : null,
+                    'serial_number' => !empty($entry['serial_number']) ? sanitizeInput($entry['serial_number']) : null,
+                    'imei' => !empty($entry['imei']) ? sanitizeInput($entry['imei']) : null,
+                    'battery_health' => !empty($entry['battery_health']) ? intval($entry['battery_health']) : null,
+                    'manufacturer' => !empty($entry['manufacturer']) ? sanitizeInput($entry['manufacturer']) : null,
+                    'warranty_months' => !empty($entry['warranty_months']) ? intval($entry['warranty_months']) : 0,
+                    'warranty_terms' => !empty($entry['warranty_terms']) ? sanitizeInput($entry['warranty_terms']) : null,
+                    'condition' => !empty($entry['condition']) ? sanitizeInput($entry['condition']) : 'New',
+                    'trade_in_eligible' => !empty($entry['trade_in_eligible']) ? 1 : 0,
+                    'status' => 'available',
+                    'grn_item_id' => $itemId,
+                    'created_by' => $userId
+                ];
+                
+                // Check for duplicate serial/IMEI
+                if (!empty($specificData['serial_number'])) {
+                    $existing = $db->getRow(
+                        "SELECT id FROM product_specific_list WHERE serial_number = :serial AND branch_id = :branch_id",
+                        [':serial' => $specificData['serial_number'], ':branch_id' => $branchId]
+                    );
+                    if ($existing) {
+                        $db->rollbackTransaction();
+                        ob_end_clean();
+                        echo json_encode([
+                            'success' => false, 
+                            'message' => "Serial number {$specificData['serial_number']} already exists"
+                        ]);
+                        exit;
+                    }
+                }
+                
+                if (!empty($specificData['imei'])) {
+                    $existing = $db->getRow(
+                        "SELECT id FROM product_specific_list WHERE imei = :imei AND branch_id = :branch_id",
+                        [':imei' => $specificData['imei'], ':branch_id' => $branchId]
+                    );
+                    if ($existing) {
+                        $db->rollbackTransaction();
+                        ob_end_clean();
+                        echo json_encode([
+                            'success' => false, 
+                            'message' => "IMEI {$specificData['imei']} already exists"
+                        ]);
+                        exit;
+                    }
+                }
+                
+                $specificId = $db->insert('product_specific_list', $specificData);
+                if (!$specificId) {
+                    $db->rollbackTransaction();
+                    ob_end_clean();
+                    echo json_encode(['success' => false, 'message' => 'Failed to create product specific list entry']);
+                    exit;
+                }
+            }
+            
+            // Update product quantity to match count of available entries
+            $count = getProductSpecificListCount($productId, $branchId, 'available', $db);
+            $db->update('products', ['quantity_in_stock' => $count], ['id' => $productId]);
+        }
+        
         // Update product cost and selling prices
-        if ($costPrice > 0 || $sellingPrice > 0) {
+        if ($costPrice > 0 || $sellingPrice > 0 || $wholesalePrice !== null) {
             // Get current product prices for tracking
-            $currentProduct = $db->getRow("SELECT cost_price, selling_price FROM products WHERE id = :id", [':id' => $productId]);
+            $currentProduct = $db->getRow("SELECT cost_price, selling_price, wholesale_price FROM products WHERE id = :id", [':id' => $productId]);
             $oldCostPrice = $currentProduct ? floatval($currentProduct['cost_price'] ?? 0) : 0;
             $oldSellingPrice = $currentProduct ? floatval($currentProduct['selling_price'] ?? 0) : 0;
             
             $priceUpdate = [];
             if ($costPrice > 0) $priceUpdate['cost_price'] = $costPrice;
             if ($sellingPrice > 0) $priceUpdate['selling_price'] = $sellingPrice;
+            if ($wholesalePrice !== null) $priceUpdate['wholesale_price'] = $wholesalePrice;
             if (!empty($priceUpdate)) {
                 $db->update('products', $priceUpdate, ['id' => $productId]);
                 
@@ -182,8 +274,9 @@ try {
             }
         }
         
-        // NOTE: Stock will be added when GRN status changes to "Approved"
-        // Do NOT add stock here - only when approved
+        // NOTE: For products requiring specific list, stock is already updated above
+        // For normal products, stock will be added when GRN status changes to "Approved"
+        // Do NOT add stock here for normal products - only when approved
     }
     
     $db->commitTransaction();

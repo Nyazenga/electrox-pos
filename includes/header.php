@@ -146,6 +146,9 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                         <?php if ($auth->hasPermission('sales.view') && getSetting('allow_credit_sales', '0') == '1'): ?>
                         <li><a href="<?= BASE_URL ?>modules/sales/credit_sales.php" class="<?= strpos($currentUri, '/modules/sales/credit') !== false ? 'active' : '' ?>"><i class="bi bi-credit-card"></i> <span>Credit Sales</span></a></li>
                         <?php endif; ?>
+                        <?php if ($auth->hasPermission('sales.laybyes')): ?>
+                        <li><a href="<?= BASE_URL ?>modules/sales/laybyes.php" class="<?= strpos($currentUri, '/modules/sales/laybyes') !== false ? 'active' : '' ?>"><i class="bi bi-bag-check"></i> <span>Laybyes</span></a></li>
+                        <?php endif; ?>
                         <?php if ($auth->hasAnyPermission('sales.refund', 'receipts.refund', 'reports.refunds')): ?>
                         <li><a href="<?= BASE_URL ?>modules/sales/cancelled_sales.php" class="<?= strpos($currentUri, '/modules/sales/cancelled') !== false ? 'active' : '' ?>"><i class="bi bi-x-circle"></i> <span>Cancelled Sales</span></a></li>
                         <?php endif; ?>
@@ -167,6 +170,9 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                         <?php endif; ?>
                         <?php if ($auth->hasPermission('invoicing.customize')): ?>
                         <li><a href="<?= BASE_URL ?>modules/invoicing/customize.php" class="<?= strpos($currentUri, '/modules/invoicing/customize') !== false ? 'active' : '' ?>"><i class="bi bi-sliders"></i> <span>Customize</span></a></li>
+                        <?php endif; ?>
+                        <?php if ($auth->hasPermission('invoicing.customize')): ?>
+                        <li><a href="<?= BASE_URL ?>modules/invoicing/terms/index.php" class="<?= strpos($currentUri, '/modules/invoicing/terms') !== false ? 'active' : '' ?>"><i class="bi bi-file-text"></i> <span>Terms & Conditions</span></a></li>
                         <?php endif; ?>
                     </ul>
                 </li>

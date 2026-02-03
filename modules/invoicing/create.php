@@ -43,6 +43,10 @@ if ($branchId) {
 $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
 if ($branches === false) $branches = [];
 
+// Get terms & conditions for proforma invoices
+$proformaTerms = $db->getRows("SELECT * FROM proforma_terms WHERE is_active = 1 ORDER BY title");
+if ($proformaTerms === false) $proformaTerms = [];
+
 // Get applicable taxes from fiscal_config for tax per product
 $applicableTaxes = [];
 $primaryDb = Database::getPrimaryInstance();
@@ -333,7 +337,26 @@ require_once APP_PATH . '/includes/header.php';
             <div class="col-md-8">
                 <div class="mb-3">
                     <label class="form-label">Terms & Conditions</label>
-                    <textarea name="terms" class="form-control" rows="4" placeholder="Payment terms, delivery terms, etc..."><?= getSetting('invoice_default_terms', '') ?></textarea>
+                    <select name="terms_id" id="termsId" class="form-select mb-2" onchange="loadTermsContent()">
+                        <option value="">-- Select Terms & Conditions --</option>
+                        <?php foreach ($proformaTerms as $term): ?>
+                            <option value="<?= $term['id'] ?>" data-content="<?= escapeHtml($term['content']) ?>">
+                                <?= escapeHtml($term['title']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <textarea name="terms" id="termsContent" class="form-control" rows="4" placeholder="Payment terms, delivery terms, etc..."><?= getSetting('invoice_default_terms', '') ?></textarea>
+                    <small class="text-muted">Select from pre-defined terms or edit manually</small>
+                </div>
+                
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="banking_details_included" id="bankingDetailsIncluded" checked style="width: 3em; height: 1.5em;">
+                        <label class="form-check-label" for="bankingDetailsIncluded">
+                            <strong>Include Banking Details</strong>
+                        </label>
+                        <small class="d-block text-muted">Show banking details on the proforma invoice</small>
+                    </div>
                 </div>
             </div>
             <div class="col-md-4">
@@ -481,6 +504,7 @@ function updateProductDropdown(products) {
         item.setAttribute('data-stock', product.quantity_in_stock || 0);
         item.setAttribute('data-tax-percent', product.tax_percent || 0);
         item.setAttribute('data-tax-id', product.tax_id || '');
+        item.setAttribute('data-requires-specific-list', product.requires_specific_list || 0);
         
         item.innerHTML = productDisplayName + ' - ' + 
             (product.selling_price ? '$' + parseFloat(product.selling_price).toFixed(2) : '$0.00') + 
@@ -642,6 +666,20 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             const item = e.target.closest('.product-item');
             if (item) {
+                const requiresSpecificList = parseInt(item.dataset.requiresSpecificList || 0) === 1;
+                
+                if (requiresSpecificList) {
+                    // Show selection modal for products requiring specific list
+                    showSpecificListSelectionModalForInvoice({
+                        product_id: item.dataset.id,
+                        description: item.dataset.name,
+                        unit_price: parseFloat(item.dataset.price),
+                        stock: parseInt(item.dataset.stock),
+                        tax_percent: parseFloat(item.dataset.taxPercent || 0),
+                        tax_id: item.dataset.taxId || null
+                    });
+                } else {
+                    // Normal product - add directly
                 addProductItem({
                     product_id: item.dataset.id,
                     description: item.dataset.name,
@@ -650,6 +688,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     tax_percent: parseFloat(item.dataset.taxPercent || 0),
                     tax_id: item.dataset.taxId || null
                 });
+                }
                 productSearch.value = '';
                 productDropdown.style.display = 'none';
             }
@@ -666,7 +705,7 @@ function filterDropdown(searchTerm, dropdown, itemSelector) {
     });
 }
 
-function addProductItem(product) {
+function addProductItem(product, specificListEntries = null) {
     const item = {
         id: itemCounter++,
         product_id: product.product_id || null,
@@ -676,10 +715,151 @@ function addProductItem(product) {
         discount_percentage: 0,
         stock: product.stock || 0,
         tax_percent: product.tax_percent || 0,
-        tax_id: product.tax_id || null
+        tax_id: product.tax_id || null,
+        requires_specific_list: product.requires_specific_list || false,
+        specific_list_entries: specificListEntries || []
     };
     invoiceItems.push(item);
     renderItems();
+}
+
+function showSpecificListSelectionModalForInvoice(product) {
+    const branchId = document.getElementById('branchSelect')?.value;
+    if (!branchId) {
+        Swal.fire('Error', 'Please select a branch first', 'error');
+        return;
+    }
+    
+    // Check if product can be sold (qty must equal count of specific list)
+    fetch('<?= BASE_URL ?>ajax/get_product_specific_list.php?product_id=' + product.product_id + '&status=available&branch_id=' + branchId)
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success || !data.specific_list || data.specific_list.length === 0) {
+                Swal.fire('Error', 'No available items for this product. Please ensure product_specific_list entries exist.', 'error');
+                return;
+            }
+            
+            const entries = data.specific_list;
+            if (entries.length !== product.stock) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Stock Mismatch',
+                    html: `Product quantity (${product.stock}) does not match available items (${entries.length}).<br>Please ensure quantity equals the number of product_specific_list entries.`,
+                    confirmButtonText: 'OK'
+                });
+                return;
+            }
+            
+            // Show selection modal
+            let modalHtml = `
+                <div class="mb-3">
+                    <h5>${escapeHtml(product.description)}</h5>
+                    <p class="text-muted">Select items for invoice (${entries.length} available)</p>
+                </div>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th width="30"><input type="checkbox" id="selectAllInvoice" onchange="toggleSelectAllInvoiceItems()"></th>
+                                <th>Serial</th>
+                                <th>Color</th>
+                                <th>Storage</th>
+                                <th>IMEI</th>
+                            </tr>
+                        </thead>
+                        <tbody id="specificListTableBodyInvoice">
+            `;
+            
+            entries.forEach((entry, index) => {
+                modalHtml += `
+                    <tr>
+                        <td><input type="checkbox" class="specific-item-checkbox-invoice" value="${entry.id}" data-entry='${JSON.stringify(entry)}'></td>
+                        <td>${escapeHtml(entry.serial_number || 'N/A')}</td>
+                        <td>${escapeHtml(entry.color || 'N/A')}</td>
+                        <td>${escapeHtml(entry.storage || 'N/A')}</td>
+                        <td>${escapeHtml(entry.imei || 'N/A')}</td>
+                    </tr>
+                `;
+            });
+            
+            modalHtml += `
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-3">
+                    <label>Quantity: <span id="selectedCountInvoice">0</span></label>
+                    <input type="number" class="form-control" id="specificQuantityInvoice" min="1" max="${entries.length}" value="1" onchange="updateSpecificSelectionInvoice()">
+                </div>
+            `;
+            
+            Swal.fire({
+                title: 'Select Items for Invoice',
+                html: modalHtml,
+                showCancelButton: true,
+                confirmButtonText: 'Add to Invoice',
+                cancelButtonText: 'Cancel',
+                width: '800px',
+                didOpen: () => {
+                    document.querySelectorAll('.specific-item-checkbox-invoice').forEach(cb => {
+                        cb.addEventListener('change', updateSpecificSelectionInvoice);
+                    });
+                    updateSpecificSelectionInvoice();
+                },
+                preConfirm: () => {
+                    const selected = Array.from(document.querySelectorAll('.specific-item-checkbox-invoice:checked'))
+                        .map(cb => JSON.parse(cb.dataset.entry));
+                    const quantity = parseInt(document.getElementById('specificQuantityInvoice').value) || 1;
+                    
+                    if (selected.length !== quantity) {
+                        Swal.showValidationMessage(`Please select exactly ${quantity} item(s)`);
+                        return false;
+                    }
+                    
+                    return {selected, quantity};
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    const {selected, quantity} = result.value;
+                    // Add to invoice with specific list entries
+                    product.requires_specific_list = true;
+                    addProductItem(product, selected);
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error loading specific list:', error);
+            Swal.fire('Error', 'Failed to load product details', 'error');
+        });
+}
+
+function toggleSelectAllInvoiceItems() {
+    const selectAll = document.getElementById('selectAllInvoice');
+    const checkboxes = document.querySelectorAll('.specific-item-checkbox-invoice');
+    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    updateSpecificSelectionInvoice();
+}
+
+function updateSpecificSelectionInvoice() {
+    const selected = document.querySelectorAll('.specific-item-checkbox-invoice:checked').length;
+    const quantity = parseInt(document.getElementById('specificQuantityInvoice').value) || 1;
+    document.getElementById('selectedCountInvoice').textContent = selected;
+    
+    // Auto-select/deselect based on quantity
+    const checkboxes = Array.from(document.querySelectorAll('.specific-item-checkbox-invoice'));
+    checkboxes.forEach((cb, index) => {
+        cb.checked = index < quantity;
+    });
+    
+    const selectAll = document.getElementById('selectAllInvoice');
+    if (selectAll) {
+        selectAll.checked = selected === checkboxes.length;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function addManualItem() {
@@ -1023,6 +1203,8 @@ document.getElementById('invoiceForm').addEventListener('submit', function(e) {
         due_date: formData.get('due_date') || null,
         notes: formData.get('notes') || null,
         terms: formData.get('terms') || null,
+        terms_id: formData.get('terms_id') ? parseInt(formData.get('terms_id')) : null,
+        banking_details_included: formData.get('banking_details_included') === 'on' ? 1 : 0,
         items: invoiceItems.map(item => {
             // Calculate line total with global discount and tax
             const pricesIncludeTax = <?= (getSetting('prices_include_tax', '1') == '1') ? 'true' : 'false' ?>;
