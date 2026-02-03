@@ -115,6 +115,49 @@ function deleteSupplier(id) {
 }
 </script>
 
+<script>
+$(document).ready(function() {
+    // Initialize DataTable for suppliers
+    if ($.fn.DataTable && $('#suppliersTable').length) {
+        // Destroy existing instance if it exists
+        if ($.fn.DataTable.isDataTable('#suppliersTable')) {
+            $('#suppliersTable').DataTable().destroy();
+        }
+        
+        // Check if table has actual data (not just empty placeholder)
+        var tbody = $('#suppliersTable tbody');
+        var firstRow = tbody.find('tr:first');
+        var hasColspan = firstRow.find('td').first().attr('colspan') !== undefined;
+        
+        // Only initialize if we have data
+        if (!hasColspan && firstRow.length > 0) {
+            $('#suppliersTable').DataTable({
+                order: [[1, 'asc']], // Sort by Name ascending
+                pageLength: 25,
+                responsive: true,
+                autoWidth: false,
+                columnDefs: [
+                    { orderable: false, targets: [6] } // Actions column
+                ],
+                language: {
+                    search: "Search:",
+                    lengthMenu: "Show _MENU_ entries",
+                    info: "Showing _START_ to _END_ of _TOTAL_ entries",
+                    infoEmpty: "No entries to show",
+                    infoFiltered: "(filtered from _MAX_ total entries)",
+                    paginate: {
+                        first: "First",
+                        last: "Last",
+                        next: "Next",
+                        previous: "Previous"
+                    }
+                }
+            });
+        }
+    }
+});
+</script>
+
 <?php require_once APP_PATH . '/includes/footer.php'; ?>
 
 
