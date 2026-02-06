@@ -207,9 +207,20 @@ class Database {
                 $errorInfo = $stmt->errorInfo();
                 $this->logError("Update failed: " . $errorInfo[2] . ' SQL: ' . $sql);
                 $this->lastError = $errorInfo[2];
+                return false;
             }
             
-            return $result ? $stmt->rowCount() : false;
+            // Check for actual SQL errors (not just 0 rows affected)
+            $errorInfo = $stmt->errorInfo();
+            if ($errorInfo[0] !== '00000' && $errorInfo[0] !== null) {
+                $this->logError("Update SQL error: " . $errorInfo[2] . ' SQL: ' . $sql);
+                $this->lastError = $errorInfo[2];
+                return false;
+            }
+            
+            // Return true if execute succeeded, even if rowCount is 0 (no changes needed)
+            // rowCount can be 0 if the data is already the same, which is not an error
+            return true;
         } catch (PDOException $e) {
             $this->logError($e->getMessage() . ' SQL: ' . $sql);
             $this->lastError = $e->getMessage();
