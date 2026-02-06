@@ -978,31 +978,29 @@ class FiscalService {
         $writeLog("API client certificate updated");
         $writeLog("================================================");
         
-        // CRITICAL: Reorder receiptTaxes fields to match API spec order BEFORE signature generation
-        // Signature must be generated on the EXACT payload structure that will be sent to ZIMRA
+        // Generate receipt signature AFTER all fixes are applied
+        // Signature must be generated on the FINAL payload structure that will be sent to ZIMRA
+        $deviceSignature = ZimraSignature::generateReceiptDeviceSignature(
+            $receiptData,
+            $previousReceiptHash,
+            $privateKeyForReceipt
+        );
+        
+        // Add signature to receipt data
+        $receiptData['receiptDeviceSignature'] = $deviceSignature;
+        
         // Reorder receiptTaxes fields to match API spec order: taxCode, taxPercent, taxID, taxAmount, salesAmountWithTax
         // CRITICAL: For exempt taxes (taxCode='E'), taxPercent must NOT be included in JSON payload
         // Documentation: "In case of exempt, field will not be provided" (receiptTax)
-        // CRITICAL: When multiple tax types are present, remove taxCode from ALL taxes in payload (matches Example 2)
-        // Documentation Example 2 shows no taxCodes when multiple taxes are present
-        $hasMultipleTaxes = !empty($receiptData['receiptTaxes']) && count($receiptData['receiptTaxes']) > 1;
-        
         if (!empty($receiptData['receiptTaxes'])) {
             foreach ($receiptData['receiptTaxes'] as &$tax) {
                 // Reorder fields to match API spec order
                 $reorderedTax = [];
-                // Only include taxCode if single tax (Example 1) or if explicitly needed
-                // When multiple taxes: Remove taxCode from payload (Example 2 format)
-                if (!$hasMultipleTaxes && isset($tax['taxCode'])) {
-                    $reorderedTax['taxCode'] = $tax['taxCode'];
-                }
+                if (isset($tax['taxCode'])) $reorderedTax['taxCode'] = $tax['taxCode'];
                 // Only include taxPercent if it's not exempt (taxCode='E' means exempt - must not include taxPercent)
-                // Even if taxPercent is 0, if taxCode='E', we must NOT include it in payload
-                // BUT: Keep taxPercent as null for signature generation (will be converted to empty string in signature)
+                // Even if taxPercent is 0, if taxCode='E', we must NOT include it
                 if (isset($tax['taxCode']) && $tax['taxCode'] === 'E') {
-                    // Exempt tax - do NOT include taxPercent field in payload, but keep it as null for signature
-                    // The signature generation will use empty string for null taxPercent
-                    $reorderedTax['_taxPercentForSignature'] = null; // Internal flag for signature generation
+                    // Exempt tax - do NOT include taxPercent field
                 } elseif (isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
                     // Non-exempt tax - include taxPercent
                     $reorderedTax['taxPercent'] = $tax['taxPercent'];
@@ -1011,39 +1009,6 @@ class FiscalService {
                 if (isset($tax['taxAmount'])) $reorderedTax['taxAmount'] = $tax['taxAmount'];
                 if (isset($tax['salesAmountWithTax'])) $reorderedTax['salesAmountWithTax'] = $tax['salesAmountWithTax'];
                 $tax = $reorderedTax;
-            }
-            unset($tax);
-        }
-        
-        // Generate receipt signature AFTER reordering but BEFORE removing taxPercent from exempt
-        // Create a copy for signature generation that includes taxPercent (as null) for exempt taxes
-        $receiptDataForSignature = json_decode(json_encode($receiptData), true); // Deep copy
-        if (!empty($receiptDataForSignature['receiptTaxes'])) {
-            foreach ($receiptDataForSignature['receiptTaxes'] as &$tax) {
-                // For signature generation, exempt taxes need taxPercent as null (will become empty string)
-                if (isset($tax['taxCode']) && $tax['taxCode'] === 'E' && isset($tax['_taxPercentForSignature'])) {
-                    $tax['taxPercent'] = null; // Add null taxPercent for signature generation
-                    unset($tax['_taxPercentForSignature']); // Remove internal flag
-                }
-            }
-            unset($tax);
-        }
-        
-        $deviceSignature = ZimraSignature::generateReceiptDeviceSignature(
-            $receiptDataForSignature,
-            $previousReceiptHash,
-            $privateKeyForReceipt
-        );
-        
-        // Add signature to receipt data
-        $receiptData['receiptDeviceSignature'] = $deviceSignature;
-        
-        // Now remove the internal flag from receiptTaxes before sending to ZIMRA
-        if (!empty($receiptData['receiptTaxes'])) {
-            foreach ($receiptData['receiptTaxes'] as &$tax) {
-                if (isset($tax['_taxPercentForSignature'])) {
-                    unset($tax['_taxPercentForSignature']);
-                }
             }
             unset($tax);
         }

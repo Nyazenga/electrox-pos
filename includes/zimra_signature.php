@@ -403,12 +403,6 @@ class ZimraSignature {
      * We'll follow the official ZIMRA documentation (which matches the example).
      */
     private static function buildTaxesString($receiptTaxes, $currency = 'ZWL') {
-        // CRITICAL: If there are multiple tax types, remove taxCode from ALL taxes in signature
-        // Documentation states: "if you use tax codes, use them for ALL receipt lines"
-        // When multiple taxes are present, ZIMRA expects NO taxCodes (Example 2 format)
-        // When single tax is present, taxCode can be used (Example 1 format)
-        $useTaxCodes = count($receiptTaxes) === 1;
-        
         // Sort taxes by taxID ascending, then by taxCode alphabetically (empty comes before A)
         // Documentation: "Taxes are ordered by taxID in ascending order and taxCode in alphabetical 
         // order (if taxCode is empty it is ordered before A letter)."
@@ -437,7 +431,6 @@ class ZimraSignature {
             if (is_dir($logDir) || @mkdir($logDir, 0755, true)) {
                 $timestamp = date('Y-m-d H:i:s');
                 $logMessage = "[$timestamp] TAX SORTING (ZIMRA Documentation Format): Taxes ordered by taxID (ascending), then taxCode (alphabetical, empty first):\n";
-                $logMessage .= "[$timestamp]   Multiple taxes detected: " . (count($receiptTaxes) > 1 ? "YES - Removing taxCodes from signature" : "NO - Using taxCodes in signature") . "\n";
                 foreach ($receiptTaxes as $idx => $tax) {
                     $logMessage .= "[$timestamp]   Tax[$idx]: taxID=" . ($tax['taxID'] ?? 'N/A') . ", taxCode='" . ($tax['taxCode'] ?? '') . "', taxPercent=" . ($tax['taxPercent'] ?? 'N/A') . "\n";
                 }
@@ -450,10 +443,8 @@ class ZimraSignature {
             // ZIMRA Documentation format: taxCode || taxPercent || taxAmount || salesAmountWithTax
             // Documentation Section 13.2.1: "taxCode || taxPercent || taxAmount || salesAmountWithTax"
             
-            // 1. taxCode (empty string if multiple taxes, use taxCode if single tax)
-            // When multiple taxes: Use empty taxCode for all (matches Example 2)
-            // When single tax: Use taxCode (matches Example 1)
-            $taxCode = $useTaxCodes ? ($tax['taxCode'] ?? '') : '';
+            // 1. taxCode (empty string if not present)
+            $taxCode = $tax['taxCode'] ?? '';
             
             // 2. taxPercent - format with exactly 2 decimal places
             // Documentation: "In case taxPercent is not an integer there should be dot between the integer and fractional part."
