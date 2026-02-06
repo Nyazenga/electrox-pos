@@ -983,12 +983,19 @@ class FiscalService {
         // Reorder receiptTaxes fields to match API spec order: taxCode, taxPercent, taxID, taxAmount, salesAmountWithTax
         // CRITICAL: For exempt taxes (taxCode='E'), taxPercent must NOT be included in JSON payload
         // Documentation: "In case of exempt, field will not be provided" (receiptTax)
-        // BUT: For signature generation, we need taxPercent (as null/empty) to build the signature string correctly
+        // CRITICAL: When multiple tax types are present, remove taxCode from ALL taxes in payload (matches Example 2)
+        // Documentation Example 2 shows no taxCodes when multiple taxes are present
+        $hasMultipleTaxes = !empty($receiptData['receiptTaxes']) && count($receiptData['receiptTaxes']) > 1;
+        
         if (!empty($receiptData['receiptTaxes'])) {
             foreach ($receiptData['receiptTaxes'] as &$tax) {
                 // Reorder fields to match API spec order
                 $reorderedTax = [];
-                if (isset($tax['taxCode'])) $reorderedTax['taxCode'] = $tax['taxCode'];
+                // Only include taxCode if single tax (Example 1) or if explicitly needed
+                // When multiple taxes: Remove taxCode from payload (Example 2 format)
+                if (!$hasMultipleTaxes && isset($tax['taxCode'])) {
+                    $reorderedTax['taxCode'] = $tax['taxCode'];
+                }
                 // Only include taxPercent if it's not exempt (taxCode='E' means exempt - must not include taxPercent)
                 // Even if taxPercent is 0, if taxCode='E', we must NOT include it in payload
                 // BUT: Keep taxPercent as null for signature generation (will be converted to empty string in signature)
