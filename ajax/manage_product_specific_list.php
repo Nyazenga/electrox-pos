@@ -414,10 +414,11 @@ try {
                 ];
                 
                 try {
+                    // Clear any previous error state
+                    $db->getLastError(); // Access to ensure state is fresh
+                    
                     $result = $db->update('product_specific_list', $updateData, ['id' => $id]);
-                    if ($result) {
-                        $updated++;
-                    } else {
+                    if ($result === false) {
                         $dbError = $db->getLastError();
                         // Parse error message to provide specific feedback
                         $errorMessage = '';
@@ -444,15 +445,21 @@ try {
                             $errorDetails = $dbError ?: 'Unknown database error';
                             // Log the actual error for debugging
                             error_log("Product specific list update error for entry ID {$id}: " . $errorDetails);
+                            error_log("Update data: " . json_encode($updateData));
+                            error_log("Where clause: id = {$id}");
                             $errorMessage = "Entry " . ($entryIndex + 1) . ": Failed to update - " . $errorDetails;
                         }
                         
                         if ($errorMessage) {
                             $errors[] = $errorMessage;
                         }
+                    } else {
+                        // Update succeeded (even if 0 rows affected, that's okay - data already correct)
+                        $updated++;
                     }
                 } catch (Exception $e) {
                     error_log("Exception updating product specific list entry ID {$id}: " . $e->getMessage());
+                    error_log("Exception trace: " . $e->getTraceAsString());
                     $errors[] = "Entry " . ($entryIndex + 1) . ": Error updating - " . $e->getMessage();
                 }
             }
