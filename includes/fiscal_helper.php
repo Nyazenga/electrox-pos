@@ -687,8 +687,9 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             
             // Validate required fields exist - no fallbacks
             // NOTE: taxPercent can be null for exempt taxes (documentation: "field will not be returned")
-            if (empty($selectedTax['taxID']) || empty($selectedTax['taxCode'])) {
-                throw new Exception('Invalid tax configuration: Missing required tax fields (taxID or taxCode) in ZIMRA applicable taxes. Please sync configuration from ZIMRA.');
+            // NOTE: taxID 514 (5% Non-VAT Withholding Tax) may have empty taxCode - this is valid
+            if (empty($selectedTax['taxID'])) {
+                throw new Exception('Invalid tax configuration: Missing required tax field (taxID) in ZIMRA applicable taxes. Please sync configuration from ZIMRA.');
             }
             
             $taxId = intval($selectedTax['taxID']);
@@ -1021,8 +1022,9 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             }
             
             // Use EXACT values from ZIMRA - no fallbacks
-            if (empty($validTax['taxCode']) || empty($validTax['taxID'])) {
-                throw new Exception("Invalid tax configuration: Missing required fields in ZIMRA applicable tax (taxID={$validTax['taxID']}, taxPercent={$validTax['taxPercent']}, taxCode={$validTax['taxCode']}). Please sync configuration from ZIMRA.");
+            // NOTE: taxID 514 (5% Non-VAT Withholding Tax) may have empty taxCode - this is valid
+            if (empty($validTax['taxID'])) {
+                throw new Exception("Invalid tax configuration: Missing required field (taxID) in ZIMRA applicable tax (taxID={$validTax['taxID']}, taxPercent={$validTax['taxPercent']}, taxCode={$validTax['taxCode']}). Please sync configuration from ZIMRA.");
             }
             
             writeFiscalLog("FISCALIZE SALE: Using validTax - taxID={$validTax['taxID']}, taxPercent={$validTax['taxPercent']}, taxCode={$validTax['taxCode']}");
