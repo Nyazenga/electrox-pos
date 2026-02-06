@@ -33,6 +33,19 @@ if (!$product) {
 // Check if product requires specific list
 $requiresSpecificList = !empty($product['requires_specific_list']);
 
+// Determine category-specific field visibility
+$categoryName = strtolower($product['category_name'] ?? '');
+$isSmartphoneOrTablet = strpos($categoryName, 'smartphone') !== false || 
+                        strpos($categoryName, 'phone') !== false || 
+                        strpos($categoryName, 'tablet') !== false;
+$isLaptop = strpos($categoryName, 'laptop') !== false;
+$isAudioDevice = strpos($categoryName, 'audio') !== false;
+
+// Fields to show/hide based on category
+$showIMEI = $isSmartphoneOrTablet;
+$showSIMConfig = $isSmartphoneOrTablet; // Only for phones/tablets
+$showBatteryHealth = $isSmartphoneOrTablet; // Only for phones/tablets (laptops have batteries but not tracked the same way)
+
 // Get product_specific_list entries if product requires it
 $specificListEntries = [];
 if ($requiresSpecificList) {
@@ -215,11 +228,11 @@ require_once APP_PATH . '/includes/header.php';
                                     <tr>
                                         <th>Color</th>
                                         <th>Storage</th>
-                                        <th>SIM Config</th>
+                                        <?php if ($showSIMConfig): ?><th>SIM Config</th><?php endif; ?>
                                         <th>Serial #</th>
-                                        <th>IMEI</th>
+                                        <?php if ($showIMEI): ?><th>IMEI</th><?php endif; ?>
                                         <th>Condition</th>
-                                        <th>Battery</th>
+                                        <?php if ($showBatteryHealth): ?><th>Battery</th><?php endif; ?>
                                         <th>Manufacturer</th>
                                         <th>Warranty</th>
                                         <th>Status</th>
@@ -236,14 +249,19 @@ require_once APP_PATH . '/includes/header.php';
                                                 <?php endif; ?>
                                             </td>
                                             <td><?= escapeHtml($entry['storage'] ?? '-') ?></td>
+                                            <?php if ($showSIMConfig): ?>
                                             <td><?= escapeHtml($entry['sim_configuration'] ?? '-') ?></td>
+                                            <?php endif; ?>
                                             <td><?= escapeHtml($entry['serial_number'] ?? '-') ?></td>
+                                            <?php if ($showIMEI): ?>
                                             <td><?= escapeHtml($entry['imei'] ?? '-') ?></td>
+                                            <?php endif; ?>
                                             <td>
                                                 <span class="badge bg-<?= $entry['condition'] == 'New' ? 'success' : ($entry['condition'] == 'Refurbished' ? 'info' : 'warning') ?>">
                                                     <?= escapeHtml($entry['condition'] ?? 'New') ?>
                                                 </span>
                                             </td>
+                                            <?php if ($showBatteryHealth): ?>
                                             <td>
                                                 <?php if (!empty($entry['battery_health'])): ?>
                                                     <span class="badge bg-<?= $entry['battery_health'] >= 80 ? 'success' : ($entry['battery_health'] >= 60 ? 'warning' : 'danger') ?>">
@@ -253,6 +271,7 @@ require_once APP_PATH . '/includes/header.php';
                                                     <span class="text-muted">-</span>
                                                 <?php endif; ?>
                                             </td>
+                                            <?php endif; ?>
                                             <td><?= escapeHtml($entry['manufacturer'] ?? '-') ?></td>
                                             <td>
                                                 <?php if (!empty($entry['warranty_months']) && $entry['warranty_months'] > 0): ?>
@@ -512,11 +531,11 @@ function submitImageUpload() {
                             <tr>
                                 <th>Color</th>
                                 <th>Storage</th>
-                                <th>SIM Config</th>
+                                <th class="sim-config-header">SIM Config</th>
                                 <th>Serial # *</th>
                                 <th class="imei-header">IMEI</th>
                                 <th>Condition</th>
-                                <th>Battery %</th>
+                                <th class="battery-header">Battery %</th>
                                 <th>Manufacturer</th>
                                 <th>Warranty (Months)</th>
                                 <th>Cost Price</th>
@@ -546,14 +565,24 @@ function submitImageUpload() {
 let specificItemsData = [];
 const categoryName = '<?= strtolower($product['category_name'] ?? '') ?>';
 const showIMEI = categoryName.includes('smartphone') || categoryName.includes('phone') || categoryName.includes('tablet');
+const showSIMConfig = showIMEI; // Only for phones/tablets
+const showBatteryHealth = showIMEI; // Only for phones/tablets
 
-// Hide IMEI column header if not needed
-if (!showIMEI) {
-    document.addEventListener('DOMContentLoaded', function() {
+// Hide columns if not needed
+document.addEventListener('DOMContentLoaded', function() {
+    if (!showIMEI) {
         const imeiHeaders = document.querySelectorAll('.imei-header');
         imeiHeaders.forEach(h => h.style.display = 'none');
-    });
-}
+    }
+    if (!showSIMConfig) {
+        const simHeaders = document.querySelectorAll('.sim-config-header');
+        simHeaders.forEach(h => h.style.display = 'none');
+    }
+    if (!showBatteryHealth) {
+        const batteryHeaders = document.querySelectorAll('.battery-header');
+        batteryHeaders.forEach(h => h.style.display = 'none');
+    }
+});
 
 function openManageSpecificItemsModal() {
     loadSpecificItems();
@@ -604,7 +633,7 @@ function renderSpecificItemsTable() {
                        maxlength="50"
                        placeholder="e.g., 128GB">
             </td>
-            <td>
+            <td class="sim-config-cell" style="${showSIMConfig ? '' : 'display: none;'}">
                 <select class="form-select form-select-sm" 
                         onchange="updateItemField(${index}, 'sim_configuration', this.value)">
                     <option value="">Select</option>
@@ -642,7 +671,7 @@ function renderSpecificItemsTable() {
                     <option value="Used" ${item.condition === 'Used' ? 'selected' : ''}>Used</option>
                 </select>
             </td>
-            <td>
+            <td class="battery-cell" style="${showBatteryHealth ? '' : 'display: none;'}">
                 <input type="number" class="form-control form-control-sm" 
                        value="${item.battery_health || ''}" 
                        onchange="validateAndUpdateField(${index}, 'battery_health', this.value, 0, 100)"
@@ -814,10 +843,10 @@ function addSpecificItemRow() {
         branch_id: <?= $product['branch_id'] ?? $_SESSION['branch_id'] ?? 'null' ?>,
         color: '',
         storage: '',
-        sim_configuration: '',
+        sim_configuration: showSIMConfig ? '' : null,
         serial_number: '',
         imei: showIMEI ? '' : null,
-        battery_health: '',
+        battery_health: showBatteryHealth ? '' : null,
         manufacturer: '',
         warranty_months: 0,
         warranty_terms: '',

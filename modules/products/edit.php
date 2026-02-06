@@ -208,6 +208,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $productImages = !empty($product['images']) ? json_decode($product['images'], true) : [];
 
+// Determine category-specific field visibility
+$categoryName = strtolower($product['category_name'] ?? '');
+$isSmartphoneOrTablet = strpos($categoryName, 'smartphone') !== false || 
+                        strpos($categoryName, 'phone') !== false || 
+                        strpos($categoryName, 'tablet') !== false;
+
+// Fields to show/hide based on category
+$showIMEI = $isSmartphoneOrTablet;
+$showSIMConfig = $isSmartphoneOrTablet; // Only for phones/tablets
+$showBatteryHealth = $isSmartphoneOrTablet; // Only for phones/tablets
+
 // Color picker code removed - color is now captured in product_specific_list
 
 require_once APP_PATH . '/includes/header.php';
@@ -644,11 +655,11 @@ $productDisplayName = !empty($product['product_name']) ? $product['product_name'
                             <tr>
                                 <th>Color</th>
                                 <th>Storage</th>
-                                <th>SIM Config</th>
+                                <th class="sim-config-header">SIM Config</th>
                                 <th>Serial # *</th>
                                 <th class="imei-header">IMEI</th>
                                 <th>Condition</th>
-                                <th>Battery %</th>
+                                <th class="battery-header">Battery %</th>
                                 <th>Manufacturer</th>
                                 <th>Warranty (Months)</th>
                                 <th>Cost Price</th>
@@ -678,14 +689,24 @@ $productDisplayName = !empty($product['product_name']) ? $product['product_name'
 let specificItemsData = [];
 const categoryName = '<?= strtolower($product['category_name'] ?? '') ?>';
 const showIMEI = categoryName.includes('smartphone') || categoryName.includes('phone') || categoryName.includes('tablet');
+const showSIMConfig = showIMEI; // Only for phones/tablets
+const showBatteryHealth = showIMEI; // Only for phones/tablets
 
-// Hide IMEI column header if not needed
-if (!showIMEI) {
-    document.addEventListener('DOMContentLoaded', function() {
+// Hide columns if not needed
+document.addEventListener('DOMContentLoaded', function() {
+    if (!showIMEI) {
         const imeiHeaders = document.querySelectorAll('.imei-header');
         imeiHeaders.forEach(h => h.style.display = 'none');
-    });
-}
+    }
+    if (!showSIMConfig) {
+        const simHeaders = document.querySelectorAll('.sim-config-header');
+        simHeaders.forEach(h => h.style.display = 'none');
+    }
+    if (!showBatteryHealth) {
+        const batteryHeaders = document.querySelectorAll('.battery-header');
+        batteryHeaders.forEach(h => h.style.display = 'none');
+    }
+});
 
 function openManageSpecificItemsModal() {
     loadSpecificItems();
@@ -737,7 +758,7 @@ function renderSpecificItemsTable() {
                        maxlength="50"
                        placeholder="e.g., 128GB">
             </td>
-            <td>
+            <td class="sim-config-cell" style="${showSIMConfig ? '' : 'display: none;'}">
                 <select class="form-select form-select-sm" 
                         onchange="updateItemField(${index}, 'sim_configuration', this.value)">
                     <option value="">Select</option>
@@ -775,7 +796,7 @@ function renderSpecificItemsTable() {
                     <option value="Used" ${item.condition === 'Used' ? 'selected' : ''}>Used</option>
                 </select>
             </td>
-            <td>
+            <td class="battery-cell" style="${showBatteryHealth ? '' : 'display: none;'}">
                 <input type="number" class="form-control form-control-sm" 
                        value="${item.battery_health || ''}" 
                        onchange="validateAndUpdateField(${index}, 'battery_health', this.value, 0, 100)"
@@ -947,10 +968,10 @@ function addSpecificItemRow() {
         branch_id: <?= $product['branch_id'] ?? $_SESSION['branch_id'] ?? 'null' ?>,
         color: '',
         storage: '',
-        sim_configuration: '',
+        sim_configuration: showSIMConfig ? '' : null,
         serial_number: '',
         imei: showIMEI ? '' : null,
-        battery_health: '',
+        battery_health: showBatteryHealth ? '' : null,
         manufacturer: '',
         warranty_months: 0,
         warranty_terms: '',
