@@ -105,10 +105,10 @@ function mapApplicableTaxes($applicableTaxesRaw, $hasTaxID = false) {
         } elseif ($taxPercent == 15 || $taxPercent == 15.5) {
             $taxCode = 'A'; // Standard VAT (15% or 15.5%)
         } elseif (($taxPercent == 5 && (strpos($taxName, 'withholding') !== false || strpos($taxName, 'non-vat') !== false || strpos($taxName, 'nonvat') !== false)) || ($taxID == 514 && $taxPercent == 5)) {
-            $taxCode = ''; // 5% Non-VAT Withholding Tax (taxID 514) - empty taxCode per Python library and documentation
+            $taxCode = 'B'; // 5% Non-VAT Withholding Tax (taxID 514) - use 'B' as taxCode
             // Check both by taxName AND taxID 514 to ensure we catch it even if taxName format differs
             // LOG THIS CHANGE TO VERIFY IT'S WORKING
-            error_log("TAX CODE ASSIGNMENT: 5% Non-VAT Withholding Tax detected - taxID=$taxID, taxPercent=$taxPercent, taxName='$taxName' - Assigning EMPTY taxCode ('') per ZIMRA documentation");
+            error_log("TAX CODE ASSIGNMENT: 5% Non-VAT Withholding Tax detected - taxID=$taxID, taxPercent=$taxPercent, taxName='$taxName' - Assigning taxCode 'B'");
         }
         
         // CRITICAL: Preserve null for exempt taxes (don't convert to 0)
@@ -687,16 +687,8 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             
             // Validate required fields exist - no fallbacks
             // NOTE: taxPercent can be null for exempt taxes (documentation: "field will not be returned")
-            // NOTE: taxID 514 (5% Non-VAT Withholding Tax) has empty taxCode by design - this is correct per ZIMRA
-            if (empty($selectedTax['taxID'])) {
-                throw new Exception('Invalid tax configuration: Missing required tax field (taxID) in ZIMRA applicable taxes. Please sync configuration from ZIMRA.');
-            }
-            
-            // For taxID 514 (5% Non-VAT Withholding Tax), empty taxCode is expected and correct
-            // For all other taxes, taxCode must be non-empty
-            $taxIdCheck = intval($selectedTax['taxID']);
-            if ($taxIdCheck !== 514 && (empty($selectedTax['taxCode']) || $selectedTax['taxCode'] === '')) {
-                throw new Exception('Invalid tax configuration: Missing required tax field (taxCode) in ZIMRA applicable taxes. Please sync configuration from ZIMRA.');
+            if (empty($selectedTax['taxID']) || empty($selectedTax['taxCode'])) {
+                throw new Exception('Invalid tax configuration: Missing required tax fields (taxID or taxCode) in ZIMRA applicable taxes. Please sync configuration from ZIMRA.');
             }
             
             $taxId = intval($selectedTax['taxID']);
