@@ -307,6 +307,8 @@ try {
                 $useIMEI = (strpos($categoryName, 'smartphone') !== false || 
                            strpos($categoryName, 'phone') !== false || 
                            strpos($categoryName, 'tablet') !== false);
+                $useSIMConfig = $useIMEI; // Only for phones/tablets
+                $useBatteryHealth = $useIMEI; // Only for phones/tablets
                 
                 // Validate required fields
                 $serialNumber = !empty($entry['serial_number']) ? trim($entry['serial_number']) : '';
@@ -383,13 +385,24 @@ try {
                 }
                 
                 // Prepare update data
+                // For laptops/audio devices, explicitly null out SIM config and battery health
+                $simConfigValue = null;
+                if ($useSIMConfig && !empty($entry['sim_configuration'])) {
+                    $simConfigValue = substr(sanitizeInput(trim($entry['sim_configuration'])), 0, 50);
+                }
+                
+                $batteryHealthValue = null;
+                if ($useBatteryHealth && $batteryHealth !== null) {
+                    $batteryHealthValue = $batteryHealth;
+                }
+                
                 $updateData = [
                     'color' => !empty($entry['color']) ? substr(sanitizeInput(trim($entry['color'])), 0, 50) : null,
                     'storage' => !empty($entry['storage']) ? substr(sanitizeInput(trim($entry['storage'])), 0, 50) : null,
-                    'sim_configuration' => !empty($entry['sim_configuration']) ? substr(sanitizeInput(trim($entry['sim_configuration'])), 0, 50) : null,
+                    'sim_configuration' => $simConfigValue, // Null for laptops/audio devices
                     'serial_number' => !empty($serialNumber) ? substr(sanitizeInput($serialNumber), 0, 100) : null,
                     'imei' => ($useIMEI && !empty($imei)) ? sanitizeInput($imei) : null, // Null out IMEI for non-smartphone/tablet
-                    'battery_health' => $batteryHealth,
+                    'battery_health' => $batteryHealthValue, // Null for laptops/audio devices
                     'manufacturer' => !empty($entry['manufacturer']) ? substr(sanitizeInput(trim($entry['manufacturer'])), 0, 100) : null,
                     'warranty_months' => $warrantyMonths,
                     'warranty_terms' => !empty($entry['warranty_terms']) ? sanitizeInput(trim($entry['warranty_terms'])) : null,
@@ -427,8 +440,11 @@ try {
                                 $errorMessage = "Entry " . ($entryIndex + 1) . ": Duplicate entry detected - this combination already exists";
                             }
                         } else {
-                            // Other database errors
-                            $errorMessage = "Entry " . ($entryIndex + 1) . ": Failed to update - " . ($dbError ?: 'Database error');
+                            // Other database errors - provide more detailed error message
+                            $errorDetails = $dbError ?: 'Unknown database error';
+                            // Log the actual error for debugging
+                            error_log("Product specific list update error for entry ID {$id}: " . $errorDetails);
+                            $errorMessage = "Entry " . ($entryIndex + 1) . ": Failed to update - " . $errorDetails;
                         }
                         
                         if ($errorMessage) {
@@ -436,6 +452,7 @@ try {
                         }
                     }
                 } catch (Exception $e) {
+                    error_log("Exception updating product specific list entry ID {$id}: " . $e->getMessage());
                     $errors[] = "Entry " . ($entryIndex + 1) . ": Error updating - " . $e->getMessage();
                 }
             }
