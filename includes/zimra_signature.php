@@ -433,14 +433,21 @@ class ZimraSignature {
             // Format: taxPercent || taxAmount || salesAmountWithTax
             // Reference: zimra-public/zimra/__init__.py lines 392-405
             
-            // 1. taxPercent - format with exactly 2 decimal places, or empty string if exempt
-            // For exempt taxes, taxPercent field is not present in payload, so use empty string
+            // 1. taxPercent - format with exactly 2 decimal places, or empty string if exempt OR zero
+            // CRITICAL: For exempt taxes AND zero-percent taxes, taxPercent is removed from payload
+            // So signature should use empty string for both (ZIMRA expects this format)
             $percent = '';
             if (isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
                 $percentValue = floatval($tax['taxPercent']);
-                $percent = number_format($percentValue, 2, '.', ''); // Always 2 decimal places, e.g., "15.50"
+                // Only include taxPercent in signature if it's greater than 0
+                // Zero-percent taxes have taxPercent removed from payload, so this should not execute
+                // But keep check for safety - if somehow 0% has taxPercent, treat as empty
+                if ($percentValue > 0) {
+                    $percent = number_format($percentValue, 2, '.', ''); // Always 2 decimal places, e.g., "15.50"
+                }
+                // If taxPercent is 0, $percent remains empty string (matches ZIMRA expectation)
             }
-            // If taxPercent is not present (exempt tax), $percent remains empty string
+            // If taxPercent is not present (exempt or 0% tax), $percent remains empty string
             
             // 2. taxAmount - in cents (use toCents for currency-specific conversion)
             $taxAmountFloat = floatval($tax['taxAmount'] ?? 0);

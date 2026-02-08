@@ -866,14 +866,23 @@ class FiscalService {
         if (!empty($receiptData['receiptTaxes'])) {
             foreach ($receiptData['receiptTaxes'] as &$tax) {
                 // Convert numeric values to floats and round taxAmount to 2 decimal places
-                // For exempt taxes (taxCode='E'), taxPercent must be removed from payload (even if it's 0)
-                // Signature generation will detect missing taxPercent and use empty string (matches zimra-public)
+                // CRITICAL FIX: For exempt taxes (taxCode='E') AND zero-percent taxes (taxPercent=0),
+                // taxPercent must be removed from payload so ZIMRA reconstructs signature correctly
+                // ZIMRA validates by reconstructing signature from payload - if taxPercent=0 is present,
+                // ZIMRA may treat it differently than we expect, causing hash mismatch
                 if (isset($tax['taxCode']) && $tax['taxCode'] === 'E') {
                     // Exempt tax - remove taxPercent field entirely (signature will use empty string)
                     unset($tax['taxPercent']);
                 } elseif (isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
-                    // Non-exempt tax - convert to float
-                    $tax['taxPercent'] = floatval($tax['taxPercent']);
+                    $taxPercentValue = floatval($tax['taxPercent']);
+                    // CRITICAL: Remove taxPercent for 0% taxes (treat like exempt in signature)
+                    // ZIMRA expects 0% to be empty string in signature, so remove from payload
+                    if ($taxPercentValue == 0) {
+                        unset($tax['taxPercent']);
+                    } else {
+                        // Non-zero tax - convert to float
+                        $tax['taxPercent'] = $taxPercentValue;
+                    }
                 } else {
                     // taxPercent is null and not exempt - remove it
                     unset($tax['taxPercent']);
