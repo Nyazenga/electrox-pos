@@ -866,23 +866,18 @@ class FiscalService {
         if (!empty($receiptData['receiptTaxes'])) {
             foreach ($receiptData['receiptTaxes'] as &$tax) {
                 // Convert numeric values to floats and round taxAmount to 2 decimal places
-                // CRITICAL FIX: For exempt taxes (taxCode='E') AND zero-percent taxes (taxPercent=0),
-                // taxPercent must be removed from payload so ZIMRA reconstructs signature correctly
-                // ZIMRA validates by reconstructing signature from payload - if taxPercent=0 is present,
-                // ZIMRA may treat it differently than we expect, causing hash mismatch
+                // CRITICAL: Documentation states:
+                // - "In case of no VAT sale, 0 value should be used" (for 0% tax, MUST include taxPercent: 0)
+                // - "In case of exempt this field should not be provided" (for exempt, MUST remove taxPercent)
+                // RCPT025 validation requires taxPercent and taxID combination to match FDMS
+                // So: 0% tax MUST have taxPercent: 0 in payload, only exempt should have it removed
                 if (isset($tax['taxCode']) && $tax['taxCode'] === 'E') {
-                    // Exempt tax - remove taxPercent field entirely (signature will use empty string)
+                    // Exempt tax - remove taxPercent field entirely (per documentation)
                     unset($tax['taxPercent']);
                 } elseif (isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
-                    $taxPercentValue = floatval($tax['taxPercent']);
-                    // CRITICAL: Remove taxPercent for 0% taxes (treat like exempt in signature)
-                    // ZIMRA expects 0% to be empty string in signature, so remove from payload
-                    if ($taxPercentValue == 0) {
-                        unset($tax['taxPercent']);
-                    } else {
-                        // Non-zero tax - convert to float
-                        $tax['taxPercent'] = $taxPercentValue;
-                    }
+                    // Non-exempt tax (including 0%) - convert to float and keep in payload
+                    // 0% tax MUST have taxPercent: 0 in payload to pass RCPT025 validation
+                    $tax['taxPercent'] = floatval($tax['taxPercent']);
                 } else {
                     // taxPercent is null and not exempt - remove it
                     unset($tax['taxPercent']);

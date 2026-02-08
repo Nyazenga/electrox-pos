@@ -433,21 +433,21 @@ class ZimraSignature {
             // Format: taxPercent || taxAmount || salesAmountWithTax
             // Reference: zimra-public/zimra/__init__.py lines 392-405
             
-            // 1. taxPercent - format with exactly 2 decimal places, or empty string if exempt OR zero
-            // CRITICAL: For exempt taxes AND zero-percent taxes, taxPercent is removed from payload
-            // So signature should use empty string for both (ZIMRA expects this format)
+            // 1. taxPercent - format with exactly 2 decimal places, or empty string if exempt
+            // CRITICAL: Payload has taxPercent: 0 for 0% taxes (required by RCPT025), but signature uses empty string
+            // ZIMRA validates signature by reconstructing from payload, but expects empty string for 0% in signature
+            // This is the key: payload has taxPercent: 0, but signature string uses empty string for 0%
             $percent = '';
             if (isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
                 $percentValue = floatval($tax['taxPercent']);
-                // Only include taxPercent in signature if it's greater than 0
-                // Zero-percent taxes have taxPercent removed from payload, so this should not execute
-                // But keep check for safety - if somehow 0% has taxPercent, treat as empty
+                // CRITICAL: For signature, treat 0% as empty string (even though payload has taxPercent: 0)
+                // This is what ZIMRA expects in the signature string reconstruction
                 if ($percentValue > 0) {
                     $percent = number_format($percentValue, 2, '.', ''); // Always 2 decimal places, e.g., "15.50"
                 }
-                // If taxPercent is 0, $percent remains empty string (matches ZIMRA expectation)
+                // If taxPercent is 0, $percent remains empty string (ZIMRA signature expectation)
             }
-            // If taxPercent is not present (exempt or 0% tax), $percent remains empty string
+            // If taxPercent is not present (exempt tax), $percent remains empty string
             
             // 2. taxAmount - in cents (use toCents for currency-specific conversion)
             $taxAmountFloat = floatval($tax['taxAmount'] ?? 0);
