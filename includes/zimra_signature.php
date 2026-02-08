@@ -182,7 +182,8 @@ class ZimraSignature {
      * Format: deviceID || receiptType || receiptCurrency || receiptGlobalNo || receiptDate || receiptTotal || receiptTaxes || previousReceiptHash
      * 
      * ALL currencies (USD and ZWL) use the SAME format with all 8 fields.
-     * receiptTaxes format: taxCode || taxPercent (2 decimals) || taxAmount (cents) || salesAmountWithTax (cents)
+     * receiptTaxes format: taxPercent (2 decimals, empty if exempt) || taxAmount (cents) || salesAmountWithTax (cents)
+     * NOTE: taxCode is NOT included in signature string (matches zimra-public reference library)
      * 
      * Documentation: "Fields must be concatenated without any concatenation character"
      * This means NO SPACES between fields - direct concatenation.
@@ -193,7 +194,7 @@ class ZimraSignature {
         $receiptCurrency = strtoupper($receiptData['receiptCurrency']);
         $parts = [];
         
-        // Build receiptTaxes string (ZIMRA documentation format: taxCode || taxPercent || taxAmount || salesAmountWithTax)
+        // Build receiptTaxes string (zimra-public format: taxPercent || taxAmount || salesAmountWithTax, NO taxCode)
         $taxesString = self::buildTaxesString($receiptData['receiptTaxes'], $receiptCurrency);
         
         // ALL currencies use the SAME format: all 8 fields in order
@@ -225,7 +226,7 @@ class ZimraSignature {
         $totalCents = self::toCents($receiptData['receiptTotal'], $receiptCurrency);
         $parts[] = strval($totalCents);
         
-        // 7. receiptTaxes (concatenated - Python format: taxPercent || taxAmount || salesAmountWithTax)
+        // 7. receiptTaxes (concatenated - zimra-public format: taxPercent || taxAmount || salesAmountWithTax, NO taxCode)
         $parts[] = $taxesString;
         
         // 8. previousReceiptHash (if not first receipt)
@@ -257,7 +258,8 @@ class ZimraSignature {
                 $logMessage .= "ZIMRA INSTRUCTION:\n";
                 $logMessage .= "  The concatenated string must have the following parameters in correct order:\n";
                 $logMessage .= "  deviceID || receiptType || receiptCurrency || receiptGlobalNo || receiptDate || receiptTotal || receiptTaxes || previousReceiptHash\n";
-                $logMessage .= "  receiptTaxes format: taxCode || taxPercent || taxAmount || salesAmountWithTax\n";
+                $logMessage .= "  receiptTaxes format: taxPercent (2 decimals, empty if exempt) || taxAmount (cents) || salesAmountWithTax (cents)\n";
+                $logMessage .= "  NOTE: taxCode is NOT included in signature string (matches zimra-public reference library)\n";
                 $logMessage .= "  NB: If it's the first receipt of the day, previousReceiptHash must NOT be included\n";
                 $logMessage .= "\n";
                 
@@ -292,29 +294,25 @@ class ZimraSignature {
                 $logMessage .= "   Calculation: " . floatval($receiptData['receiptTotal'] ?? 0) . " * 100 = " . $parts[5] . " cents\n";
                 $logMessage .= "\n";
                 
-                $logMessage .= "7. receiptTaxes (taxCode || taxPercent || taxAmount || salesAmountWithTax):\n";
+                $logMessage .= "7. receiptTaxes (taxPercent || taxAmount || salesAmountWithTax, NO taxCode):\n";
                 // Log breakdown of receiptTaxes
                 if (!empty($receiptData['receiptTaxes'])) {
                     foreach ($receiptData['receiptTaxes'] as $idx => $tax) {
-                        $taxCode = $tax['taxCode'] ?? '';
-                        // For exempt taxes, use "0.00" in signature (not empty)
-                        if ($taxCode === 'E' && !isset($tax['taxPercent'])) {
-                            $taxPercent = '0.00';
-                        } else {
-                            $taxPercent = isset($tax['taxPercent']) ? number_format(floatval($tax['taxPercent']), 2, '.', '') : '';
-                        }
-                        $taxAmount = isset($tax['taxAmount']) ? intval(floatval($tax['taxAmount']) * 100) : 0;
-                        $salesAmount = isset($tax['salesAmountWithTax']) ? intval(floatval($tax['salesAmountWithTax']) * 100) : 0;
+                        $taxCode = $tax['taxCode'] ?? ''; // For logging only, not in signature
+                        // For exempt taxes, use empty string in signature (not "0.00")
+                        $taxPercent = isset($tax['taxPercent']) ? number_format(floatval($tax['taxPercent']), 2, '.', '') : '';
+                        $taxAmount = isset($tax['taxAmount']) ? self::toCents(floatval($tax['taxAmount']), $receiptCurrency) : 0;
+                        $salesAmount = isset($tax['salesAmountWithTax']) ? self::toCents(floatval($tax['salesAmountWithTax']), $receiptCurrency) : 0;
                         $logMessage .= "   Tax Entry #" . ($idx + 1) . ":\n";
-                        $logMessage .= "     - taxCode = '" . $taxCode . "'\n";
-                        if ($taxCode === 'E' && !isset($tax['taxPercent'])) {
-                            $logMessage .= "     - taxPercent = (EXEMPT - not in JSON) → " . $taxPercent . " (using '0.00' in signature)\n";
+                        $logMessage .= "     - taxCode = '" . $taxCode . "' (in payload only, NOT in signature)\n";
+                        if (!isset($tax['taxPercent'])) {
+                            $logMessage .= "     - taxPercent = (EXEMPT - not in JSON) → '" . $taxPercent . "' (empty string in signature)\n";
                         } else {
-                            $logMessage .= "     - taxPercent = " . ($tax['taxPercent'] ?? 'N/A') . " → " . $taxPercent . " (2 decimals)\n";
+                            $logMessage .= "     - taxPercent = " . ($tax['taxPercent'] ?? 'N/A') . " → '" . $taxPercent . "' (2 decimals)\n";
                         }
                         $logMessage .= "     - taxAmount = " . ($tax['taxAmount'] ?? 'N/A') . " → " . $taxAmount . " cents\n";
                         $logMessage .= "     - salesAmountWithTax = " . ($tax['salesAmountWithTax'] ?? 'N/A') . " → " . $salesAmount . " cents\n";
-                        $logMessage .= "     → Concatenated: " . $taxCode . $taxPercent . $taxAmount . $salesAmount . "\n";
+                        $logMessage .= "     → Signature string (NO taxCode): " . $taxPercent . $taxAmount . $salesAmount . "\n";
                     }
                 }
                 $logMessage .= "   → Complete receiptTaxes string: " . $parts[6] . "\n";
@@ -382,13 +380,13 @@ class ZimraSignature {
                     foreach ($receiptData['receiptTaxes'] as $idx => $tax) {
                         $taxPercent = isset($tax['taxPercent']) ? floatval($tax['taxPercent']) : null;
                         if ($taxPercent == 5) {
-                            error_log("ZIMRA SIGNATURE: *** 5% NON-VAT WITHHOLDING TAX PRESENT - TaxID: " . ($tax['taxID'] ?? 'N/A') . ", TaxCode: '" . ($tax['taxCode'] ?? '') . "'");
-                            $taxCode = $tax['taxCode'] ?? '';
+                            error_log("ZIMRA SIGNATURE: *** 5% NON-VAT WITHHOLDING TAX PRESENT - TaxID: " . ($tax['taxID'] ?? 'N/A') . ", TaxCode: '" . ($tax['taxCode'] ?? '') . "' (in payload only)");
+                            $taxCode = $tax['taxCode'] ?? ''; // For reference only
                             $taxPercentStr = isset($tax['taxPercent']) ? number_format(floatval($tax['taxPercent']), 2, '.', '') : '';
-                            $taxAmountStr = isset($tax['taxAmount']) ? intval(floatval($tax['taxAmount']) * 100) : 0;
-                            $salesAmountStr = isset($tax['salesAmountWithTax']) ? intval(floatval($tax['salesAmountWithTax']) * 100) : 0;
-                            $taxSegment = $taxCode . $taxPercentStr . $taxAmountStr . $salesAmountStr;
-                            error_log("ZIMRA SIGNATURE: 5% Tax segment: " . $taxSegment . " (taxCode='$taxCode' || taxPercent='$taxPercentStr' || taxAmount=$taxAmountStr || salesAmount=$salesAmountStr)");
+                            $taxAmountStr = self::toCents(floatval($tax['taxAmount'] ?? 0), $receiptCurrency);
+                            $salesAmountStr = self::toCents(floatval($tax['salesAmountWithTax'] ?? 0), $receiptCurrency);
+                            $taxSegment = $taxPercentStr . $taxAmountStr . $salesAmountStr; // NO taxCode
+                            error_log("ZIMRA SIGNATURE: 5% Tax segment: " . $taxSegment . " (taxPercent='$taxPercentStr' || taxAmount=$taxAmountStr || salesAmount=$salesAmountStr) [taxCode='$taxCode' in payload only]");
                         }
                     }
                 }
@@ -401,36 +399,22 @@ class ZimraSignature {
     /**
      * Build taxes string for signature
      * 
-     * CRITICAL: ZIMRA Documentation Section 13.2.1 specifies:
-     * Format: taxCode || taxPercent || taxAmount || salesAmountWithTax
+     * CRITICAL: Matches zimra-public reference library format (working implementation)
+     * Format: taxPercent || taxAmount || salesAmountWithTax (NO taxCode in signature)
      * 
-     * Documentation explicitly states: "taxCode || taxPercent || taxAmount || salesAmountWithTax"
-     * Sorting: "Taxes are ordered by taxID in ascending order and taxCode in alphabetical order
-     * (if taxCode is empty it is ordered before A letter)."
+     * Sorting: Taxes are ordered by taxID in ascending order ONLY
      * 
-     * Note: Python library doesn't include taxCode, but ZIMRA documentation requires it.
-     * We'll follow the official ZIMRA documentation (which matches the example).
+     * Note: taxCode is included in JSON payload but NOT in signature string
+     * For exempt taxes, taxPercent is empty string in signature
      */
     private static function buildTaxesString($receiptTaxes, $currency = 'ZWL') {
-        // Sort taxes by taxID ascending, then by taxCode alphabetically (empty comes before A)
-        // Documentation: "Taxes are ordered by taxID in ascending order and taxCode in alphabetical 
-        // order (if taxCode is empty it is ordered before A letter)."
+        // CRITICAL FIX: Match zimra-public reference library format
+        // Sort taxes by taxID ascending ONLY (no taxCode sorting)
+        // Signature format: taxPercent || taxAmount || salesAmountWithTax (NO taxCode in signature)
         usort($receiptTaxes, function($a, $b) {
             $taxIdA = intval($a['taxID'] ?? 0);
             $taxIdB = intval($b['taxID'] ?? 0);
-            if ($taxIdA !== $taxIdB) {
-                return $taxIdA - $taxIdB;
-            }
-            // If taxID is same, sort by taxCode (empty comes before any letter)
-            $taxCodeA = $a['taxCode'] ?? '';
-            $taxCodeB = $b['taxCode'] ?? '';
-            if ($taxCodeA === '' && $taxCodeB !== '') {
-                return -1; // Empty comes first
-            }
-            if ($taxCodeA !== '' && $taxCodeB === '') {
-                return 1; // Empty comes first
-            }
-            return strcmp($taxCodeA, $taxCodeB);
+            return $taxIdA - $taxIdB;
         });
         
         // Log tax sorting order
@@ -439,9 +423,9 @@ class ZimraSignature {
             $logDir = dirname($logFile);
             if (is_dir($logDir) || @mkdir($logDir, 0755, true)) {
                 $timestamp = date('Y-m-d H:i:s');
-                $logMessage = "[$timestamp] TAX SORTING (ZIMRA Documentation Format): Taxes ordered by taxID (ascending), then taxCode (alphabetical, empty first):\n";
+                $logMessage = "[$timestamp] TAX SORTING (zimra-public format): Taxes ordered by taxID (ascending) ONLY:\n";
                 foreach ($receiptTaxes as $idx => $tax) {
-                    $logMessage .= "[$timestamp]   Tax[$idx]: taxID=" . ($tax['taxID'] ?? 'N/A') . ", taxCode='" . ($tax['taxCode'] ?? '') . "', taxPercent=" . ($tax['taxPercent'] ?? 'N/A') . "\n";
+                    $logMessage .= "[$timestamp]   Tax[$idx]: taxID=" . ($tax['taxID'] ?? 'N/A') . ", taxCode='" . ($tax['taxCode'] ?? '') . "', taxPercent=" . ($tax['taxPercent'] ?? 'N/A (exempt)') . "\n";
                 }
                 @file_put_contents($logFile, $logMessage, FILE_APPEND);
             }
@@ -449,58 +433,44 @@ class ZimraSignature {
         
         $taxStrings = [];
         foreach ($receiptTaxes as $tax) {
-            // ZIMRA Documentation format: taxCode || taxPercent || taxAmount || salesAmountWithTax
-            // Documentation Section 13.2.1: "taxCode || taxPercent || taxAmount || salesAmountWithTax"
+            // CRITICAL: zimra-public format - NO taxCode in signature string
+            // Format: taxPercent || taxAmount || salesAmountWithTax
+            // Reference: zimra-public/zimra/__init__.py lines 392-405
             
-            // 1. taxCode (empty string if not present)
-            $taxCode = $tax['taxCode'] ?? '';
-            
-            // 2. taxPercent - format with exactly 2 decimal places
-            // Documentation: "In case taxPercent is not an integer there should be dot between the integer and fractional part."
-            // "In case taxPercent is an integer there should be value of tax percent, dot and two zeros sent."
-            // Examples: 15 -> 15.00, 14.5 -> 14.50, 15.5 -> 15.50
-            // CRITICAL: For exempt taxes (taxCode='E'), use "0.00" in signature (not empty string)
-            // This distinguishes exempt (E + 0.00) from zero-rated (C + 0.00) by taxCode
+            // 1. taxPercent - format with exactly 2 decimal places, or empty string if exempt
+            // For exempt taxes, taxPercent field is not present in payload, so use empty string
             $percent = '';
-            if (isset($tax['taxPercent'])) {
+            if (isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
                 $percentValue = floatval($tax['taxPercent']);
                 $percent = number_format($percentValue, 2, '.', ''); // Always 2 decimal places, e.g., "15.50"
-            } elseif ($taxCode === 'E') {
-                // Exempt tax: use "0.00" in signature (taxPercent is omitted from JSON payload per ZIMRA docs)
-                $percent = '0.00';
             }
-            // If taxPercent is not sent and not exempt, use empty value (should not happen in normal flow)
+            // If taxPercent is not present (exempt tax), $percent remains empty string
             
-            // 3. taxAmount - in cents (use toCents for currency-specific conversion)
-            // Documentation: "Amounts are represented in cents"
+            // 2. taxAmount - in cents (use toCents for currency-specific conversion)
             $taxAmountFloat = floatval($tax['taxAmount'] ?? 0);
             $amountCents = self::toCents($taxAmountFloat, $currency);
             
-            // 4. salesAmountWithTax - in cents (use toCents for currency-specific conversion)
-            // Documentation: "Amounts are represented in cents"
+            // 3. salesAmountWithTax - in cents (use toCents for currency-specific conversion)
             $salesAmountFloat = floatval($tax['salesAmountWithTax'] ?? 0);
             $salesCents = self::toCents($salesAmountFloat, $currency);
             
-            // Format: taxCode || taxPercent || taxAmount || salesAmountWithTax (ZIMRA Documentation)
-            $taxString = $taxCode . $percent . strval($amountCents) . strval($salesCents);
+            // Format: taxPercent || taxAmount || salesAmountWithTax (NO taxCode)
+            // This matches zimra-public concatenate_receipt_taxes function exactly
+            $taxString = $percent . strval($amountCents) . strval($salesCents);
             $taxStrings[] = $taxString;
             
-            // Log tax string construction for debugging (matching ZIMRA documentation format)
+            // Log tax string construction for debugging
             if (defined('APP_PATH')) {
                 $logFile = APP_PATH . '/logs/error.log';
                 $logDir = dirname($logFile);
                 if (is_dir($logDir) || @mkdir($logDir, 0755, true)) {
                     $timestamp = date('Y-m-d H:i:s');
-                    $logMessage = "[$timestamp] TAX STRING CONSTRUCTION (ZIMRA Documentation Format):\n";
-                    $logMessage .= "[$timestamp]   Format: taxCode || taxPercent (2 decimals) || taxAmount (cents) || salesAmountWithTax (cents)\n";
-                    $logMessage .= "[$timestamp]   taxCode: '$taxCode' (from " . ($tax['taxCode'] ?? 'N/A') . ")\n";
-                    if ($taxCode === 'E' && !isset($tax['taxPercent'])) {
-                        $logMessage .= "[$timestamp]   taxPercent: '$percent' (EXEMPT TAX - using '0.00' in signature, omitted from JSON payload)\n";
-                    } else {
-                        $logMessage .= "[$timestamp]   taxPercent: '$percent' (from " . ($tax['taxPercent'] ?? 'N/A') . ", formatted with 2 decimal places)\n";
-                    }
-                    $logMessage .= "[$timestamp]   taxAmount: '$amountCents' (from " . ($tax['taxAmount'] ?? 'N/A') . " " . $currency . ", intval(value * 100))\n";
-                    $logMessage .= "[$timestamp]   salesAmountWithTax: '$salesCents' (from " . ($tax['salesAmountWithTax'] ?? 'N/A') . " " . $currency . ", intval(value * 100))\n";
+                    $logMessage = "[$timestamp] TAX STRING CONSTRUCTION (zimra-public format):\n";
+                    $logMessage .= "[$timestamp]   Format: taxPercent (2 decimals, empty if exempt) || taxAmount (cents) || salesAmountWithTax (cents)\n";
+                    $logMessage .= "[$timestamp]   taxCode: '" . ($tax['taxCode'] ?? 'N/A') . "' (in payload only, NOT in signature)\n";
+                    $logMessage .= "[$timestamp]   taxPercent: '$percent' (from " . ($tax['taxPercent'] ?? 'N/A (exempt)') . ", formatted with 2 decimal places or empty)\n";
+                    $logMessage .= "[$timestamp]   taxAmount: '$amountCents' (from " . ($tax['taxAmount'] ?? 'N/A') . " " . $currency . ", converted to cents)\n";
+                    $logMessage .= "[$timestamp]   salesAmountWithTax: '$salesCents' (from " . ($tax['salesAmountWithTax'] ?? 'N/A') . " " . $currency . ", converted to cents)\n";
                     $logMessage .= "[$timestamp]   Final tax string: $taxString\n";
                     @file_put_contents($logFile, $logMessage, FILE_APPEND);
                 }
