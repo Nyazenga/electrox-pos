@@ -102,8 +102,8 @@ git push origin main
 
 4. **Disable Conflicting Configs** (if needed):
    ```bash
-   # If electrox.bulconsultancy.com config conflicts
-   mv /etc/nginx/sites-enabled/electrox.bulconsultancy.com /etc/nginx/sites-enabled/electrox.bulconsultancy.com.disabled
+   # If electrox-pos.com config conflicts
+   mv /etc/nginx/sites-enabled/electrox-pos.com /etc/nginx/sites-enabled/electrox-pos.com.disabled
    nginx -t
    systemctl reload nginx
    ```
@@ -159,7 +159,7 @@ After deployment:
 2. **Database Credentials**: Live server uses `grcadmin` user with password `GRCAdmin123/`
 3. **Web Root**: `/var/www/electrox-pos`
 4. **PHP-FPM**: Socket at `/var/run/php/php8.3-fpm.sock`
-5. **Old Domain**: `electrox.bulconsultancy.com` configs still exist (for other systems)
+5. **Old Domain**: `electrox-pos.com` configs still exist (for other systems)
 
 ## 🎯 Next Steps
 

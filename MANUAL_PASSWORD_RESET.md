@@ -53,7 +53,7 @@ Connected to database: electrox_primary
 User found: ID=X, Email=nyazengamd@gmail.com
 SUCCESS: Password updated!
 New password: Admin123/
-Login at: https://electrox.bulconsultancy.com/login.php
+Login at: https://electrox-pos.com/login.php
 ```
 
 ## New Login Credentials
@@ -61,4 +61,4 @@ Login at: https://electrox.bulconsultancy.com/login.php
 - **Tenant**: primary
 - **Email**: nyazengamd@gmail.com  
 - **Password**: Admin123/
-- **URL**: https://electrox.bulconsultancy.com/login.php
+- **URL**: https://electrox-pos.com/login.php

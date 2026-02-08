@@ -75,7 +75,7 @@ try {
         echo "  Tenant: primary\n";
         echo "  Email: $email\n";
         echo "  Password: $newPassword\n";
-        echo "  Login URL: https://electrox.bulconsultancy.com/login.php\n";
+        echo "  Login URL: https://electrox-pos.com/login.php\n";
         echo "========================================\n";
     } else {
         echo "FAILED: Could not update password\n";

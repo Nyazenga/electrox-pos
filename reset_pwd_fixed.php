@@ -96,7 +96,7 @@ try {
         echo "Tenant: primary\n";
         echo "Email: $email\n";
         echo "Password: $newPassword\n";
-        echo "URL: https://electrox.bulconsultancy.com/login.php\n";
+        echo "URL: https://electrox-pos.com/login.php\n";
         echo "========================================\n";
     } else {
         echo "✗ Failed to update (no rows affected)\n";

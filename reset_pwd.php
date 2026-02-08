@@ -33,7 +33,7 @@ try {
     if ($result) {
         echo "SUCCESS: Password updated!\n";
         echo "New password: $newPassword\n";
-        echo "Login at: https://electrox.bulconsultancy.com/login.php\n";
+        echo "Login at: https://electrox-pos.com/login.php\n";
     } else {
         echo "FAILED: Could not update password\n";
         exit(1);

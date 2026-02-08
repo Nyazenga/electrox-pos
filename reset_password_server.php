@@ -89,7 +89,7 @@ try {
         echo "  Email: $email\n";
         echo "  Password: $newPassword\n";
         echo "\n";
-        echo "You can now login at: https://electrox.bulconsultancy.com/login.php\n";
+        echo "You can now login at: https://electrox-pos.com/login.php\n";
     } else {
         echo "✗ Failed to update password\n";
         exit(1);
