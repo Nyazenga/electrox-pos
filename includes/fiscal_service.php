@@ -858,17 +858,18 @@ class FiscalService {
             unset($line);
         }
         
-        // 3. Prepare receiptTaxes (keep taxCode for signature generation - ZIMRA documentation requires it)
+        // 3. Prepare receiptTaxes for signature generation and payload
         // CRITICAL: For exempt taxes (taxCode='E'), taxPercent should NOT be included in JSON payload
         // Documentation: "In case of exempt, field will not be provided" (receiptTax)
-        // But we need it for signature generation (as empty string), so we keep it until after signature, then remove it
+        // Signature format (zimra-public): taxPercent || taxAmount || salesAmountWithTax (NO taxCode in signature)
+        // For exempt taxes, taxPercent is removed here, and signature will use empty string
         if (!empty($receiptData['receiptTaxes'])) {
             foreach ($receiptData['receiptTaxes'] as &$tax) {
                 // Convert numeric values to floats and round taxAmount to 2 decimal places
-                // Keep taxCode for signature generation (ZIMRA documentation format: taxCode || taxPercent || taxAmount || salesAmountWithTax)
                 // For exempt taxes (taxCode='E'), taxPercent must be removed from payload (even if it's 0)
+                // Signature generation will detect missing taxPercent and use empty string (matches zimra-public)
                 if (isset($tax['taxCode']) && $tax['taxCode'] === 'E') {
-                    // Exempt tax - remove taxPercent field entirely (will use empty string in signature)
+                    // Exempt tax - remove taxPercent field entirely (signature will use empty string)
                     unset($tax['taxPercent']);
                 } elseif (isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
                     // Non-exempt tax - convert to float
