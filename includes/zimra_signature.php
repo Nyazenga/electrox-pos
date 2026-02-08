@@ -523,11 +523,12 @@ class ZimraSignature {
         // Convert to smallest currency unit (cents for 2 decimal places)
         // For 2 decimal places: multiply by 100 (e.g., 45.00 USD = 4500 cents)
         // For 3 decimal places: multiply by 1000, etc.
-        // CRITICAL: Match Python's int() behavior - truncate, don't round!
-        // Python: int(receiptTotal * 100) truncates (floors for positive numbers)
-        // PHP: intval() also truncates, but we should NOT use round() first
+        // CRITICAL: Match Python's quantize(Decimal('1')) behavior - ROUND to nearest integer!
+        // Python: int((Decimal(str(receiptTotal)) * Decimal('100')).quantize(Decimal('1')))
+        // quantize(Decimal('1')) rounds to nearest integer, then int() converts
+        // PHP: Use round() then intval() to match Python's behavior
         $multiplier = pow(10, $decimalPlaces);
-        return intval($amount * $multiplier);
+        return intval(round($amount * $multiplier));
     }
     
     /**
