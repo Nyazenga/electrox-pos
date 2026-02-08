@@ -520,12 +520,22 @@ echo "<div class='error'>✗ Failed: " . count($results['failed']) . "</div>\n";
 echo "<div class='warning'>⚠ Errors: " . count($results['errors']) . "</div>\n";
 
 if (!empty($results['success'])) {
-    echo "<h3>✅ Successful Combinations:</h3>\n";
+    echo "<h3>✅ Successful Combinations (" . count($results['success']) . "):</h3>\n";
     echo "<pre>";
     foreach ($results['success'] as $result) {
         echo "Test #{$result['test']['id']}: {$result['test']['name']}\n";
         echo "  Receipt ID: {$result['receiptID']}\n";
-        echo "  Hash: " . substr($result['hash'], 0, 30) . "...\n\n";
+        if (isset($result['receiptGlobalNo'])) {
+            echo "  Receipt Global No: {$result['receiptGlobalNo']}\n";
+        }
+        if ($result['hash']) {
+            echo "  Hash: " . substr($result['hash'], 0, 30) . "...\n";
+        }
+        echo "  Lines: " . count($result['test']['lines']) . "\n";
+        foreach ($result['test']['lines'] as $line) {
+            echo "    - {$line['tax']}: {$line['amount']} x {$line['qty']}\n";
+        }
+        echo "\n";
     }
     echo "</pre>\n";
 }
