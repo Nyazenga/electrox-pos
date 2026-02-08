@@ -111,7 +111,11 @@ if (isset($_GET['id'])) {
                                   WHERE s.id = :id", [':id' => intval($_GET['id'])]);
     
     if ($selectedSale) {
-        $items = $db->getRows("SELECT * FROM sale_items WHERE sale_id = :id", [':id' => $selectedSale['id']]);
+        $items = $db->getRows("SELECT si.*, p.tax_id, t.tax_percent, t.tax_code 
+                               FROM sale_items si 
+                               LEFT JOIN products p ON si.product_id = p.id 
+                               LEFT JOIN taxes t ON p.tax_id = t.id 
+                               WHERE si.sale_id = :id", [':id' => $selectedSale['id']]);
         
         // Get product_specific_list entries for each sale item
         foreach ($items as &$item) {
@@ -905,15 +909,21 @@ require_once APP_PATH . '/includes/header.php';
                 <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
                     <colgroup>
                         <col style="width: auto;">
+                        <col style="width: 100px;">
+                        <col style="width: 120px;">
                         <col style="width: 50px;">
+                        <col style="width: 80px;">
                         <col style="width: 80px;">
                         <col style="width: 80px;">
                     </colgroup>
                     <thead>
                         <tr>
                             <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">Item</th>
+                            <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">Serial No</th>
+                            <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">IMEI</th>
                             <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">Qty</th>
                             <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Price</th>
+                            <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Tax</th>
                             <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Total</th>
                         </tr>
                     </thead>
@@ -987,18 +997,18 @@ require_once APP_PATH . '/includes/header.php';
                         ?>
                         <?php if ($discountAmount > 0): ?>
                             <tr>
-                                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
+                                <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
                                 <td style="text-align: right; padding: 6px 4px;"><strong>-<?= $discountFormatted ?></strong></td>
                             </tr>
                         <?php endif; ?>
                         <?php if ($deliveryCost > 0): ?>
                             <tr>
-                                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Delivery Cost:</strong></td>
+                                <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Delivery Cost:</strong></td>
                                 <td style="text-align: right; padding: 6px 4px;"><strong><?= $deliveryCostFormatted ?></strong></td>
                             </tr>
                         <?php endif; ?>
                         <tr>
-                            <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Total(Excl. tax):</strong></td>
+                            <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Total(Excl. tax):</strong></td>
                             <td style="text-align: right; padding: 6px 4px;"><strong><?= $subtotalFormatted ?></strong></td>
                         </tr>
                         <?php
@@ -1058,7 +1068,7 @@ require_once APP_PATH . '/includes/header.php';
                                 $taxAmountFormatted = $paymentCurrency ? formatCurrencyAmount($taxAmount, $paymentCurrencyId, $db) : formatCurrency($taxAmount);
                         ?>
                             <tr>
-                                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
+                                <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
                                 <td style="text-align: right; padding: 6px 4px;"><strong><?= $taxAmountFormatted ?></strong></td>
                             </tr>
                         <?php
@@ -1066,7 +1076,7 @@ require_once APP_PATH . '/includes/header.php';
                         }
                         ?>
                         <tr class="total-row">
-                            <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Total(Incl. tax):</strong></td>
+                            <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Total(Incl. tax):</strong></td>
                             <td style="text-align: right; padding: 6px 4px;"><strong><?= $totalFormatted ?></strong></td>
                         </tr>
                         <?php 
@@ -1093,7 +1103,7 @@ require_once APP_PATH . '/includes/header.php';
                             $accountBalanceFormatted = $paymentCurrency ? formatCurrencyAmount($accountBalance, $paymentCurrencyId, $db) : formatCurrency($accountBalance);
                         ?>
                             <tr>
-                                <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
+                                <td colspan="7" style="padding: 6px 4px; padding-top: 8px;">
                                     <strong>Put on Account Billing:</strong><br>
                                     <div style="margin-left: 10px;">
                                         <?php if (!empty($paymentTermName)): ?>
@@ -1113,7 +1123,7 @@ require_once APP_PATH . '/includes/header.php';
                             </tr>
                         <?php else: ?>
                             <tr>
-                                <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
+                                <td colspan="7" style="padding: 6px 4px; padding-top: 8px;">
                                     <strong>Payment:</strong><br>
                                     <?php 
                                     // Ensure payments are loaded (fallback check)
@@ -1199,7 +1209,7 @@ require_once APP_PATH . '/includes/header.php';
                                 $changeFormatted = $paymentCurrency ? formatCurrencyAmount($change, $paymentCurrencyId, $db) : formatCurrency($change);
                             ?>
                                 <tr>
-                                    <td colspan="3" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
+                                    <td colspan="6" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
                                     <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong><?= $changeFormatted ?></strong></td>
                                 </tr>
                             <?php endif; ?>
