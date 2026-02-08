@@ -344,19 +344,19 @@ class ZimraSignature {
                             $logMessage .= "*** 5% NON-VAT WITHHOLDING TAX DETECTED ***\n";
                             $logMessage .= str_repeat('-', 80) . "\n";
                             $logMessage .= "Tax ID: " . ($tax['taxID'] ?? 'N/A') . "\n";
-                            $logMessage .= "Tax Code: " . ($tax['taxCode'] ?? 'N/A') . "\n";
+                            $logMessage .= "Tax Code: " . ($tax['taxCode'] ?? 'N/A') . " (in payload only, NOT in signature)\n";
                             $logMessage .= "Tax Percent: " . ($taxPercent ?? 'N/A') . "\n";
                             $logMessage .= "Tax Amount: " . ($tax['taxAmount'] ?? 'N/A') . "\n";
                             $logMessage .= "Sales Amount With Tax: " . ($tax['salesAmountWithTax'] ?? 'N/A') . "\n";
                             $logMessage .= "\n";
-                            // Log how this tax appears in the concatenated string
-                            $taxCode = $tax['taxCode'] ?? '';
+                            // Log how this tax appears in the concatenated string (NO taxCode)
+                            $taxCode = $tax['taxCode'] ?? ''; // For reference only
                             $taxPercentStr = isset($tax['taxPercent']) ? number_format(floatval($tax['taxPercent']), 2, '.', '') : '';
-                            $taxAmountStr = isset($tax['taxAmount']) ? intval(floatval($tax['taxAmount']) * 100) : 0;
-                            $salesAmountStr = isset($tax['salesAmountWithTax']) ? intval(floatval($tax['salesAmountWithTax']) * 100) : 0;
-                            $taxSegment = $taxCode . $taxPercentStr . $taxAmountStr . $salesAmountStr;
+                            $taxAmountStr = self::toCents(floatval($tax['taxAmount'] ?? 0), $receiptCurrency);
+                            $salesAmountStr = self::toCents(floatval($tax['salesAmountWithTax'] ?? 0), $receiptCurrency);
+                            $taxSegment = $taxPercentStr . $taxAmountStr . $salesAmountStr; // NO taxCode
                             $logMessage .= "5% Tax segment in signature string: " . $taxSegment . "\n";
-                            $logMessage .= "  Format: taxCode('$taxCode') || taxPercent('$taxPercentStr') || taxAmount($taxAmountStr cents) || salesAmountWithTax($salesAmountStr cents)\n";
+                            $logMessage .= "  Format: taxPercent('$taxPercentStr') || taxAmount($taxAmountStr cents) || salesAmountWithTax($salesAmountStr cents) [taxCode='$taxCode' in payload only]\n";
                             $logMessage .= str_repeat('-', 80) . "\n";
                             break;
                         }
