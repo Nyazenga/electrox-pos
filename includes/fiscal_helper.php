@@ -716,7 +716,7 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             $unitPrice = floatval($item['unit_price']);
             $totalPrice = floatval($item['total_price'] ?? $item['line_total'] ?? ($item['unit_price'] * $item['quantity']));
             
-            // CRITICAL: When prices_include_tax is enabled, prices are stored WITHOUT tax in database
+            // CRITICAL: When prices_include_tax is enable d, prices are stored WITHOUT tax in database
             // But ZIMRA expects prices WITH tax (since receiptLinesTaxInclusive = true)
             // So we need to convert stored price (without tax) back to include tax
             if ($pricesIncludeTax && $taxPercent !== null && $taxCode !== 'E') {
@@ -851,20 +851,37 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
             writeFiscalLog("FISCALIZE SALE: Added discount line: " . json_encode($discountLine, JSON_PRETTY_PRINT));
         }
         
-        // Calculate receiptTotal from sum of all receiptLines (items + discount)
-        // EXCLUDING delivery_cost (delivery is non-taxable and not part of fiscal invoice)
-        // NOTE: Receipt lines are already converted to payment currency above (lines 684-688),
-        // so we should NOT convert the sum again - that would be a double conversion
+        // CRITICAL FIX: Use actual sale total_amount instead of recalculating from sale_items
+        // This ensures receiptTotal matches what the customer actually paid, which is critical for signature validation
+        // Note: sales.total_amount includes delivery_cost, but fiscal invoice should exclude it
+        // Convert sale total to payment currency if needed
+        $saleTotalInPaymentCurrency = floatval($sale['total_amount']);
+        $deliveryCostInPaymentCurrency = floatval($sale['delivery_cost'] ?? 0);
+        
+        if ($exchangeRateToPayment != 1.0) {
+            $saleTotalInPaymentCurrency = $saleTotalInPaymentCurrency * $exchangeRateToPayment;
+            $deliveryCostInPaymentCurrency = $deliveryCostInPaymentCurrency * $exchangeRateToPayment;
+            writeFiscalLog("FISCALIZE SALE: Converted sale total_amount from base currency {$sale['total_amount']} to payment currency $saleTotalInPaymentCurrency (rate: $exchangeRateToPayment)");
+        }
+        
+        // Exclude delivery_cost from receiptTotal (delivery is non-taxable and not part of fiscal invoice)
+        $receiptTotalBeforeDelivery = $saleTotalInPaymentCurrency - $deliveryCostInPaymentCurrency;
+        $receiptData['receiptTotal'] = round($receiptTotalBeforeDelivery, 2);
+        writeFiscalLog("FISCALIZE SALE: Using actual sale total_amount (EXCLUDING delivery_cost): {$receiptData['receiptTotal']} (from sales.total_amount: {$sale['total_amount']} - delivery_cost: {$sale['delivery_cost']})");
+        writeFiscalLog("FISCALIZE SALE: Delivery cost ({$sale['delivery_cost']}) is NOT included in fiscal invoice total");
+        
+        // Log calculated sum for comparison (for debugging)
         $sumReceiptLines = 0;
         foreach ($receiptData['receiptLines'] as $line) {
             $sumReceiptLines += floatval($line['receiptLineTotal']);
         }
-        
-        // Receipt lines are already in payment currency (converted above), so sum is already in payment currency
-        // No need to convert again - this was causing double conversion bug
-        $receiptData['receiptTotal'] = round($sumReceiptLines, 2);
-        writeFiscalLog("FISCALIZE SALE: Calculated receiptTotal from sum of receiptLines (EXCLUDING delivery_cost): {$receiptData['receiptTotal']}");
-        writeFiscalLog("FISCALIZE SALE: Delivery cost ({$sale['delivery_cost']}) is NOT included in fiscal invoice total");
+        $difference = abs($receiptData['receiptTotal'] - $sumReceiptLines);
+        if ($difference > 0.01) {
+            writeFiscalLog("FISCALIZE SALE: WARNING - Sum of receiptLines ($sumReceiptLines) differs from sale total_amount ({$receiptData['receiptTotal']}), difference: $difference");
+            writeFiscalLog("FISCALIZE SALE: Using sale total_amount to ensure signature matches what customer actually paid");
+        } else {
+            writeFiscalLog("FISCALIZE SALE: Sum of receiptLines ($sumReceiptLines) matches sale total_amount ({$receiptData['receiptTotal']})");
+        }
         
         // Calculate taxes
         // Group by taxID, taxPercent AND taxCode (as per RCPT025: taxID/taxPercent must match FDMS, and RCPT026: "same taxPercent and taxCode values")
