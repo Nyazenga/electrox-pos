@@ -464,13 +464,20 @@ if ($usePDF) {
     
     $pdfDiscountAmount = floatval($sale['discount_amount'] ?? 0);
     $pdfDeliveryCost = floatval($sale['delivery_cost'] ?? 0);
-    $pdfTotalAmount = floatval($sale['total_amount']);
-    $pdfDiscountAmount = floatval($sale['discount_amount'] ?? 0);
     
-    // CRITICAL: Use sales.total_amount as the source of truth (actual amount customer paid)
-    // This ensures the receipt matches what was actually charged, especially when product-specific items have different prices
-    // Total (Excl. tax) = total_amount - tax_amount
-    $pdfSubtotal = $pdfTotalAmount - $pdfTaxAmount;
+    // CRITICAL FIX: Recalculate totals from sale_items (matching what ZIMRA sees)
+    // This ensures the receipt matches what was actually sent to ZIMRA, especially when product-specific items have different prices
+    // Calculate subtotal from items (sum of all item total_price) - this matches ZIMRA receiptLines
+    $pdfItemsSubtotal = 0;
+    foreach ($items as $item) {
+        $pdfItemsSubtotal += floatval($item['total_price']);
+    }
+    
+    // Total (Excl. tax) = items subtotal - discount + delivery_cost
+    $pdfSubtotal = $pdfItemsSubtotal - $pdfDiscountAmount + $pdfDeliveryCost;
+    
+    // Recalculate total_amount from subtotal + tax (matching ZIMRA calculation)
+    $pdfTotalAmount = $pdfSubtotal + $pdfTaxAmount;
     
     if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
         $pdfSubtotal = $pdfSubtotal * $exchangeRate;
