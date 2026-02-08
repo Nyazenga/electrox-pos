@@ -976,10 +976,20 @@ require_once APP_PATH . '/includes/header.php';
                         
                         $discountAmount = floatval($selectedSale['discount_amount'] ?? 0);
                         $deliveryCost = floatval($selectedSale['delivery_cost'] ?? 0);
-                        $totalAmount = floatval($selectedSale['total_amount']);
                         
-                        // Subtotal = Total - Tax - Delivery Cost (excludes tax and delivery)
-                        $subtotal = $totalAmount - $taxAmount - $deliveryCost;
+                        // CRITICAL FIX: Recalculate totals from sale_items (matching what ZIMRA sees)
+                        // This ensures the receipt matches what was actually sent to ZIMRA, especially when product-specific items have different prices
+                        // Calculate subtotal from items (sum of all item total_price) - this matches ZIMRA receiptLines
+                        $itemsSubtotal = 0;
+                        foreach ($selectedSale['items'] as $item) {
+                            $itemsSubtotal += floatval($item['total_price']);
+                        }
+                        
+                        // Total (Excl. tax) = items subtotal - discount + delivery_cost
+                        $subtotal = $itemsSubtotal - $discountAmount + $deliveryCost;
+                        
+                        // Recalculate total_amount from subtotal + tax (matching ZIMRA calculation)
+                        $totalAmount = $subtotal + $taxAmount;
                         
                         // Convert amounts to payment currency if needed
                         if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
