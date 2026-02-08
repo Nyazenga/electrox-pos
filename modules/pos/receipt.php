@@ -1547,7 +1547,7 @@ body, html {
                     $changeFormatted = $paymentCurrency ? formatCurrencyAmount($change, $paymentCurrencyId, $db) : formatCurrency($change);
                 ?>
                     <tr>
-                        <td colspan="3" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
+                        <td colspan="6" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
                         <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong><?= $changeFormatted ?></strong></td>
                     </tr>
                 <?php endif; ?>
