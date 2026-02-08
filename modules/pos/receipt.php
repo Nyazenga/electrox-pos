@@ -51,10 +51,10 @@ if (!$sale) {
     die('Receipt not found');
 }
 
-$items = $db->getRows("SELECT si.*, p.tax_id, t.tax_percent, t.tax_code 
+$items = $db->getRows("SELECT si.*, p.tax_id as product_tax_id, pc.tax_id as category_tax_id 
                        FROM sale_items si 
                        LEFT JOIN products p ON si.product_id = p.id 
-                       LEFT JOIN taxes t ON p.tax_id = t.id 
+                       LEFT JOIN product_categories pc ON p.category_id = pc.id 
                        WHERE si.sale_id = :id", [':id' => $id]);
 if ($items === false) {
     $items = [];
@@ -67,6 +67,50 @@ foreach ($items as &$item) {
         [':sale_item_id' => $item['id']]
     );
     $item['specific_list_entries'] = $specificEntries !== false ? $specificEntries : [];
+}
+unset($item);
+
+// Get tax information for each item from fiscal config
+$primaryDb = Database::getPrimaryInstance();
+$branchId = $sale['branch_id'] ?? null;
+$applicableTaxes = [];
+if ($branchId) {
+    $fiscalConfig = $primaryDb->getRow(
+        "SELECT applicable_taxes FROM fiscal_config WHERE branch_id = :branch_id LIMIT 1",
+        [':branch_id' => $branchId]
+    );
+    if ($fiscalConfig && !empty($fiscalConfig['applicable_taxes'])) {
+        $applicableTaxes = json_decode($fiscalConfig['applicable_taxes'], true);
+        if (!is_array($applicableTaxes)) {
+            $applicableTaxes = [];
+        }
+    }
+}
+
+// Create tax map
+$taxMap = [];
+foreach ($applicableTaxes as $tax) {
+    if (isset($tax['taxID'])) {
+        $taxId = intval($tax['taxID']);
+        $taxPercent = isset($tax['taxPercent']) && $tax['taxPercent'] !== null ? floatval($tax['taxPercent']) : null;
+        $taxCode = $tax['taxCode'] ?? '';
+        $taxMap[$taxId] = ['percent' => $taxPercent, 'code' => $taxCode];
+    }
+}
+
+// Add tax percent to each item
+foreach ($items as &$item) {
+    $productTaxId = $item['product_tax_id'] ?? null;
+    $categoryTaxId = $item['category_tax_id'] ?? null;
+    $finalTaxId = $productTaxId ?: $categoryTaxId;
+    
+    $item['tax_percent'] = null;
+    $item['tax_code'] = null;
+    
+    if ($finalTaxId && isset($taxMap[intval($finalTaxId)])) {
+        $item['tax_percent'] = $taxMap[intval($finalTaxId)]['percent'];
+        $item['tax_code'] = $taxMap[intval($finalTaxId)]['code'];
+    }
 }
 unset($item);
 
@@ -298,17 +342,15 @@ if ($usePDF) {
     $pdf->Line(15, $pdf->GetY(), 195, $pdf->GetY());
     $pdf->Ln(10);
     
-    // Items Table Header - Adjusted widths to fit A4 page (180mm width)
+    // Items Table Header
     $pdf->SetFillColor(30, 58, 138);
     $pdf->SetTextColor(255, 255, 255);
-    $pdf->SetFont('helvetica', 'B', 7);
-    $pdf->Cell(50, 10, 'Description', 1, 0, 'L', true);
-    $pdf->Cell(30, 10, 'Serial No', 1, 0, 'L', true);
-    $pdf->Cell(35, 10, 'IMEI', 1, 0, 'L', true);
-    $pdf->Cell(12, 10, 'Qty', 1, 0, 'C', true);
-    $pdf->Cell(20, 10, 'Price', 1, 0, 'R', true);
-    $pdf->Cell(20, 10, 'Tax', 1, 0, 'R', true);
-    $pdf->Cell(20, 10, 'Total', 1, 1, 'R', true);
+    $pdf->SetFont('helvetica', 'B', 9);
+    $pdf->Cell(90, 10, 'Description', 1, 0, 'L', true);
+    $pdf->Cell(20, 10, 'Qty', 1, 0, 'C', true);
+    $pdf->Cell(25, 10, 'Tax %', 1, 0, 'C', true);
+    $pdf->Cell(30, 10, 'Price', 1, 0, 'R', true);
+    $pdf->Cell(30, 10, 'Total', 1, 1, 'R', true);
     
     // Items Table Rows
     $pdf->SetTextColor(0, 0, 0);
@@ -317,47 +359,40 @@ if ($usePDF) {
     
     foreach ($items as $item) {
         $description = htmlspecialchars($item['product_name']);
-        $quantity = intval($item['quantity']);
+        $quantity = $item['quantity'];
         $unitPrice = floatval($item['unit_price']);
         $totalPrice = floatval($item['total_price']);
         
-        // Calculate tax for this line item
-        $itemTaxRate = floatval($item['tax_percent'] ?? 0);
-        $lineTax = 0;
-        if ($itemTaxRate > 0) {
-            if ($pricesIncludeTax) {
-                // Prices include tax, but total_price is stored WITHOUT tax
-                $taxDecimal = $itemTaxRate / 100;
-                $lineTax = $totalPrice * $taxDecimal;
-            } else {
-                // Prices don't include tax, total_price is also WITHOUT tax
-                $taxDecimal = $itemTaxRate / 100;
-                $lineTax = $totalPrice * $taxDecimal;
-            }
-        }
-        $lineTax = round($lineTax, 2);
-        
-        // Get Serial Numbers and IMEIs from specific_list_entries
-        $serialNumbers = [];
-        $imeis = [];
+        // Add serial numbers and IMEI inline in description (not separate lines)
         if (!empty($item['specific_list_entries'])) {
+            $details = [];
             foreach ($item['specific_list_entries'] as $entry) {
+                $entryDetails = [];
                 if (!empty($entry['serial_number'])) {
-                    $serialNumbers[] = htmlspecialchars($entry['serial_number']);
+                    $entryDetails[] = "S/N: " . htmlspecialchars($entry['serial_number']);
                 }
                 if (!empty($entry['imei'])) {
-                    $imeis[] = htmlspecialchars($entry['imei']);
+                    $entryDetails[] = "IMEI: " . htmlspecialchars($entry['imei']);
+                }
+                if (!empty($entryDetails)) {
+                    $details[] = implode(", ", $entryDetails);
                 }
             }
+            if (!empty($details)) {
+                $description .= " (" . implode("; ", $details) . ")";
+            }
         }
-        $serialNumberText = !empty($serialNumbers) ? implode(', ', $serialNumbers) : 'N/A';
-        $imeiText = !empty($imeis) ? implode(', ', $imeis) : 'N/A';
+        
+        // Get tax percent for this item
+        $taxPercentDisplay = '-';
+        if (isset($item['tax_percent']) && $item['tax_percent'] !== null && $item['tax_code'] !== 'E') {
+            $taxPercentDisplay = number_format($item['tax_percent'], 1) . '%';
+        }
         
         // Convert to payment currency if needed (for PDF display)
         if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
             $unitPrice = $unitPrice * $exchangeRate;
             $totalPrice = $totalPrice * $exchangeRate;
-            $lineTax = $lineTax * $exchangeRate;
         }
         
         $startX = $pdf->GetX();
@@ -366,48 +401,23 @@ if ($usePDF) {
         $lineHeight = 5;
         $minHeight = 8;
         
-        // Calculate height needed for all cells (use the tallest)
-        $pdf->SetFont('helvetica', '', 7);
+        $pdf->SetFont('helvetica', '', 9);
+        
+        // Calculate height needed for description
         $testY = $pdf->GetY();
+        $pdf->MultiCell(90, $lineHeight, $description, 0, 'L', false, 0);
+        $measuredHeight = $pdf->GetY() - $testY;
+        $actualRowHeight = max($minHeight, $measuredHeight);
         
-        // Test description height
-        $pdf->MultiCell(50, $lineHeight, $description, 0, 'L', false, 0);
-        $descHeight = $pdf->GetY() - $testY;
-        $pdf->SetY($testY);
-        
-        // Test serial number height
-        $pdf->MultiCell(30, $lineHeight, $serialNumberText, 0, 'L', false, 0);
-        $serialHeight = $pdf->GetY() - $testY;
-        $pdf->SetY($testY);
-        
-        // Test IMEI height
-        $pdf->MultiCell(35, $lineHeight, $imeiText, 0, 'L', false, 0);
-        $imeiHeight = $pdf->GetY() - $testY;
-        $pdf->SetY($testY);
-        
-        $actualRowHeight = max($minHeight, $descHeight, $serialHeight, $imeiHeight);
-        
-        // Draw cells with borders - Adjusted X positions for new column widths
         $pdf->SetXY($startX, $startY);
-        $pdf->MultiCell(50, $lineHeight, $description, 1, 'L', false, 0);
+        // Use Cell instead of MultiCell with border to avoid row separators
+        $pdf->Cell(90, $actualRowHeight, $description, 1, 0, 'L', false);
         
-        $pdf->SetXY($startX + 50, $startY);
-        $pdf->MultiCell(30, $lineHeight, $serialNumberText, 1, 'L', false, 0);
-        
-        $pdf->SetXY($startX + 80, $startY);
-        $pdf->MultiCell(35, $lineHeight, $imeiText, 1, 'L', false, 0);
-        
-        $pdf->SetXY($startX + 115, $startY);
-        $pdf->Cell(12, $actualRowHeight, $quantity, 1, 0, 'C');
-        
-        $pdf->SetXY($startX + 127, $startY);
-        $pdf->Cell(20, $actualRowHeight, number_format($unitPrice, 2), 1, 0, 'R');
-        
-        $pdf->SetXY($startX + 147, $startY);
-        $pdf->Cell(20, $actualRowHeight, number_format($lineTax, 2), 1, 0, 'R');
-        
-        $pdf->SetXY($startX + 167, $startY);
-        $pdf->Cell(20, $actualRowHeight, number_format($totalPrice, 2), 1, 1, 'R');
+        $pdf->SetXY($startX + 90, $startY);
+        $pdf->Cell(20, $actualRowHeight, $quantity, 1, 0, 'C');
+        $pdf->Cell(25, $actualRowHeight, $taxPercentDisplay, 1, 0, 'C');
+        $pdf->Cell(30, $actualRowHeight, number_format($unitPrice, 2), 1, 0, 'R');
+        $pdf->Cell(30, $actualRowHeight, number_format($totalPrice, 2), 1, 1, 'R');
         
         $pdf->SetY($startY + $actualRowHeight);
     }
@@ -464,20 +474,12 @@ if ($usePDF) {
     
     $pdfDiscountAmount = floatval($sale['discount_amount'] ?? 0);
     $pdfDeliveryCost = floatval($sale['delivery_cost'] ?? 0);
+    $pdfTotalAmount = floatval($sale['total_amount']);
+    $pdfDiscountAmount = floatval($sale['discount_amount'] ?? 0);
     
-    // CRITICAL FIX: Recalculate totals from sale_items (matching what ZIMRA sees)
-    // This ensures the receipt matches what was actually sent to ZIMRA, especially when product-specific items have different prices
-    // Calculate subtotal from items (sum of all item total_price) - this matches ZIMRA receiptLines
-    $pdfItemsSubtotal = 0;
-    foreach ($items as $item) {
-        $pdfItemsSubtotal += floatval($item['total_price']);
-    }
-    
-    // Total (Excl. tax) = items subtotal - discount + delivery_cost
-    $pdfSubtotal = $pdfItemsSubtotal - $pdfDiscountAmount + $pdfDeliveryCost;
-    
-    // Recalculate total_amount from subtotal + tax (matching ZIMRA calculation)
-    $pdfTotalAmount = $pdfSubtotal + $pdfTaxAmount;
+    // CRITICAL FIX: Use sales.total_amount as source of truth, not sum of sale_items
+    // Total (Excl. tax) = total_amount - tax_amount - delivery_cost
+    $pdfSubtotal = $pdfTotalAmount - $pdfTaxAmount - $pdfDeliveryCost;
     
     if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
         $pdfSubtotal = $pdfSubtotal * $exchangeRate;
@@ -489,25 +491,31 @@ if ($usePDF) {
     
     if ($pdfDiscountAmount > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(100, 0, '', 0, 0);
-        $pdf->Cell(55, 8, 'Discount:', 1, 0, 'L');
+        $pdf->Cell(90, 0, '', 0, 0);
+        $pdf->Cell(20, 0, '', 0, 0);
+        $pdf->Cell(25, 0, '', 0, 0);
+        $pdf->Cell(60, 8, 'Discount:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(35, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
+        $pdf->Cell(30, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
     }
     
     if ($pdfDeliveryCost > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(100, 0, '', 0, 0);
-        $pdf->Cell(55, 8, 'Delivery Cost:', 1, 0, 'L');
+        $pdf->Cell(90, 0, '', 0, 0);
+        $pdf->Cell(20, 0, '', 0, 0);
+        $pdf->Cell(25, 0, '', 0, 0);
+        $pdf->Cell(60, 8, 'Delivery Cost:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(35, 8, number_format($pdfDeliveryCost, 2), 1, 1, 'R');
+        $pdf->Cell(30, 8, number_format($pdfDeliveryCost, 2), 1, 1, 'R');
     }
     
     $pdf->SetFont('helvetica', '', 9);
-    $pdf->Cell(100, 0, '', 0, 0);
-    $pdf->Cell(55, 8, 'Total(Excl. tax):', 1, 0, 'L');
+    $pdf->Cell(90, 0, '', 0, 0);
+    $pdf->Cell(20, 0, '', 0, 0);
+    $pdf->Cell(25, 0, '', 0, 0);
+    $pdf->Cell(60, 8, 'Total(Excl. tax):', 1, 0, 'L');
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(35, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
+    $pdf->Cell(30, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
     
     // Tax Breakdown (if fiscalized)
     if ($fiscalReceipt && !empty($fiscalReceiptTaxes)) {
@@ -549,7 +557,9 @@ if ($usePDF) {
         // Display tax breakdowns
         foreach ($taxGroups as $group) {
             $pdf->SetFont('helvetica', '', 9);
-            $pdf->Cell(100, 0, '', 0, 0);
+            $pdf->Cell(90, 0, '', 0, 0);
+            $pdf->Cell(20, 0, '', 0, 0);
+            $pdf->Cell(25, 0, '', 0, 0);
             
             // Format label based on tax type
             if ($group['taxCode'] === 'E') {
@@ -560,7 +570,7 @@ if ($usePDF) {
                 $label = 'Total ' . number_format($group['taxPercent'], 1) . '% VAT';
             }
             
-            $pdf->Cell(55, 8, $label . ':', 1, 0, 'L');
+            $pdf->Cell(60, 8, $label . ':', 1, 0, 'L');
             $pdf->SetFont('helvetica', 'B', 9);
             
             // Convert tax amount to payment currency if needed
@@ -569,14 +579,16 @@ if ($usePDF) {
                 $pdfTaxAmount = $pdfTaxAmount * $exchangeRate;
             }
             
-            $pdf->Cell(35, 8, number_format($pdfTaxAmount, 2), 1, 1, 'R');
+            $pdf->Cell(30, 8, number_format($pdfTaxAmount, 2), 1, 1, 'R');
         }
     }
     
     $pdf->SetFont('helvetica', 'B', 10);
-    $pdf->Cell(100, 0, '', 0, 0);
-    $pdf->Cell(55, 10, 'Total(Incl. tax):', 1, 0, 'L');
-    $pdf->Cell(35, 10, number_format($pdfTotalAmount, 2), 1, 1, 'R');
+    $pdf->Cell(90, 0, '', 0, 0);
+    $pdf->Cell(20, 0, '', 0, 0);
+    $pdf->Cell(25, 0, '', 0, 0);
+    $pdf->Cell(60, 10, 'Total(Incl. tax):', 1, 0, 'L');
+    $pdf->Cell(30, 10, number_format($pdfTotalAmount, 2), 1, 1, 'R');
     
     $pdf->Ln(12);
     
@@ -1255,21 +1267,17 @@ body, html {
     <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
         <colgroup>
             <col style="min-width: 120px;">
-            <col style="width: 100px; min-width: 80px;">
-            <col style="width: 120px; min-width: 100px;">
             <col style="width: 60px; min-width: 50px;">
-            <col style="width: 90px; min-width: 70px;">
+            <col style="width: 70px; min-width: 60px;">
             <col style="width: 90px; min-width: 70px;">
             <col style="width: 90px; min-width: 70px;">
         </colgroup>
         <thead>
             <tr>
-                <th style="text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: normal;">Item</th>
-                <th style="text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Serial No</th>
-                <th style="text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">IMEI</th>
+                <th style="text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: normal;">Description</th>
                 <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Qty</th>
+                <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Tax %</th>
                 <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Price</th>
-                <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Tax</th>
                 <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Total</th>
             </tr>
         </thead>
@@ -1279,66 +1287,54 @@ body, html {
             foreach ($items as $item): 
                 $unitPrice = floatval($item['unit_price']);
                 $totalPrice = floatval($item['total_price']);
-                $quantity = intval($item['quantity']);
-                
-                // Calculate tax for this line item
-                // Note: sale_items.total_price is stored WITHOUT tax (after extracting tax if pricesIncludeTax)
-                $itemTaxRate = floatval($item['tax_percent'] ?? 0);
-                $lineTax = 0;
-                if ($itemTaxRate > 0) {
-                    if ($pricesIncludeTax) {
-                        // Prices include tax, but total_price is stored WITHOUT tax
-                        // So: total_with_tax = total_price * (1 + tax_rate)
-                        // tax = total_with_tax - total_price = total_price * tax_rate
-                        $taxDecimal = $itemTaxRate / 100;
-                        $lineTax = $totalPrice * $taxDecimal;
-                    } else {
-                        // Prices don't include tax, total_price is also WITHOUT tax
-                        // tax = total_price * tax_rate
-                        $taxDecimal = $itemTaxRate / 100;
-                        $lineTax = $totalPrice * $taxDecimal;
-                    }
-                }
-                $lineTax = round($lineTax, 2);
                 
                 // Convert to payment currency if needed (base currency -> payment currency)
                 if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
                     // Convert from base to payment currency (multiply by exchange rate)
                     $unitPrice = $unitPrice * $exchangeRate;
                     $totalPrice = $totalPrice * $exchangeRate;
-                    $lineTax = $lineTax * $exchangeRate;
                 }
                 
                 // Format with payment currency
                 $unitPriceFormatted = $paymentCurrency ? formatCurrencyAmount($unitPrice, $paymentCurrencyId, $db) : formatCurrency($unitPrice);
                 $totalPriceFormatted = $paymentCurrency ? formatCurrencyAmount($totalPrice, $paymentCurrencyId, $db) : formatCurrency($totalPrice);
-                $lineTaxFormatted = $paymentCurrency ? formatCurrencyAmount($lineTax, $paymentCurrencyId, $db) : formatCurrency($lineTax);
-                
-                // Get IMEI and Serial Number from specific_list_entries
-                $serialNumbers = [];
-                $imeis = [];
-                if (!empty($item['specific_list_entries'])) {
-                    foreach ($item['specific_list_entries'] as $entry) {
-                        if (!empty($entry['serial_number'])) {
-                            $serialNumbers[] = escapeHtml($entry['serial_number']);
-                        }
-                        if (!empty($entry['imei'])) {
-                            $imeis[] = escapeHtml($entry['imei']);
-                        }
-                    }
-                }
-                $serialNumberDisplay = !empty($serialNumbers) ? implode(', ', $serialNumbers) : 'N/A';
-                $imeiDisplay = !empty($imeis) ? implode(', ', $imeis) : 'N/A';
             ?>
                 <tr>
                     <td style="text-align: left; padding: 6px 8px; word-wrap: break-word; word-break: break-word; border-bottom: 1px solid #ddd; white-space: normal; line-height: 1.4;">
-                        <?= escapeHtml($item['product_name']) ?>
+                        <?php
+                        $description = escapeHtml($item['product_name']);
+                        if (!empty($item['specific_list_entries'])) {
+                            $details = [];
+                            foreach ($item['specific_list_entries'] as $entry) {
+                                $entryDetails = [];
+                                if (!empty($entry['serial_number'])) {
+                                    $entryDetails[] = "S/N: " . escapeHtml($entry['serial_number']);
+                                }
+                                if (!empty($entry['imei'])) {
+                                    $entryDetails[] = "IMEI: " . escapeHtml($entry['imei']);
+                                }
+                                if (!empty($entryDetails)) {
+                                    $details[] = implode(", ", $entryDetails);
+                                }
+                            }
+                            if (!empty($details)) {
+                                $description .= " (" . implode("; ", $details) . ")";
+                            }
+                        }
+                        echo $description;
+                        ?>
                     </td>
-                    <td style="text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap; font-size: 11px;"><?= $serialNumberDisplay ?></td>
-                    <td style="text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap; font-size: 11px;"><?= $imeiDisplay ?></td>
-                    <td style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $quantity ?></td>
+                    <td style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $item['quantity'] ?></td>
+                    <td style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">
+                        <?php 
+                        if (isset($item['tax_percent']) && $item['tax_percent'] !== null && $item['tax_code'] !== 'E') {
+                            echo number_format($item['tax_percent'], 1) . '%';
+                        } else {
+                            echo '-';
+                        }
+                        ?>
+                    </td>
                     <td style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $unitPriceFormatted ?></td>
-                    <td style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $lineTaxFormatted ?></td>
                     <td style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $totalPriceFormatted ?></td>
                 </tr>
             <?php endforeach; ?>
@@ -1357,20 +1353,12 @@ body, html {
             
             $discountAmount = floatval($sale['discount_amount'] ?? 0);
             $deliveryCost = floatval($sale['delivery_cost'] ?? 0);
+            $totalAmount = floatval($sale['total_amount']);
             
-            // CRITICAL FIX: Recalculate totals from sale_items (matching what ZIMRA sees)
-            // This ensures the receipt matches what was actually sent to ZIMRA, especially when product-specific items have different prices
-            // Calculate subtotal from items (sum of all item total_price) - this matches ZIMRA receiptLines
-            $itemsSubtotal = 0;
-            foreach ($items as $item) {
-                $itemsSubtotal += floatval($item['total_price']);
-            }
-            
-            // Total (Excl. tax) = items subtotal - discount + delivery_cost
-            $subtotal = $itemsSubtotal - $discountAmount + $deliveryCost;
-            
-            // Recalculate total_amount from subtotal + tax (matching ZIMRA calculation)
-            $totalAmount = $subtotal + $taxAmount;
+            // CRITICAL FIX: Use sales.total_amount as source of truth, not sum of sale_items
+            // This ensures totals match what was actually charged, especially when product_specific_items have different prices
+            // Total (Excl. tax) = total_amount - tax_amount - delivery_cost
+            $subtotal = $totalAmount - $taxAmount - $deliveryCost;
             
             // Convert amounts to payment currency if needed
             if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
@@ -1388,18 +1376,18 @@ body, html {
             ?>
             <?php if ($discountAmount > 0): ?>
                 <tr>
-                    <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
+                    <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
                     <td style="text-align: right; padding: 6px 4px;"><strong>-<?= $discountFormatted ?></strong></td>
                 </tr>
             <?php endif; ?>
             <?php if ($deliveryCost > 0): ?>
                 <tr>
-                    <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Delivery Cost:</strong></td>
+                    <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Delivery Cost:</strong></td>
                     <td style="text-align: right; padding: 6px 4px;"><strong><?= $deliveryCostFormatted ?></strong></td>
                 </tr>
             <?php endif; ?>
             <tr>
-                <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Total(Excl. tax):</strong></td>
+                <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Total(Excl. tax):</strong></td>
                 <td style="text-align: right; padding: 6px 4px;"><strong><?= $subtotalFormatted ?></strong></td>
             </tr>
             <?php
@@ -1440,35 +1428,35 @@ body, html {
                     return floatval($a) <=> floatval($b);
                 });
                 
-                // Display tax breakdowns
-                foreach ($taxGroups as $group):
-                    // Format label based on tax type
-                    if ($group['taxCode'] === 'E') {
-                        $label = 'Total: Exempt from VAT';
-                    } elseif ($group['taxPercent'] === 0.0 || $group['taxPercent'] === 0 || $group['taxPercent'] === null) {
-                        $label = 'Total 0% VAT';
-                    } else {
-                        $label = 'Total ' . number_format($group['taxPercent'], 1) . '% VAT';
-                    }
-                    
-                    // Convert tax amount to payment currency if needed
-                    $taxAmount = floatval($group['totalAmount']);
-                    if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
-                        $taxAmount = $taxAmount * $exchangeRate;
-                    }
-                    $taxAmountFormatted = $paymentCurrency ? formatCurrencyAmount($taxAmount, $paymentCurrencyId, $db) : formatCurrency($taxAmount);
-            ?>
-                <tr>
-                    <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
-                    <td style="text-align: right; padding: 6px 4px;"><strong><?= $taxAmountFormatted ?></strong></td>
-                </tr>
-            <?php
+                    // Display tax breakdowns
+                    foreach ($taxGroups as $group):
+                        // Format label based on tax type
+                        if ($group['taxCode'] === 'E') {
+                            $label = 'Total: Exempt from VAT';
+                        } elseif ($group['taxPercent'] === 0.0 || $group['taxPercent'] === 0 || $group['taxPercent'] === null) {
+                            $label = 'Total 0% VAT';
+                        } else {
+                            $label = 'Total ' . number_format($group['taxPercent'], 1) . '% VAT';
+                        }
+                        
+                        // Convert tax amount to payment currency if needed
+                        $groupTaxAmount = $group['totalAmount'];
+                        if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                            $groupTaxAmount = $groupTaxAmount * $exchangeRate;
+                        }
+                        $groupTaxFormatted = $paymentCurrency ? formatCurrencyAmount($groupTaxAmount, $paymentCurrencyId, $db) : formatCurrency($groupTaxAmount);
+                        ?>
+                            <tr>
+                                <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
+                                <td style="text-align: right; padding: 6px 4px;"><strong><?= $groupTaxFormatted ?></strong></td>
+                            </tr>
+                        <?php
                 endforeach;
             }
             ?>
             <tr class="total-row">
-                <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Total(Incl. tax):</strong></td>
-                <td style="text-align: right; padding: 6px 4px;"><strong><?= $totalFormatted ?></strong></td>
+                <td colspan="4" style="text-align: right; padding: 6px 4px; border-top: 2px solid #333;"><strong>Total(Incl. tax):</strong></td>
+                <td style="text-align: right; padding: 6px 4px; border-top: 2px solid #333;"><strong><?= $totalFormatted ?></strong></td>
             </tr>
             <?php 
             // Check if this is a credit sale
@@ -1483,7 +1471,7 @@ body, html {
                 $accountBalanceFormatted = $paymentCurrency ? formatCurrencyAmount($accountBalance, $paymentCurrencyId, $db) : formatCurrency($accountBalance);
             ?>
                 <tr>
-                    <td colspan="7" style="padding: 6px 4px; padding-top: 8px;">
+                    <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
                         <strong>Put on Account Billing:</strong><br>
                         <div style="margin-left: 10px;">
                             <?php if (!empty($sale['payment_term_name'])): ?>
@@ -1503,7 +1491,7 @@ body, html {
                 </tr>
             <?php else: ?>
                 <tr>
-                    <td colspan="7" style="padding: 6px 4px; padding-top: 8px;">
+                    <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
                         <strong>Payment:</strong><br>
                         <?php 
                         $totalPaid = 0;
@@ -1547,7 +1535,7 @@ body, html {
                     $changeFormatted = $paymentCurrency ? formatCurrencyAmount($change, $paymentCurrencyId, $db) : formatCurrency($change);
                 ?>
                     <tr>
-                        <td colspan="6" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
+                        <td colspan="3" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
                         <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong><?= $changeFormatted ?></strong></td>
                     </tr>
                 <?php endif; ?>

@@ -111,11 +111,11 @@ if (isset($_GET['id'])) {
                                   WHERE s.id = :id", [':id' => intval($_GET['id'])]);
     
     if ($selectedSale) {
-        $items = $db->getRows("SELECT si.*, p.tax_id, t.tax_percent, t.tax_code 
-                               FROM sale_items si 
-                               LEFT JOIN products p ON si.product_id = p.id 
-                               LEFT JOIN taxes t ON p.tax_id = t.id 
-                               WHERE si.sale_id = :id", [':id' => $selectedSale['id']]);
+        $items = $db->getRows("SELECT si.*, p.tax_id as product_tax_id, pc.tax_id as category_tax_id 
+                                FROM sale_items si 
+                                LEFT JOIN products p ON si.product_id = p.id 
+                                LEFT JOIN product_categories pc ON p.category_id = pc.id 
+                                WHERE si.sale_id = :id", [':id' => $selectedSale['id']]);
         
         // Get product_specific_list entries for each sale item
         foreach ($items as &$item) {
@@ -129,6 +129,51 @@ if (isset($_GET['id'])) {
         if ($items === false) {
             $items = [];
         }
+        
+        // Get tax information for each item from fiscal config
+        $primaryDb = Database::getPrimaryInstance();
+        $branchId = $selectedSale['branch_id'] ?? null;
+        $applicableTaxes = [];
+        if ($branchId) {
+            $fiscalConfig = $primaryDb->getRow(
+                "SELECT applicable_taxes FROM fiscal_config WHERE branch_id = :branch_id LIMIT 1",
+                [':branch_id' => $branchId]
+            );
+            if ($fiscalConfig && !empty($fiscalConfig['applicable_taxes'])) {
+                $applicableTaxes = json_decode($fiscalConfig['applicable_taxes'], true);
+                if (!is_array($applicableTaxes)) {
+                    $applicableTaxes = [];
+                }
+            }
+        }
+        
+        // Create tax map
+        $taxMap = [];
+        foreach ($applicableTaxes as $tax) {
+            if (isset($tax['taxID'])) {
+                $taxId = intval($tax['taxID']);
+                $taxPercent = isset($tax['taxPercent']) && $tax['taxPercent'] !== null ? floatval($tax['taxPercent']) : null;
+                $taxCode = $tax['taxCode'] ?? '';
+                $taxMap[$taxId] = ['percent' => $taxPercent, 'code' => $taxCode];
+            }
+        }
+        
+        // Add tax percent to each item
+        foreach ($items as &$item) {
+            $productTaxId = $item['product_tax_id'] ?? null;
+            $categoryTaxId = $item['category_tax_id'] ?? null;
+            $finalTaxId = $productTaxId ?: $categoryTaxId;
+            
+            $item['tax_percent'] = null;
+            $item['tax_code'] = null;
+            
+            if ($finalTaxId && isset($taxMap[intval($finalTaxId)])) {
+                $item['tax_percent'] = $taxMap[intval($finalTaxId)]['percent'];
+                $item['tax_code'] = $taxMap[intval($finalTaxId)]['code'];
+            }
+        }
+        unset($item);
+        
         $selectedSale['items'] = $items;
         
         // Load fiscal receipt data for the selected sale
@@ -909,21 +954,17 @@ require_once APP_PATH . '/includes/header.php';
                 <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
                     <colgroup>
                         <col style="width: auto;">
-                        <col style="width: 100px;">
-                        <col style="width: 120px;">
                         <col style="width: 50px;">
-                        <col style="width: 80px;">
+                        <col style="width: 60px;">
                         <col style="width: 80px;">
                         <col style="width: 80px;">
                     </colgroup>
                     <thead>
                         <tr>
-                            <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">Item</th>
-                            <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">Serial No</th>
-                            <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">IMEI</th>
+                            <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">Description</th>
                             <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">Qty</th>
+                            <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">Tax %</th>
                             <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Price</th>
-                            <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Tax</th>
                             <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Total</th>
                         </tr>
                     </thead>
@@ -947,16 +988,39 @@ require_once APP_PATH . '/includes/header.php';
                         ?>
                             <tr>
                                 <td style="text-align: left; padding: 6px 4px; word-wrap: break-word; border-bottom: 1px solid #ddd;">
-                                    <?= escapeHtml($item['product_name']) ?>
-                                    <?php if (!empty($item['specific_list_entries'])): ?>
-                                        <div style="font-size: 9px; color: #666; margin-top: 2px;">
-                                            <?php foreach ($item['specific_list_entries'] as $entry): ?>
-                                                <div>Serial: <?= escapeHtml($entry['serial_number'] ?? 'N/A') ?></div>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    <?php endif; ?>
+                                    <?php
+                                    $description = escapeHtml($item['product_name']);
+                                    if (!empty($item['specific_list_entries'])) {
+                                        $details = [];
+                                        foreach ($item['specific_list_entries'] as $entry) {
+                                            $entryDetails = [];
+                                            if (!empty($entry['serial_number'])) {
+                                                $entryDetails[] = "S/N: " . escapeHtml($entry['serial_number']);
+                                            }
+                                            if (!empty($entry['imei'])) {
+                                                $entryDetails[] = "IMEI: " . escapeHtml($entry['imei']);
+                                            }
+                                            if (!empty($entryDetails)) {
+                                                $details[] = implode(", ", $entryDetails);
+                                            }
+                                        }
+                                        if (!empty($details)) {
+                                            $description .= " (" . implode("; ", $details) . ")";
+                                        }
+                                    }
+                                    echo $description;
+                                    ?>
                                 </td>
                                 <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $item['quantity'] ?></td>
+                                <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">
+                                    <?php 
+                                    if (isset($item['tax_percent']) && $item['tax_percent'] !== null && $item['tax_code'] !== 'E') {
+                                        echo number_format($item['tax_percent'], 1) . '%';
+                                    } else {
+                                        echo '-';
+                                    }
+                                    ?>
+                                </td>
                                 <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $unitPriceFormatted ?></td>
                                 <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $totalPriceFormatted ?></td>
                             </tr>
@@ -976,20 +1040,10 @@ require_once APP_PATH . '/includes/header.php';
                         
                         $discountAmount = floatval($selectedSale['discount_amount'] ?? 0);
                         $deliveryCost = floatval($selectedSale['delivery_cost'] ?? 0);
+                        $totalAmount = floatval($selectedSale['total_amount']);
                         
-                        // CRITICAL FIX: Recalculate totals from sale_items (matching what ZIMRA sees)
-                        // This ensures the receipt matches what was actually sent to ZIMRA, especially when product-specific items have different prices
-                        // Calculate subtotal from items (sum of all item total_price) - this matches ZIMRA receiptLines
-                        $itemsSubtotal = 0;
-                        foreach ($selectedSale['items'] as $item) {
-                            $itemsSubtotal += floatval($item['total_price']);
-                        }
-                        
-                        // Total (Excl. tax) = items subtotal - discount + delivery_cost
-                        $subtotal = $itemsSubtotal - $discountAmount + $deliveryCost;
-                        
-                        // Recalculate total_amount from subtotal + tax (matching ZIMRA calculation)
-                        $totalAmount = $subtotal + $taxAmount;
+                        // Subtotal = Total - Tax - Delivery Cost (excludes tax and delivery)
+                        $subtotal = $totalAmount - $taxAmount - $deliveryCost;
                         
                         // Convert amounts to payment currency if needed
                         if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
@@ -1007,18 +1061,18 @@ require_once APP_PATH . '/includes/header.php';
                         ?>
                         <?php if ($discountAmount > 0): ?>
                             <tr>
-                                <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
+                                <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
                                 <td style="text-align: right; padding: 6px 4px;"><strong>-<?= $discountFormatted ?></strong></td>
                             </tr>
                         <?php endif; ?>
                         <?php if ($deliveryCost > 0): ?>
                             <tr>
-                                <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Delivery Cost:</strong></td>
+                                <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Delivery Cost:</strong></td>
                                 <td style="text-align: right; padding: 6px 4px;"><strong><?= $deliveryCostFormatted ?></strong></td>
                             </tr>
                         <?php endif; ?>
                         <tr>
-                            <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Total(Excl. tax):</strong></td>
+                            <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Total(Excl. tax):</strong></td>
                             <td style="text-align: right; padding: 6px 4px;"><strong><?= $subtotalFormatted ?></strong></td>
                         </tr>
                         <?php
@@ -1078,7 +1132,7 @@ require_once APP_PATH . '/includes/header.php';
                                 $taxAmountFormatted = $paymentCurrency ? formatCurrencyAmount($taxAmount, $paymentCurrencyId, $db) : formatCurrency($taxAmount);
                         ?>
                             <tr>
-                                <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
+                                <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
                                 <td style="text-align: right; padding: 6px 4px;"><strong><?= $taxAmountFormatted ?></strong></td>
                             </tr>
                         <?php
@@ -1086,8 +1140,8 @@ require_once APP_PATH . '/includes/header.php';
                         }
                         ?>
                         <tr class="total-row">
-                            <td colspan="6" style="text-align: right; padding: 6px 4px;"><strong>Total(Incl. tax):</strong></td>
-                            <td style="text-align: right; padding: 6px 4px;"><strong><?= $totalFormatted ?></strong></td>
+                            <td colspan="4" style="text-align: right; padding: 6px 4px; border-top: 2px solid #333;"><strong>Total(Incl. tax):</strong></td>
+                            <td style="text-align: right; padding: 6px 4px; border-top: 2px solid #333;"><strong><?= $totalFormatted ?></strong></td>
                         </tr>
                         <?php 
                         // Check if this is a credit sale
@@ -1113,7 +1167,7 @@ require_once APP_PATH . '/includes/header.php';
                             $accountBalanceFormatted = $paymentCurrency ? formatCurrencyAmount($accountBalance, $paymentCurrencyId, $db) : formatCurrency($accountBalance);
                         ?>
                             <tr>
-                                <td colspan="7" style="padding: 6px 4px; padding-top: 8px;">
+                                <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
                                     <strong>Put on Account Billing:</strong><br>
                                     <div style="margin-left: 10px;">
                                         <?php if (!empty($paymentTermName)): ?>
@@ -1133,7 +1187,7 @@ require_once APP_PATH . '/includes/header.php';
                             </tr>
                         <?php else: ?>
                             <tr>
-                                <td colspan="7" style="padding: 6px 4px; padding-top: 8px;">
+                                <td colspan="4" style="padding: 6px 4px; padding-top: 8px;">
                                     <strong>Payment:</strong><br>
                                     <?php 
                                     // Ensure payments are loaded (fallback check)
@@ -1219,7 +1273,7 @@ require_once APP_PATH . '/includes/header.php';
                                 $changeFormatted = $paymentCurrency ? formatCurrencyAmount($change, $paymentCurrencyId, $db) : formatCurrency($change);
                             ?>
                                 <tr>
-                                    <td colspan="6" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
+                                    <td colspan="3" style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong>Change:</strong></td>
                                     <td style="text-align: right; padding: 6px 4px; padding-top: 8px;"><strong><?= $changeFormatted ?></strong></td>
                                 </tr>
                             <?php endif; ?>
