@@ -129,8 +129,17 @@ try {
                     $applicableTaxes = json_decode($config['applicable_taxes'], true);
                     if (is_array($applicableTaxes)) {
                         foreach ($applicableTaxes as $tax) {
-                            if (isset($tax['taxID']) && isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
-                                $productTaxRates[intval($tax['taxID'])] = floatval($tax['taxPercent']);
+                            if (isset($tax['taxID'])) {
+                                $taxId = intval($tax['taxID']);
+                                // CRITICAL FIX: Include exempt taxes (taxPercent = null, taxCode = 'E') with rate 0
+                                // This prevents fallback to default tax rate for exempt products
+                                if (isset($tax['taxCode']) && $tax['taxCode'] === 'E') {
+                                    $productTaxRates[$taxId] = 0; // Exempt = 0% tax
+                                } elseif (isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
+                                    $productTaxRates[$taxId] = floatval($tax['taxPercent']);
+                                } elseif (isset($tax['taxPercent']) && $tax['taxPercent'] === 0) {
+                                    $productTaxRates[$taxId] = 0; // Zero-rated = 0% tax
+                                }
                             }
                         }
                     }
@@ -205,10 +214,15 @@ try {
             
             // Convert stored price (without tax) back to price with tax
             // This gives us the price the customer actually paid
+            // CRITICAL: For exempt (taxRate = 0) and zero-rated (taxRate = 0), do NOT add tax
             if ($productTaxRate !== null && $productTaxRate > 0) {
                 $taxDecimal = $productTaxRate / 100;
                 $displayUnitPrice = $storedUnitPrice * (1 + $taxDecimal);
                 $displayTotalPrice = $storedTotalPrice * (1 + $taxDecimal);
+            } else {
+                // Exempt or zero-rated: price with tax = price without tax (no tax added)
+                $displayUnitPrice = $storedUnitPrice;
+                $displayTotalPrice = $storedTotalPrice;
             }
         }
         // If prices_include_tax is false, display prices = stored prices (no conversion needed)
