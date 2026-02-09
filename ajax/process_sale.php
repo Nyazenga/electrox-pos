@@ -331,8 +331,19 @@ try {
     $paymentTermId = isset($input['payment_term_id']) ? intval($input['payment_term_id']) : null;
     
     // Check if this is a wholesale sale
-    $isWholesaleSale = isset($input['is_wholesale_sale']) && $input['is_wholesale_sale'] === true;
-    $isPendingPayment = isset($input['is_pending_payment']) && $input['is_pending_payment'] === true;
+    // FIXED: Accept both boolean true and number 1 (frontend sends 1 as number)
+    $isWholesaleSale = isset($input['is_wholesale_sale']) && (
+        $input['is_wholesale_sale'] === true || 
+        $input['is_wholesale_sale'] === 1 || 
+        $input['is_wholesale_sale'] === '1'
+    );
+    $isPendingPayment = isset($input['is_pending_payment']) && (
+        $input['is_pending_payment'] === true || 
+        $input['is_pending_payment'] === 1 || 
+        $input['is_pending_payment'] === '1'
+    );
+    
+    error_log("PROCESS SALE: Wholesale flag check - input value: " . json_encode($input['is_wholesale_sale'] ?? 'NOT SET') . ", isWholesaleSale: " . ($isWholesaleSale ? 'TRUE' : 'FALSE'));
     
     // Validate credit sale requirements
     if ($isCreditSale) {

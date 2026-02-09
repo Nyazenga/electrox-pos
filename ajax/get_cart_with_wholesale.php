@@ -25,6 +25,7 @@ try {
     if ($useWholesale) {
         foreach ($cart as $index => &$item) {
             // Check if item has specific list entries with their own prices
+            $usedSpecificPrice = false;
             if (!empty($item['specific_list_entries']) && is_array($item['specific_list_entries']) && count($item['specific_list_entries']) > 0) {
                 // Use specific item wholesale price if available
                 $specificEntry = $item['specific_list_entries'][0];
@@ -34,23 +35,27 @@ try {
                         [':id' => $specificEntry['id']]
                     );
                     if ($specificItem && !empty($specificItem['wholesale_price']) && floatval($specificItem['wholesale_price']) > 0) {
+                        // Priority 1: Specific item wholesale_price
                         $item['price'] = floatval($specificItem['wholesale_price']);
                         $item['is_wholesale'] = true;
-                        continue;
-                    } elseif ($specificItem && !empty($specificItem['selling_price']) && floatval($specificItem['selling_price']) > 0) {
-                        // No wholesale price for specific item, keep selling price
-                        $item['price'] = floatval($specificItem['selling_price']);
-                        unset($item['is_wholesale']);
-                        continue;
+                        $usedSpecificPrice = true;
                     }
+                    // FIXED: Don't use specific item selling_price if wholesale is toggled - fall back to product wholesale instead
                 }
             }
             
-            // Fallback to product-level wholesale price
-            $product = $db->getRow("SELECT * FROM products WHERE id = :id", [':id' => $item['id']]);
-            if ($product && !empty($product['wholesale_price']) && floatval($product['wholesale_price']) > 0) {
-                $item['price'] = floatval($product['wholesale_price']);
-                $item['is_wholesale'] = true;
+            // Fallback to product-level wholesale price (if specific item had no wholesale_price)
+            if (!$usedSpecificPrice) {
+                $product = $db->getRow("SELECT * FROM products WHERE id = :id", [':id' => $item['id']]);
+                if ($product && !empty($product['wholesale_price']) && floatval($product['wholesale_price']) > 0) {
+                    // Priority 2: Product wholesale_price
+                    $item['price'] = floatval($product['wholesale_price']);
+                    $item['is_wholesale'] = true;
+                } elseif ($product && !empty($product['selling_price']) && floatval($product['selling_price']) > 0) {
+                    // Last resort: Product selling_price (no wholesale available)
+                    $item['price'] = floatval($product['selling_price']);
+                    unset($item['is_wholesale']);
+                }
             }
         }
         unset($item);
