@@ -985,12 +985,12 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
                 <?php endif; ?>
                 
-                <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
+                <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
                     <colgroup>
                         <col style="width: auto;">
-                        <col style="width: 50px;">
-                        <col style="width: 80px;">
-                        <col style="width: 80px;">
+                        <col style="width: 45px;">
+                        <col style="width: 75px;">
+                        <col style="width: 75px;">
                     </colgroup>
                     <thead>
                         <tr>

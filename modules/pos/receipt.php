@@ -1422,19 +1422,19 @@ body, html {
     }
     ?>
     
-    <table style="width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed;">
+    <table style="width: 100%; max-width: 100%; border-collapse: collapse; table-layout: auto;">
         <colgroup>
             <col style="width: auto;">
-            <col style="width: 60px;">
-            <col style="width: 80px;">
-            <col style="width: 80px;">
+            <col style="width: 45px;">
+            <col style="width: 75px;">
+            <col style="width: 75px;">
         </colgroup>
         <thead>
             <tr>
                 <th style="text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: normal;">Description</th>
-                <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Qty</th>
-                <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Price</th>
-                <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Total</th>
+                <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd; white-space: nowrap;">Qty</th>
+                <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd; white-space: nowrap;">Price</th>
+                <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd; white-space: nowrap;">Total</th>
             </tr>
         </thead>
         <tbody>
@@ -1528,9 +1528,9 @@ body, html {
                         echo $description;
                         ?>
                     </td>
-                    <td style="text-align: center; padding: 6px 8px; border: 1px solid #ddd; border-top: none; border-left: none; white-space: nowrap;"><?= $item['quantity'] ?></td>
-                    <td style="text-align: right; padding: 6px 8px; border: 1px solid #ddd; border-top: none; border-left: none; white-space: nowrap;"><?= $unitPriceFormatted ?></td>
-                    <td style="text-align: right; padding: 6px 8px; border: 1px solid #ddd; border-top: none; border-left: none; white-space: nowrap;"><?= $totalPriceFormatted ?></td>
+                    <td style="text-align: center; padding: 6px 4px; border: 1px solid #ddd; border-top: none; border-left: none; white-space: nowrap;"><?= $item['quantity'] ?></td>
+                    <td style="text-align: right; padding: 6px 4px; border: 1px solid #ddd; border-top: none; border-left: none; white-space: nowrap;"><?= $unitPriceFormatted ?></td>
+                    <td style="text-align: right; padding: 6px 4px; border: 1px solid #ddd; border-top: none; border-left: none; white-space: nowrap;"><?= $totalPriceFormatted ?></td>
                 </tr>
             <?php endforeach; ?>
         </tbody>
