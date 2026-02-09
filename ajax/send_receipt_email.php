@@ -132,16 +132,25 @@ try {
     if (empty($receiptLogoPath)) {
         $receiptLogoPath = getSetting('invoice_logo', getSetting('company_logo', ''));
     }
-    // If still no logo setting found, try to find the most recent receipt_logo or invoice_logo file
+    // If still no logo setting found, try to find the most recent receipt_logo file
+    // Check new uploads location first, then old assets/images for backward compatibility
     if (empty($receiptLogoPath)) {
-        $logoDir = APP_PATH . '/assets/images/';
+        // Check new location first
+        $logoDir = APP_PATH . '/uploads/receipt_logos/';
         $logoFiles = array_merge(
             glob($logoDir . 'receipt_logo_*.png'),
             glob($logoDir . 'receipt_logo_*.jpg'),
-            glob($logoDir . 'receipt_logo_*.jpeg'),
-            glob($logoDir . 'invoice_logo_*.png'),
-            glob($logoDir . 'invoice_logo_*.jpg'),
-            glob($logoDir . 'invoice_logo_*.jpeg')
+            glob($logoDir . 'receipt_logo_*.jpeg')
+        );
+        // Also check old location for backward compatibility
+        $oldLogoDir = APP_PATH . '/assets/images/';
+        $logoFiles = array_merge($logoFiles,
+            glob($oldLogoDir . 'receipt_logo_*.png'),
+            glob($oldLogoDir . 'receipt_logo_*.jpg'),
+            glob($oldLogoDir . 'receipt_logo_*.jpeg'),
+            glob($oldLogoDir . 'invoice_logo_*.png'),
+            glob($oldLogoDir . 'invoice_logo_*.jpg'),
+            glob($oldLogoDir . 'invoice_logo_*.jpeg')
         );
         if (!empty($logoFiles)) {
             // Sort by modification time, most recent first
@@ -149,7 +158,12 @@ try {
                 return filemtime($b) - filemtime($a);
             });
             $mostRecent = $logoFiles[0];
-            $receiptLogoPath = 'assets/images/' . basename($mostRecent);
+            // Determine path based on location
+            if (strpos($mostRecent, '/uploads/receipt_logos/') !== false) {
+                $receiptLogoPath = 'uploads/receipt_logos/' . basename($mostRecent);
+            } else {
+                $receiptLogoPath = 'assets/images/' . basename($mostRecent);
+            }
             // If we found a file but no database setting, save it to the database for persistence
             if (!empty($receiptLogoPath)) {
                 setSetting('pos_receipt_logo', $receiptLogoPath);

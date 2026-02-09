@@ -213,16 +213,25 @@ $receiptLogoPath = getSetting('pos_receipt_logo', '');
 if (empty($receiptLogoPath)) {
     $receiptLogoPath = getSetting('invoice_logo', getSetting('company_logo', ''));
 }
-// If still no logo setting found, try to find the most recent receipt_logo or invoice_logo file
+// If still no logo setting found, try to find the most recent receipt_logo file
+// Check new uploads location first, then old assets/images for backward compatibility
 if (empty($receiptLogoPath)) {
-    $logoDir = APP_PATH . '/assets/images/';
+    // Check new location first
+    $logoDir = APP_PATH . '/uploads/receipt_logos/';
     $logoFiles = array_merge(
         glob($logoDir . 'receipt_logo_*.png'),
         glob($logoDir . 'receipt_logo_*.jpg'),
-        glob($logoDir . 'receipt_logo_*.jpeg'),
-        glob($logoDir . 'invoice_logo_*.png'),
-        glob($logoDir . 'invoice_logo_*.jpg'),
-        glob($logoDir . 'invoice_logo_*.jpeg')
+        glob($logoDir . 'receipt_logo_*.jpeg')
+    );
+    // Also check old location for backward compatibility
+    $oldLogoDir = APP_PATH . '/assets/images/';
+    $logoFiles = array_merge($logoFiles,
+        glob($oldLogoDir . 'receipt_logo_*.png'),
+        glob($oldLogoDir . 'receipt_logo_*.jpg'),
+        glob($oldLogoDir . 'receipt_logo_*.jpeg'),
+        glob($oldLogoDir . 'invoice_logo_*.png'),
+        glob($oldLogoDir . 'invoice_logo_*.jpg'),
+        glob($oldLogoDir . 'invoice_logo_*.jpeg')
     );
     if (!empty($logoFiles)) {
         // Sort by modification time, most recent first
@@ -230,7 +239,12 @@ if (empty($receiptLogoPath)) {
             return filemtime($b) - filemtime($a);
         });
         $mostRecent = $logoFiles[0];
-        $receiptLogoPath = 'assets/images/' . basename($mostRecent);
+        // Determine path based on location
+        if (strpos($mostRecent, '/uploads/receipt_logos/') !== false) {
+            $receiptLogoPath = 'uploads/receipt_logos/' . basename($mostRecent);
+        } else {
+            $receiptLogoPath = 'assets/images/' . basename($mostRecent);
+        }
         // If we found a file but no database setting, save it to the database for persistence
         if (!empty($receiptLogoPath)) {
             setSetting('pos_receipt_logo', $receiptLogoPath);
@@ -656,8 +670,7 @@ if ($usePDF) {
         // Display tax breakdowns
         foreach ($taxGroups as $group) {
             $pdf->SetFont('helvetica', '', 9);
-            $pdf->Cell(110, 0, '', 0, 0);
-            $pdf->Cell(20, 0, '', 0, 0);
+            $pdf->Cell(130, 0, '', 0, 0); // Description + Qty columns
             
             // Format label based on tax type
             if ($group['taxCode'] === 'E') {
@@ -668,7 +681,7 @@ if ($usePDF) {
                 $label = 'Total ' . number_format($group['taxPercent'], 1) . '% VAT';
             }
             
-            $pdf->Cell(25, 8, $label . ':', 1, 0, 'L');
+            $pdf->Cell($labelColWidth, 8, $label . ':', 1, 0, 'L');
             $pdf->SetFont('helvetica', 'B', 9);
             
             // Convert tax amount to payment currency if needed
@@ -677,15 +690,14 @@ if ($usePDF) {
                 $pdfTaxAmount = $pdfTaxAmount * $exchangeRate;
             }
             
-            $pdf->Cell(25, 8, number_format($pdfTaxAmount, 2), 1, 1, 'R');
+            $pdf->Cell($valueColWidth, 8, number_format($pdfTaxAmount, 2), 1, 1, 'R');
         }
     }
     
     $pdf->SetFont('helvetica', 'B', 10);
-    $pdf->Cell(110, 0, '', 0, 0);
-    $pdf->Cell(20, 0, '', 0, 0);
-    $pdf->Cell(25, 10, 'Total(Incl. tax):', 1, 0, 'L');
-    $pdf->Cell(25, 10, number_format($pdfTotalAmount, 2), 1, 1, 'R');
+    $pdf->Cell(130, 0, '', 0, 0); // Description + Qty columns
+    $pdf->Cell($labelColWidth, 10, 'Total(Incl. tax):', 1, 0, 'L');
+    $pdf->Cell($valueColWidth, 10, number_format($pdfTotalAmount, 2), 1, 1, 'R');
     
     $pdf->Ln(12);
     

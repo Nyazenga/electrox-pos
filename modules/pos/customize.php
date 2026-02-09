@@ -17,9 +17,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $updated = false;
     $errors = [];
     
-    // Handle receipt logo upload - use same logic as invoice customize
+    // Handle receipt logo upload - store in uploads directory to prevent deletion on deployment
     if (isset($_FILES['receipt_logo']) && $_FILES['receipt_logo']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = APP_PATH . '/assets/images/';
+        $uploadDir = APP_PATH . '/uploads/receipt_logos/';
         if (!is_dir($uploadDir)) {
             mkdir($uploadDir, 0755, true);
         }
@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $targetPath = $uploadDir . $filename;
         
         if (move_uploaded_file($_FILES['receipt_logo']['tmp_name'], $targetPath)) {
-            $logoPath = 'assets/images/' . $filename;
+            $logoPath = 'uploads/receipt_logos/' . $filename;
             // Verify file was actually saved
             if (file_exists($targetPath)) {
                 // Save to database
@@ -530,23 +530,37 @@ require_once APP_PATH . '/includes/header.php';
                     <label class="form-label fw-bold">Receipt Logo</label>
                     <?php 
                     $receiptLogoPath = $settings['pos_receipt_logo'];
-                    // If no logo setting, try to find most recent receipt_logo or invoice_logo file
+                    // If no logo setting, try to find most recent receipt_logo file in uploads directory
+                    // Also check old assets/images location for backward compatibility
                     if (empty($receiptLogoPath)) {
-                        $logoDir = APP_PATH . '/assets/images/';
+                        // Check new location first
+                        $logoDir = APP_PATH . '/uploads/receipt_logos/';
                         $logoFiles = array_merge(
                             glob($logoDir . 'receipt_logo_*.png'),
                             glob($logoDir . 'receipt_logo_*.jpg'),
-                            glob($logoDir . 'receipt_logo_*.jpeg'),
-                            glob($logoDir . 'invoice_logo_*.png'),
-                            glob($logoDir . 'invoice_logo_*.jpg'),
-                            glob($logoDir . 'invoice_logo_*.jpeg')
+                            glob($logoDir . 'receipt_logo_*.jpeg')
+                        );
+                        // Also check old location for backward compatibility
+                        $oldLogoDir = APP_PATH . '/assets/images/';
+                        $logoFiles = array_merge($logoFiles,
+                            glob($oldLogoDir . 'receipt_logo_*.png'),
+                            glob($oldLogoDir . 'receipt_logo_*.jpg'),
+                            glob($oldLogoDir . 'receipt_logo_*.jpeg'),
+                            glob($oldLogoDir . 'invoice_logo_*.png'),
+                            glob($oldLogoDir . 'invoice_logo_*.jpg'),
+                            glob($oldLogoDir . 'invoice_logo_*.jpeg')
                         );
                         if (!empty($logoFiles)) {
                             usort($logoFiles, function($a, $b) {
                                 return filemtime($b) - filemtime($a);
                             });
                             $mostRecent = $logoFiles[0];
-                            $receiptLogoPath = 'assets/images/' . basename($mostRecent);
+                            // Determine path based on location
+                            if (strpos($mostRecent, '/uploads/receipt_logos/') !== false) {
+                                $receiptLogoPath = 'uploads/receipt_logos/' . basename($mostRecent);
+                            } else {
+                                $receiptLogoPath = 'assets/images/' . basename($mostRecent);
+                            }
                         }
                     }
                     $receiptLogoUrl = '';
