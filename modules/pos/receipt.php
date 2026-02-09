@@ -421,13 +421,14 @@ if ($usePDF) {
     }
     
     // Items Table Header - A4 width = 210mm, margins = 15mm each, usable = 180mm
-    // Column widths: Description=110mm, Qty=20mm, Price=25mm, Total=25mm = 180mm
+    // Column widths: Description=95mm, Qty=18mm, Price=22mm, Tax=20mm, Total=25mm = 180mm
     $pdf->SetFillColor(30, 58, 138);
     $pdf->SetTextColor(255, 255, 255);
-    $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(110, 10, 'Description', 1, 0, 'L', true);
-    $pdf->Cell(20, 10, 'Qty', 1, 0, 'C', true);
-    $pdf->Cell(25, 10, 'Price', 1, 0, 'R', true);
+    $pdf->SetFont('helvetica', 'B', 8);
+    $pdf->Cell(95, 10, 'Description', 1, 0, 'L', true);
+    $pdf->Cell(18, 10, 'Qty', 1, 0, 'C', true);
+    $pdf->Cell(22, 10, 'Price', 1, 0, 'R', true);
+    $pdf->Cell(20, 10, 'Tax', 1, 0, 'C', true);
     $pdf->Cell(25, 10, 'Total', 1, 1, 'R', true);
     
     // Items Table Rows
@@ -503,8 +504,25 @@ if ($usePDF) {
         
         $pdf->SetFont('helvetica', '', 9);
         
+        // Format tax display
+        $taxDisplay = '-';
+        if (isset($item['tax_code']) && $item['tax_code'] === 'E') {
+            $taxDisplay = '-'; // Exempt
+        } elseif (isset($item['tax_percent'])) {
+            $taxPercent = floatval($item['tax_percent']);
+            if ($taxPercent == 0) {
+                $taxDisplay = '0%';
+            } elseif ($taxPercent == 5) {
+                $taxDisplay = '5%';
+            } elseif ($taxPercent == 15.5) {
+                $taxDisplay = '15.5%';
+            } else {
+                $taxDisplay = number_format($taxPercent, 1) . '%';
+            }
+        }
+        
         // Calculate height needed for description (wrap text if needed)
-        $descWidth = 110; // Match header width
+        $descWidth = 95; // Match header width (reduced from 110 to fit Tax column)
         $testY = $pdf->GetY();
         $pdf->MultiCell($descWidth, $lineHeight, $description, 0, 'L', false, 0);
         $measuredHeight = $pdf->GetY() - $testY;
@@ -520,12 +538,13 @@ if ($usePDF) {
         
         // Draw borders manually for the entire row to ensure they connect
         // A4 width = 210mm, margins = 15mm each side, usable width = 180mm
-        // Column widths: Description=110mm, Qty=20mm, Price=25mm, Total=25mm = 180mm total
-        $descWidth = 110;
-        $qtyWidth = 20;
-        $priceWidth = 25;
+        // Column widths: Description=95mm, Qty=18mm, Price=22mm, Tax=20mm, Total=25mm = 180mm total
+        $descWidth = 95;
+        $qtyWidth = 18;
+        $priceWidth = 22;
+        $taxWidth = 20;
         $totalWidth = 25;
-        $tableWidth = $descWidth + $qtyWidth + $priceWidth + $totalWidth; // 180mm
+        $tableWidth = $descWidth + $qtyWidth + $priceWidth + $taxWidth + $totalWidth; // 180mm
         
         // Left border for description (at startX = 15mm)
         $pdf->Line($startX, $startY, $startX, $startY + $actualRowHeight);
@@ -540,14 +559,19 @@ if ($usePDF) {
         
         // Draw the other cells aligned to the same row
         $pdf->SetXY($startX + $descWidth, $startY);
+        $pdf->SetFont('helvetica', '', 9);
         $pdf->Cell($qtyWidth, $actualRowHeight, $quantity, 0, 0, 'C'); // No border, we draw manually
         $pdf->Cell($priceWidth, $actualRowHeight, number_format($unitPrice, 2), 0, 0, 'R'); // No border
+        $pdf->SetFont('helvetica', '', 8); // Smaller font for tax column
+        $pdf->Cell($taxWidth, $actualRowHeight, $taxDisplay, 0, 0, 'C'); // Tax column
+        $pdf->SetFont('helvetica', '', 9); // Restore font size
         $pdf->Cell($totalWidth, $actualRowHeight, number_format($totalPrice, 2), 0, 1, 'R'); // No border
         
         // Draw vertical borders between columns
         $pdf->Line($startX + $descWidth, $startY, $startX + $descWidth, $startY + $actualRowHeight);
         $pdf->Line($startX + $descWidth + $qtyWidth, $startY, $startX + $descWidth + $qtyWidth, $startY + $actualRowHeight);
         $pdf->Line($startX + $descWidth + $qtyWidth + $priceWidth, $startY, $startX + $descWidth + $qtyWidth + $priceWidth, $startY + $actualRowHeight);
+        $pdf->Line($startX + $descWidth + $qtyWidth + $priceWidth + $taxWidth, $startY, $startX + $descWidth + $qtyWidth + $priceWidth + $taxWidth, $startY + $actualRowHeight);
         
         // Make sure we're at the right Y position
         if ($pdf->GetY() < $startY + $actualRowHeight) {
@@ -1400,8 +1424,9 @@ body, html {
     <table style="width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed;">
         <colgroup>
             <col style="width: auto;">
+            <col style="width: 50px;">
+            <col style="width: 70px;">
             <col style="width: 60px;">
-            <col style="width: 80px;">
             <col style="width: 80px;">
         </colgroup>
         <thead>
@@ -1409,6 +1434,7 @@ body, html {
                 <th style="text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: normal;">Description</th>
                 <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Qty</th>
                 <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Price</th>
+                <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Tax</th>
                 <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Total</th>
             </tr>
         </thead>
