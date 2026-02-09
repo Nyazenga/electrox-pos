@@ -1505,6 +1505,25 @@ body, html {
                                 $description .= " (" . implode("; ", $details) . ")";
                             }
                         }
+                        
+                        // Add tax info to description in brackets
+                        $taxSuffix = '';
+                        if (isset($item['tax_code']) && $item['tax_code'] === 'E') {
+                            $taxSuffix = ' (EXT tax)'; // Exempt
+                        } elseif (isset($item['tax_percent'])) {
+                            $taxPercent = floatval($item['tax_percent']);
+                            if ($taxPercent == 0) {
+                                $taxSuffix = ' (0% tax)';
+                            } elseif ($taxPercent == 5) {
+                                $taxSuffix = ' (5% tax)';
+                            } elseif ($taxPercent == 15.5) {
+                                $taxSuffix = ' (15.5% tax)';
+                            } else {
+                                $taxSuffix = ' (' . number_format($taxPercent, 1) . '% tax)';
+                            }
+                        }
+                        $description .= $taxSuffix;
+                        
                         echo $description;
                         ?>
                     </td>
