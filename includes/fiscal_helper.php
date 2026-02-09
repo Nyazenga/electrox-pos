@@ -2552,13 +2552,17 @@ function fiscalizeCreditNote($refundId, $branchId, $db = null) {
                         $moneyTypeCode = 6;
                     }
                     
+                    // Convert payment amount from base currency to payment currency
+                    $paymentAmountInBaseCurrency = floatval($payment['amount']);
+                    $paymentAmountInPaymentCurrency = $paymentAmountInBaseCurrency * $exchangeRateToPayment;
+                    
                     if ($index === $lastIndex) {
-                        // Last payment: adjust to match refund total exactly
-                        $remainingAmount = $refundTotal - $totalPaymentAmount;
+                        // Last payment: adjust to match receiptTotal exactly (in payment currency)
+                        $remainingAmount = $receiptTotalAbs - $totalPaymentAmount;
                         $paymentAmount = -abs($remainingAmount); // Negative for credit note
                     } else {
-                        // Proportional payment
-                        $proportionalAmount = ($payment['amount'] / $totalRefundPaymentAmount) * $refundTotal;
+                        // Proportional payment (in payment currency)
+                        $proportionalAmount = ($paymentAmountInPaymentCurrency / $totalRefundPaymentAmountInPaymentCurrency) * $receiptTotalAbs;
                         $paymentAmount = -abs($proportionalAmount); // Negative for credit note
                         $totalPaymentAmount += abs($proportionalAmount);
                     }
