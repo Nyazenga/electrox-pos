@@ -548,38 +548,50 @@ try {
                         [':id' => $specificId]
                     );
                     if ($specificItem) {
-                        // Use wholesale price if wholesale sale and available, otherwise use selling price
+                        // FIXED: For wholesale sales, prioritize wholesale_price, but if not available, don't use selling_price yet
+                        // We'll fall back to product wholesale_price or cart price instead
                         if ($isWholesaleSale && !empty($specificItem['wholesale_price']) && floatval($specificItem['wholesale_price']) > 0) {
                             $price = floatval($specificItem['wholesale_price']);
                             $specificItemPrices[] = $price;
                             $totalSpecificPrice += $price;
-                        } elseif (!empty($specificItem['selling_price']) && floatval($specificItem['selling_price']) > 0) {
+                        } elseif (!$isWholesaleSale && !empty($specificItem['selling_price']) && floatval($specificItem['selling_price']) > 0) {
+                            // Only use specific item selling_price if NOT a wholesale sale
                             $price = floatval($specificItem['selling_price']);
                             $specificItemPrices[] = $price;
                             $totalSpecificPrice += $price;
                         }
+                        // If wholesale sale but no specific item wholesale_price, don't add to array
+                        // We'll fall back to product wholesale_price or cart price
                     }
                 }
             }
             
-            // If we have specific item prices for all items, use them
+            // Only use specific item prices if we have prices for ALL items
             if (!empty($specificItemPrices) && count($specificItemPrices) === $item['quantity']) {
                 $useSpecificItemPrices = true;
             }
         }
         
-        // Check if wholesale price should be used (fallback to product-level prices)
-        $useWholesalePrice = !$useSpecificItemPrices && $isWholesaleSale && !empty($product['wholesale_price']) && floatval($product['wholesale_price']) > 0;
-        
         // Calculate unit price without tax for storage
-        // Priority: Specific item prices > Product wholesale price > Product selling price > Cart price
+        // FIXED PRIORITY: Specific item wholesale > Product wholesale > Cart price (wholesale) > Specific item selling > Product selling
         if ($useSpecificItemPrices) {
             // Use average of specific item prices (all prices are tax-inclusive)
             $unitPriceWithTax = $totalSpecificPrice / count($specificItemPrices);
-        } elseif ($useWholesalePrice) {
-            $unitPriceWithTax = floatval($product['wholesale_price']);
+            error_log("PROCESS SALE: Using specific item prices - Product '{$item['name']}', Price: $unitPriceWithTax");
+        } elseif ($isWholesaleSale) {
+            // Wholesale sale: Try product wholesale_price, then cart price (which should be wholesale)
+            if (!empty($product['wholesale_price']) && floatval($product['wholesale_price']) > 0) {
+                $unitPriceWithTax = floatval($product['wholesale_price']);
+                error_log("PROCESS SALE: Using product wholesale price - Product '{$item['name']}', Price: $unitPriceWithTax");
+            } else {
+                // Fall back to cart price (which should be wholesale if toggle was on)
+                $unitPriceWithTax = $item['price'];
+                error_log("PROCESS SALE: Using cart price (wholesale) - Product '{$item['name']}', Price: $unitPriceWithTax");
+            }
         } else {
+            // Regular sale: Use cart price (which should be retail)
             $unitPriceWithTax = $item['price'];
+            error_log("PROCESS SALE: Using cart price (retail) - Product '{$item['name']}', Price: $unitPriceWithTax");
         }
         $unitPriceWithoutTax = $unitPriceWithTax;
         
