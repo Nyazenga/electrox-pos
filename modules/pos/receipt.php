@@ -61,17 +61,32 @@ if ($items === false) {
 }
 
 // Get product_specific_list entries for each sale item
-// CRITICAL: Entries are DELETED when sold, but if delete fails they're marked as 'sold' with sale_item_id set
+// CRITICAL: Entries are DELETED when sold, but data is stored in sale_items.specific_item_data before deletion
 foreach ($items as &$item) {
-    // Query for entries linked by sale_item_id (includes entries that weren't successfully deleted)
-    $specificEntries = $db->getRows(
-        "SELECT * FROM product_specific_list 
-         WHERE sale_item_id = :sale_item_id 
-         ORDER BY id",
-        [':sale_item_id' => $item['id']]
-    );
+    $specificEntries = [];
     
-    $item['specific_list_entries'] = $specificEntries !== false ? $specificEntries : [];
+    // Priority 1: Check if data was stored in sale_items.specific_item_data (for deleted entries)
+    if (!empty($item['specific_item_data'])) {
+        $storedData = json_decode($item['specific_item_data'], true);
+        if (is_array($storedData)) {
+            $specificEntries = $storedData;
+        }
+    }
+    
+    // Priority 2: Query for entries that still exist (if delete failed, they're marked as 'sold')
+    if (empty($specificEntries)) {
+        $existingEntries = $db->getRows(
+            "SELECT serial_number, imei, color, storage FROM product_specific_list 
+             WHERE sale_item_id = :sale_item_id 
+             ORDER BY id",
+            [':sale_item_id' => $item['id']]
+        );
+        if ($existingEntries !== false && !empty($existingEntries)) {
+            $specificEntries = $existingEntries;
+        }
+    }
+    
+    $item['specific_list_entries'] = $specificEntries;
 }
 unset($item);
 
@@ -347,14 +362,14 @@ if ($usePDF) {
         $pdf->Ln(10);
     }
     
-    // Items Table Header
+    // Items Table Header - Adjust widths to fit A4 (195mm total width, 15mm margins each side = 165mm usable)
     $pdf->SetFillColor(30, 58, 138);
     $pdf->SetTextColor(255, 255, 255);
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(120, 10, 'Description', 1, 0, 'L', true);
-    $pdf->Cell(20, 10, 'Qty', 1, 0, 'C', true);
-    $pdf->Cell(30, 10, 'Price', 1, 0, 'R', true);
-    $pdf->Cell(25, 10, 'Total', 1, 1, 'R', true);
+    $pdf->Cell(100, 10, 'Description', 1, 0, 'L', true);
+    $pdf->Cell(18, 10, 'Qty', 1, 0, 'C', true);
+    $pdf->Cell(25, 10, 'Price', 1, 0, 'R', true);
+    $pdf->Cell(22, 10, 'Total', 1, 1, 'R', true);
     
     // Items Table Rows
     $pdf->SetTextColor(0, 0, 0);
@@ -431,23 +446,40 @@ if ($usePDF) {
         
         // Calculate height needed for description (wrap text if needed)
         $testY = $pdf->GetY();
-        $pdf->MultiCell(120, $lineHeight, $description, 0, 'L', false, 0);
+        $pdf->MultiCell(100, $lineHeight, $description, 0, 'L', false, 0);
         $measuredHeight = $pdf->GetY() - $testY;
         $actualRowHeight = max($minHeight, $measuredHeight);
         
         $pdf->SetXY($startX, $startY);
-        // Use MultiCell for description to handle wrapping properly
-        $pdf->MultiCell(120, $lineHeight, $description, 1, 'L', false, 0);
+        // Use MultiCell for description WITHOUT border to avoid spacing issues
+        $pdf->MultiCell(100, $lineHeight, $description, 0, 'L', false, 0);
         
         // Get the end Y position after MultiCell
         $descEndY = $pdf->GetY();
         $actualRowHeight = max($minHeight, $descEndY - $startY);
         
+        // Draw borders manually for the entire row to ensure they connect
+        // Total width: 100 + 18 + 25 + 22 = 165mm (fits A4 with 15mm margins)
+        $tableWidth = 165;
+        // Left border for description
+        $pdf->Line($startX, $startY, $startX, $startY + $actualRowHeight);
+        // Right border for description
+        $pdf->Line($startX + 100, $startY, $startX + 100, $startY + $actualRowHeight);
+        // Top border
+        $pdf->Line($startX, $startY, $startX + $tableWidth, $startY);
+        // Bottom border
+        $pdf->Line($startX, $startY + $actualRowHeight, $startX + $tableWidth, $startY + $actualRowHeight);
+        
         // Draw the other cells aligned to the same row
-        $pdf->SetXY($startX + 120, $startY);
-        $pdf->Cell(20, $actualRowHeight, $quantity, 1, 0, 'C');
-        $pdf->Cell(30, $actualRowHeight, number_format($unitPrice, 2), 1, 0, 'R');
-        $pdf->Cell(25, $actualRowHeight, number_format($totalPrice, 2), 1, 1, 'R');
+        $pdf->SetXY($startX + 100, $startY);
+        $pdf->Cell(18, $actualRowHeight, $quantity, 0, 0, 'C'); // No border, we draw manually
+        $pdf->Cell(25, $actualRowHeight, number_format($unitPrice, 2), 0, 0, 'R'); // No border
+        $pdf->Cell(22, $actualRowHeight, number_format($totalPrice, 2), 0, 1, 'R'); // No border
+        
+        // Draw vertical borders between columns
+        $pdf->Line($startX + 100, $startY, $startX + 100, $startY + $actualRowHeight);
+        $pdf->Line($startX + 118, $startY, $startX + 118, $startY + $actualRowHeight);
+        $pdf->Line($startX + 143, $startY, $startX + 143, $startY + $actualRowHeight);
         
         // Make sure we're at the right Y position
         if ($pdf->GetY() < $startY + $actualRowHeight) {
@@ -524,28 +556,28 @@ if ($usePDF) {
     
     if ($pdfDiscountAmount > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(120, 0, '', 0, 0);
-        $pdf->Cell(20, 0, '', 0, 0);
-        $pdf->Cell(55, 8, 'Discount:', 1, 0, 'L');
+        $pdf->Cell(100, 0, '', 0, 0);
+        $pdf->Cell(18, 0, '', 0, 0);
+        $pdf->Cell(47, 8, 'Discount:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(25, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
+        $pdf->Cell(22, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
     }
     
     if ($pdfDeliveryCost > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(120, 0, '', 0, 0);
-        $pdf->Cell(20, 0, '', 0, 0);
-        $pdf->Cell(55, 8, 'Delivery Cost:', 1, 0, 'L');
+        $pdf->Cell(100, 0, '', 0, 0);
+        $pdf->Cell(18, 0, '', 0, 0);
+        $pdf->Cell(47, 8, 'Delivery Cost:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(25, 8, number_format($pdfDeliveryCost, 2), 1, 1, 'R');
+        $pdf->Cell(22, 8, number_format($pdfDeliveryCost, 2), 1, 1, 'R');
     }
     
     $pdf->SetFont('helvetica', '', 9);
-    $pdf->Cell(120, 0, '', 0, 0);
-    $pdf->Cell(20, 0, '', 0, 0);
-    $pdf->Cell(55, 8, 'Total(Excl. tax):', 1, 0, 'L');
+    $pdf->Cell(100, 0, '', 0, 0);
+    $pdf->Cell(18, 0, '', 0, 0);
+    $pdf->Cell(47, 8, 'Total(Excl. tax):', 1, 0, 'L');
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(25, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
+    $pdf->Cell(22, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
     
     // Tax Breakdown (if fiscalized)
     if ($fiscalReceipt && !empty($fiscalReceiptTaxes)) {
@@ -587,8 +619,8 @@ if ($usePDF) {
         // Display tax breakdowns
         foreach ($taxGroups as $group) {
             $pdf->SetFont('helvetica', '', 9);
-            $pdf->Cell(120, 0, '', 0, 0);
-            $pdf->Cell(20, 0, '', 0, 0);
+            $pdf->Cell(100, 0, '', 0, 0);
+            $pdf->Cell(18, 0, '', 0, 0);
             
             // Format label based on tax type
             if ($group['taxCode'] === 'E') {
@@ -599,7 +631,7 @@ if ($usePDF) {
                 $label = 'Total ' . number_format($group['taxPercent'], 1) . '% VAT';
             }
             
-            $pdf->Cell(55, 8, $label . ':', 1, 0, 'L');
+            $pdf->Cell(47, 8, $label . ':', 1, 0, 'L');
             $pdf->SetFont('helvetica', 'B', 9);
             
             // Convert tax amount to payment currency if needed
@@ -608,15 +640,15 @@ if ($usePDF) {
                 $pdfTaxAmount = $pdfTaxAmount * $exchangeRate;
             }
             
-            $pdf->Cell(25, 8, number_format($pdfTaxAmount, 2), 1, 1, 'R');
+            $pdf->Cell(22, 8, number_format($pdfTaxAmount, 2), 1, 1, 'R');
         }
     }
     
     $pdf->SetFont('helvetica', 'B', 10);
-    $pdf->Cell(120, 0, '', 0, 0);
-    $pdf->Cell(20, 0, '', 0, 0);
-    $pdf->Cell(55, 10, 'Total(Incl. tax):', 1, 0, 'L');
-    $pdf->Cell(25, 10, number_format($pdfTotalAmount, 2), 1, 1, 'R');
+    $pdf->Cell(100, 0, '', 0, 0);
+    $pdf->Cell(18, 0, '', 0, 0);
+    $pdf->Cell(47, 10, 'Total(Incl. tax):', 1, 0, 'L');
+    $pdf->Cell(22, 10, number_format($pdfTotalAmount, 2), 1, 1, 'R');
     
     $pdf->Ln(12);
     
@@ -939,10 +971,12 @@ body, html {
 
 .receipt-container table {
     width: 100%;
+    max-width: 100%;
     border-collapse: collapse;
     margin: 12px 0;
     font-size: 11px;
-    table-layout: auto;
+    table-layout: fixed;
+    box-sizing: border-box;
 }
 
 .receipt-container table th, 
@@ -950,6 +984,7 @@ body, html {
     padding: 6px 8px;
     text-align: left;
     border-bottom: 1px solid #ddd;
+    box-sizing: border-box;
 }
 
 .receipt-container table th {
@@ -1292,12 +1327,12 @@ body, html {
     }
     ?>
     
-    <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
+    <table style="width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed;">
         <colgroup>
-            <col style="min-width: 150px;">
-            <col style="width: 60px; min-width: 50px;">
-            <col style="width: 90px; min-width: 70px;">
-            <col style="width: 90px; min-width: 70px;">
+            <col style="width: auto;">
+            <col style="width: 60px;">
+            <col style="width: 80px;">
+            <col style="width: 80px;">
         </colgroup>
         <thead>
             <tr>
@@ -1326,7 +1361,7 @@ body, html {
                 $totalPriceFormatted = $paymentCurrency ? formatCurrencyAmount($totalPrice, $paymentCurrencyId, $db) : formatCurrency($totalPrice);
             ?>
                 <tr>
-                    <td style="text-align: left; padding: 6px 8px; word-wrap: break-word; word-break: break-word; border-bottom: 1px solid #ddd; white-space: normal; line-height: 1.4;">
+                    <td style="text-align: left; padding: 6px 8px; word-wrap: break-word; word-break: break-word; border: 1px solid #ddd; border-top: none; white-space: normal; line-height: 1.4;">
                         <?php
                         $description = escapeHtml($item['product_name']);
                         if (!empty($item['specific_list_entries'])) {
@@ -1378,9 +1413,9 @@ body, html {
                         echo $description;
                         ?>
                     </td>
-                    <td style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $item['quantity'] ?></td>
-                    <td style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $unitPriceFormatted ?></td>
-                    <td style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $totalPriceFormatted ?></td>
+                    <td style="text-align: center; padding: 6px 8px; border: 1px solid #ddd; border-top: none; border-left: none; white-space: nowrap;"><?= $item['quantity'] ?></td>
+                    <td style="text-align: right; padding: 6px 8px; border: 1px solid #ddd; border-top: none; border-left: none; white-space: nowrap;"><?= $unitPriceFormatted ?></td>
+                    <td style="text-align: right; padding: 6px 8px; border: 1px solid #ddd; border-top: none; border-left: none; white-space: nowrap;"><?= $totalPriceFormatted ?></td>
                 </tr>
             <?php endforeach; ?>
         </tbody>

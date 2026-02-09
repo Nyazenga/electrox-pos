@@ -623,6 +623,59 @@ try {
         }
         // If prices_include_tax is false, unitPriceWithoutTax = unitPriceWithTax (no change)
         
+        // Store serial numbers and IMEI in JSON before deletion (for receipt display)
+        $specificItemData = [];
+        if ($requiresSpecificList && !empty($specificListEntries)) {
+            foreach ($specificListEntries as $entry) {
+                $specificId = intval($entry['id'] ?? 0);
+                if ($specificId <= 0) {
+                    // Try to find by serial number or IMEI
+                    if (!empty($entry['serial_number'])) {
+                        $existing = $db->getRow(
+                            "SELECT id, serial_number, imei, color, storage FROM product_specific_list WHERE serial_number = :serial AND product_id = :product_id AND branch_id = :branch_id AND status = 'available'",
+                            [':serial' => $entry['serial_number'], ':product_id' => $product['id'], ':branch_id' => $branchId]
+                        );
+                        if ($existing) {
+                            $specificId = $existing['id'];
+                            $entry = $existing;
+                        }
+                    } elseif (!empty($entry['imei'])) {
+                        $existing = $db->getRow(
+                            "SELECT id, serial_number, imei, color, storage FROM product_specific_list WHERE imei = :imei AND product_id = :product_id AND branch_id = :branch_id AND status = 'available'",
+                            [':imei' => $entry['imei'], ':product_id' => $product['id'], ':branch_id' => $branchId]
+                        );
+                        if ($existing) {
+                            $specificId = $existing['id'];
+                            $entry = $existing;
+                        }
+                    }
+                }
+                
+                if ($specificId > 0) {
+                    $specificItem = $db->getRow(
+                        "SELECT serial_number, imei, color, storage FROM product_specific_list WHERE id = :id",
+                        [':id' => $specificId]
+                    );
+                    if ($specificItem) {
+                        $specificItemData[] = [
+                            'serial_number' => $specificItem['serial_number'] ?? null,
+                            'imei' => $specificItem['imei'] ?? null,
+                            'color' => $specificItem['color'] ?? null,
+                            'storage' => $specificItem['storage'] ?? null
+                        ];
+                    }
+                } elseif (!empty($entry['serial_number']) || !empty($entry['imei'])) {
+                    // Use data from cart if available
+                    $specificItemData[] = [
+                        'serial_number' => $entry['serial_number'] ?? null,
+                        'imei' => $entry['imei'] ?? null,
+                        'color' => $entry['color'] ?? null,
+                        'storage' => $entry['storage'] ?? null
+                    ];
+                }
+            }
+        }
+        
         $itemData = [
             'sale_id' => $saleId,
             'product_id' => $item['id'],
@@ -632,6 +685,11 @@ try {
             'total_price' => $unitPriceWithoutTax * $item['quantity'], // Store total WITHOUT tax
             'created_at' => date('Y-m-d H:i:s')
         ];
+        
+        // Add specific_item_data as JSON if available (for receipt display after deletion)
+        if (!empty($specificItemData)) {
+            $itemData['specific_item_data'] = json_encode($specificItemData);
+        }
         
         $itemId = $db->insert('sale_items', $itemData);
         if (!$itemId) {

@@ -118,15 +118,32 @@ if (isset($_GET['id'])) {
                                 WHERE si.sale_id = :id", [':id' => $selectedSale['id']]);
         
         // Get product_specific_list entries for each sale item
-        // CRITICAL: Entries are DELETED when sold, but if delete fails they're marked as 'sold' with sale_item_id set
+        // CRITICAL: Entries are DELETED when sold, but data is stored in sale_items.specific_item_data before deletion
         foreach ($items as &$item) {
-            $specificEntries = $db->getRows(
-                "SELECT * FROM product_specific_list 
-                 WHERE sale_item_id = :sale_item_id 
-                 ORDER BY id",
-                [':sale_item_id' => $item['id']]
-            );
-            $item['specific_list_entries'] = $specificEntries !== false ? $specificEntries : [];
+            $specificEntries = [];
+            
+            // Priority 1: Check if data was stored in sale_items.specific_item_data (for deleted entries)
+            if (!empty($item['specific_item_data'])) {
+                $storedData = json_decode($item['specific_item_data'], true);
+                if (is_array($storedData)) {
+                    $specificEntries = $storedData;
+                }
+            }
+            
+            // Priority 2: Query for entries that still exist (if delete failed, they're marked as 'sold')
+            if (empty($specificEntries)) {
+                $existingEntries = $db->getRows(
+                    "SELECT serial_number, imei, color, storage FROM product_specific_list 
+                     WHERE sale_item_id = :sale_item_id 
+                     ORDER BY id",
+                    [':sale_item_id' => $item['id']]
+                );
+                if ($existingEntries !== false && !empty($existingEntries)) {
+                    $specificEntries = $existingEntries;
+                }
+            }
+            
+            $item['specific_list_entries'] = $specificEntries;
         }
         unset($item);
         if ($items === false) {
