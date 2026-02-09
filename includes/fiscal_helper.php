@@ -2480,54 +2480,149 @@ function fiscalizeCreditNote($refundId, $branchId, $db = null) {
         // Build payments (negative for credit note)
         // RCPT039: receiptTotal must equal sum of all paymentAmount
         // For credit notes, payment amounts must be negative and match receiptTotal exactly
-        $totalPaymentAmount = 0;
+        // CRITICAL: receiptTotal is already negative for credit notes (e.g., -1200.00)
+        $receiptTotal = floatval($receiptData['receiptTotal']); // Already negative for credit notes
+        
+        // Calculate total of refund payments (positive amounts from database)
+        $totalRefundPaymentAmount = 0;
         foreach ($refundPayments as $payment) {
-            $method = strtolower($payment['payment_method'] ?? 'cash');
-            $moneyTypeCode = 0;
-            if ($method === 'cash') {
-                $moneyTypeCode = 0;
-            } elseif ($method === 'card') {
-                $moneyTypeCode = 1;
-            } elseif ($method === 'ecocash' || $method === 'onemoney' || $method === 'mobile') {
-                $moneyTypeCode = 2;
-            } elseif ($method === 'coupon') {
-                $moneyTypeCode = 3;
-            } elseif ($method === 'credit') {
-                $moneyTypeCode = 4;
-            } elseif ($method === 'bank' || $method === 'banktransfer') {
-                $moneyTypeCode = 5;
-            } else {
-                $moneyTypeCode = 6;
-            }
-            
-            // Credit note payment amounts are negative
-            $paymentAmount = -abs(floatval($payment['amount']));
-            $totalPaymentAmount += $paymentAmount;
-            
-            $receiptData['receiptPayments'][] = [
-                'moneyTypeCode' => $moneyTypeCode,
-                'paymentAmount' => round($paymentAmount, 2)
-            ];
+            $totalRefundPaymentAmount += floatval($payment['amount']);
         }
         
-        // RCPT039: Ensure payment sum equals receiptTotal (both negative for credit notes)
-        $receiptTotal = floatval($receiptData['receiptTotal']);
-        $paymentDifference = abs($receiptTotal - $totalPaymentAmount);
+        // CRITICAL FIX: If refund payments don't match refund total, recalculate payments
+        // This handles cases where duplicate/incorrect payments were created
+        $refundTotal = floatval($refund['total_amount']);
+        $paymentMismatch = abs($totalRefundPaymentAmount - $refundTotal);
         
-        if ($paymentDifference > 0.01) {
-            // Adjust payments to match receiptTotal exactly
-            if (empty($receiptData['receiptPayments'])) {
-                // No payments - add cash payment equal to receiptTotal
-                $receiptData['receiptPayments'] = [[
-                    'moneyTypeCode' => 0, // Cash
-                    'paymentAmount' => round($receiptTotal, 2)
-                ]];
+        if ($paymentMismatch > 0.01) {
+            error_log("FISCALIZE CREDIT NOTE: WARNING - Refund payments total ($totalRefundPaymentAmount) doesn't match refund total ($refundTotal), recalculating payments");
+            
+            // Recalculate payments proportionally from refund payments, or use single payment
+            if (count($refundPayments) > 1) {
+                // Multiple payments: recalculate proportionally to match refund total
+                $receiptData['receiptPayments'] = [];
+                $totalPaymentAmount = 0;
+                $lastIndex = count($refundPayments) - 1;
+                
+                foreach ($refundPayments as $index => $payment) {
+                    $method = strtolower($payment['payment_method'] ?? 'cash');
+                    $moneyTypeCode = 0;
+                    if ($method === 'cash') {
+                        $moneyTypeCode = 0;
+                    } elseif ($method === 'card') {
+                        $moneyTypeCode = 1;
+                    } elseif ($method === 'ecocash' || $method === 'onemoney' || $method === 'mobile') {
+                        $moneyTypeCode = 2;
+                    } elseif ($method === 'coupon') {
+                        $moneyTypeCode = 3;
+                    } elseif ($method === 'credit') {
+                        $moneyTypeCode = 4;
+                    } elseif ($method === 'bank' || $method === 'banktransfer') {
+                        $moneyTypeCode = 5;
+                    } else {
+                        $moneyTypeCode = 6;
+                    }
+                    
+                    if ($index === $lastIndex) {
+                        // Last payment: adjust to match refund total exactly
+                        $remainingAmount = $refundTotal - $totalPaymentAmount;
+                        $paymentAmount = -abs($remainingAmount); // Negative for credit note
+                    } else {
+                        // Proportional payment
+                        $proportionalAmount = ($payment['amount'] / $totalRefundPaymentAmount) * $refundTotal;
+                        $paymentAmount = -abs($proportionalAmount); // Negative for credit note
+                        $totalPaymentAmount += abs($proportionalAmount);
+                    }
+                    
+                    $receiptData['receiptPayments'][] = [
+                        'moneyTypeCode' => $moneyTypeCode,
+                        'paymentAmount' => round($paymentAmount, 2)
+                    ];
+                }
             } else {
-                // Adjust last payment to match total
-                $lastIndex = count($receiptData['receiptPayments']) - 1;
-                $lastPayment = &$receiptData['receiptPayments'][$lastIndex];
-                $adjustment = $receiptTotal - $totalPaymentAmount;
-                $lastPayment['paymentAmount'] = round($lastPayment['paymentAmount'] + $adjustment, 2);
+                // Single payment: use refund total directly
+                $payment = $refundPayments[0];
+                $method = strtolower($payment['payment_method'] ?? 'cash');
+                $moneyTypeCode = 0;
+                if ($method === 'cash') {
+                    $moneyTypeCode = 0;
+                } elseif ($method === 'card') {
+                    $moneyTypeCode = 1;
+                } elseif ($method === 'ecocash' || $method === 'onemoney' || $method === 'mobile') {
+                    $moneyTypeCode = 2;
+                } elseif ($method === 'coupon') {
+                    $moneyTypeCode = 3;
+                } elseif ($method === 'credit') {
+                    $moneyTypeCode = 4;
+                } elseif ($method === 'bank' || $method === 'banktransfer') {
+                    $moneyTypeCode = 5;
+                } else {
+                    $moneyTypeCode = 6;
+                }
+                
+                $receiptData['receiptPayments'] = [[
+                    'moneyTypeCode' => $moneyTypeCode,
+                    'paymentAmount' => round($receiptTotal, 2) // Already negative, matches refund total
+                ]];
+            }
+        } else {
+            // Payments match refund total: use them as-is (make negative for credit note)
+            $totalPaymentAmount = 0;
+            foreach ($refundPayments as $payment) {
+                $method = strtolower($payment['payment_method'] ?? 'cash');
+                $moneyTypeCode = 0;
+                if ($method === 'cash') {
+                    $moneyTypeCode = 0;
+                } elseif ($method === 'card') {
+                    $moneyTypeCode = 1;
+                } elseif ($method === 'ecocash' || $method === 'onemoney' || $method === 'mobile') {
+                    $moneyTypeCode = 2;
+                } elseif ($method === 'coupon') {
+                    $moneyTypeCode = 3;
+                } elseif ($method === 'credit') {
+                    $moneyTypeCode = 4;
+                } elseif ($method === 'bank' || $method === 'banktransfer') {
+                    $moneyTypeCode = 5;
+                } else {
+                    $moneyTypeCode = 6;
+                }
+                
+                // Credit note payment amounts are negative
+                $paymentAmount = -abs(floatval($payment['amount']));
+                $totalPaymentAmount += $paymentAmount;
+                
+                $receiptData['receiptPayments'][] = [
+                    'moneyTypeCode' => $moneyTypeCode,
+                    'paymentAmount' => round($paymentAmount, 2)
+                ];
+            }
+            
+            // RCPT039: Ensure payment sum equals receiptTotal (both negative for credit notes)
+            $paymentDifference = abs($receiptTotal - $totalPaymentAmount);
+            
+            if ($paymentDifference > 0.01) {
+                // Adjust last payment to match total exactly
+                if (!empty($receiptData['receiptPayments'])) {
+                    $lastIndex = count($receiptData['receiptPayments']) - 1;
+                    $lastPayment = &$receiptData['receiptPayments'][$lastIndex];
+                    $adjustment = $receiptTotal - $totalPaymentAmount;
+                    $newPaymentAmount = round($lastPayment['paymentAmount'] + $adjustment, 2);
+                    
+                    // CRITICAL: Ensure payment amount is still negative (or zero) for credit notes
+                    // ZIMRA requires: paymentAmount <= 0 for credit notes
+                    if ($newPaymentAmount > 0) {
+                        error_log("FISCALIZE CREDIT NOTE: ERROR - Adjustment would create positive payment amount ($newPaymentAmount). Using receiptTotal directly.");
+                        $newPaymentAmount = round($receiptTotal, 2); // Use receiptTotal directly (already negative)
+                    }
+                    
+                    $lastPayment['paymentAmount'] = $newPaymentAmount;
+                } else {
+                    // No payments - add cash payment equal to receiptTotal (already negative)
+                    $receiptData['receiptPayments'] = [[
+                        'moneyTypeCode' => 0, // Cash
+                        'paymentAmount' => round($receiptTotal, 2) // Already negative for credit notes
+                    ]];
+                }
             }
         }
         
