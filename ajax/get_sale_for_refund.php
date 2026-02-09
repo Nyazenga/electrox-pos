@@ -249,10 +249,53 @@ try {
     $currencies = getActiveCurrencies(null);
     $baseCurrency = getBaseCurrency(null);
     
+    // CRITICAL: Convert display prices from base currency to payment currency
+    // Prices in sale_items are stored in base currency, but refund modal should show payment currency
+    $paymentCurrency = null;
+    $paymentCurrencyId = null;
+    $exchangeRate = 1.0;
+    
+    if (!empty($payments)) {
+        $firstPayment = $payments[0];
+        if (!empty($firstPayment['currency_id'])) {
+            $paymentCurrencyId = $firstPayment['currency_id'];
+            $paymentCurrency = $db->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $paymentCurrencyId]);
+            if ($paymentCurrency && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
+                // Get exchange rate from BASE currency to PAYMENT currency
+                require_once APP_PATH . '/includes/currency_functions.php';
+                $exchangeRate = getExchangeRate($baseCurrency['id'], $paymentCurrencyId, $db);
+                
+                // Convert all display prices from base to payment currency
+                foreach ($items as &$item) {
+                    if (isset($item['display_unit_price'])) {
+                        $item['display_unit_price'] = round($item['display_unit_price'] * $exchangeRate, 2);
+                    }
+                    if (isset($item['display_total_price'])) {
+                        $item['display_total_price'] = round($item['display_total_price'] * $exchangeRate, 2);
+                    }
+                }
+                unset($item);
+                
+                // Also convert sale totals for display
+                if (isset($sale['total_amount'])) {
+                    $sale['display_total_amount'] = round(floatval($sale['total_amount']) * $exchangeRate, 2);
+                }
+                if (isset($sale['discount_amount'])) {
+                    $sale['display_discount_amount'] = round(floatval($sale['discount_amount']) * $exchangeRate, 2);
+                }
+                if (isset($sale['delivery_cost'])) {
+                    $sale['display_delivery_cost'] = round(floatval($sale['delivery_cost']) * $exchangeRate, 2);
+                }
+            }
+        }
+    }
+    
     $sale['items'] = $items;
     $sale['payments'] = $payments;
     $sale['currencies'] = $currencies;
     $sale['base_currency'] = $baseCurrency;
+    $sale['payment_currency'] = $paymentCurrency; // Add payment currency for frontend
+    $sale['payment_currency_id'] = $paymentCurrencyId; // Add payment currency ID for frontend
     $sale['fiscalized'] = $fiscalReceipt ? true : false;
     $sale['fiscal_receipt'] = $fiscalReceipt;
     $sale['prices_include_tax'] = $pricesIncludeTax;

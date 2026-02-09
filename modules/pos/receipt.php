@@ -2338,11 +2338,11 @@ function showRefundModal(sale) {
                     <strong>${escapeHtml(item.product_name)}</strong>
                     ${item.barcode ? `<div class="text-muted small">Barcode: ${escapeHtml(item.barcode)}</div>` : ''}
                     <div class="text-muted small">
-                        Qty: ${item.quantity} × ${formatCurrency(unitPriceWithTax)} = ${formatCurrency(totalPriceWithTax)}
+                        Qty: ${item.quantity} × ${formatCurrency(unitPriceWithTax, saleCurrency)} = ${formatCurrency(totalPriceWithTax, saleCurrency)}
                     </div>
                 </label>
                 <div class="refund-item-amount fw-bold text-primary">
-                    ${formatCurrency(totalPriceWithTax)}
+                    ${formatCurrency(totalPriceWithTax, saleCurrency)}
                 </div>
             </div>
             <!-- Quantity inputs removed - full refund only (all items refunded) -->
@@ -2393,7 +2393,8 @@ function showRefundModal(sale) {
     
     if (sale.delivery_cost && parseFloat(sale.delivery_cost) > 0) {
         if (deliveryCostRow) deliveryCostRow.style.display = 'block';
-        if (deliveryCostAmount) deliveryCostAmount.textContent = formatCurrency(sale.delivery_cost);
+        const displayDeliveryCost = sale.display_delivery_cost !== undefined ? sale.display_delivery_cost : sale.delivery_cost;
+        if (deliveryCostAmount) deliveryCostAmount.textContent = formatCurrency(displayDeliveryCost, saleCurrency);
         
         // For full refunds, auto-check delivery cost if it exists
         const allCheckboxes = document.querySelectorAll('.refund-item-checkbox');
@@ -2535,7 +2536,7 @@ function validateSplitRefundPayments() {
     if (isValid) {
         validationMsg.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> Payment amounts match refund total</span>';
     } else {
-        validationMsg.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-circle"></i> Total paid (${formatCurrency(totalPaid)}) does not match refund total (${formatCurrency(totalRefund)}). Difference: ${formatCurrency(difference)}</span>`;
+        validationMsg.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-circle"></i> Total paid (${formatCurrency(totalPaid, currentRefundSaleCurrency)}) does not match refund total (${formatCurrency(totalRefund, currentRefundSaleCurrency)}). Difference: ${formatCurrency(difference, currentRefundSaleCurrency)}</span>`;
     }
     
     return isValid;
@@ -2635,11 +2636,11 @@ function updateRefundTotal() {
         // Full refund only: remaining is always 0
         remaining = 0;
         
-        document.getElementById('remainingInvoiceAmount').textContent = formatCurrency(remaining);
+        document.getElementById('remainingInvoiceAmount').textContent = formatCurrency(remaining, currentRefundSaleCurrency);
     }
     
     // Display refund total (which includes discount and delivery cost)
-    document.getElementById('refundTotalAmount').textContent = formatCurrency(refundTotal);
+    document.getElementById('refundTotalAmount').textContent = formatCurrency(refundTotal, currentRefundSaleCurrency);
     
     // Update split payments if active
     if (document.getElementById('refundPaymentMethod').value === 'split') {
@@ -2657,10 +2658,22 @@ function updateRefundTotal() {
     }
 }
 
-function formatCurrency(amount) {
+function formatCurrency(amount, currency = null) {
     if (typeof amount !== 'number') {
         amount = parseFloat(amount) || 0;
     }
+    
+    // If currency object provided, use it for formatting
+    if (currency && currency.symbol) {
+        const formatted = amount.toFixed(currency.decimal_places || 2);
+        if (currency.symbol_position === 'after') {
+            return formatted + ' ' + currency.symbol;
+        } else {
+            return currency.symbol + formatted;
+        }
+    }
+    
+    // Fallback to default USD format
     return '$' + amount.toFixed(2);
 }
 
