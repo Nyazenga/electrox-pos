@@ -1042,11 +1042,30 @@ require_once APP_PATH . '/includes/header.php';
                                             $description .= " (" . implode("; ", $details) . ")";
                                         }
                                     }
+                                    
+                                    // Format tax display
+                                    $taxDisplay = '-';
+                                    if (isset($item['tax_code']) && $item['tax_code'] === 'E') {
+                                        $taxDisplay = '-'; // Exempt
+                                    } elseif (isset($item['tax_percent'])) {
+                                        $taxPercent = floatval($item['tax_percent']);
+                                        if ($taxPercent == 0) {
+                                            $taxDisplay = '0%';
+                                        } elseif ($taxPercent == 5) {
+                                            $taxDisplay = '5%';
+                                        } elseif ($taxPercent == 15.5) {
+                                            $taxDisplay = '15.5%';
+                                        } else {
+                                            $taxDisplay = number_format($taxPercent, 1) . '%';
+                                        }
+                                    }
+                                    
                                     echo $description;
                                     ?>
                                 </td>
                                 <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $item['quantity'] ?></td>
                                 <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $unitPriceFormatted ?></td>
+                                <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd; font-size: 11px;"><?= escapeHtml($taxDisplay) ?></td>
                                 <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $totalPriceFormatted ?></td>
                             </tr>
                         <?php endforeach; ?>
