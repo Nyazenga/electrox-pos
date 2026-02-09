@@ -118,9 +118,12 @@ if (isset($_GET['id'])) {
                                 WHERE si.sale_id = :id", [':id' => $selectedSale['id']]);
         
         // Get product_specific_list entries for each sale item
+        // CRITICAL: Entries are DELETED when sold, but if delete fails they're marked as 'sold' with sale_item_id set
         foreach ($items as &$item) {
             $specificEntries = $db->getRows(
-                "SELECT * FROM product_specific_list WHERE sale_item_id = :sale_item_id ORDER BY id",
+                "SELECT * FROM product_specific_list 
+                 WHERE sale_item_id = :sale_item_id 
+                 ORDER BY id",
                 [':sale_item_id' => $item['id']]
             );
             $item['specific_list_entries'] = $specificEntries !== false ? $specificEntries : [];
@@ -955,7 +958,6 @@ require_once APP_PATH . '/includes/header.php';
                     <colgroup>
                         <col style="width: auto;">
                         <col style="width: 50px;">
-                        <col style="width: 60px;">
                         <col style="width: 80px;">
                         <col style="width: 80px;">
                     </colgroup>
@@ -963,7 +965,6 @@ require_once APP_PATH . '/includes/header.php';
                         <tr>
                             <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">Description</th>
                             <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">Qty</th>
-                            <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">Tax %</th>
                             <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Price</th>
                             <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Total</th>
                         </tr>
@@ -1012,15 +1013,6 @@ require_once APP_PATH . '/includes/header.php';
                                     ?>
                                 </td>
                                 <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $item['quantity'] ?></td>
-                                <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">
-                                    <?php 
-                                    if (isset($item['tax_percent']) && $item['tax_percent'] !== null && $item['tax_code'] !== 'E') {
-                                        echo number_format($item['tax_percent'], 1) . '%';
-                                    } else {
-                                        echo '-';
-                                    }
-                                    ?>
-                                </td>
                                 <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $unitPriceFormatted ?></td>
                                 <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $totalPriceFormatted ?></td>
                             </tr>
@@ -1061,18 +1053,18 @@ require_once APP_PATH . '/includes/header.php';
                         ?>
                         <?php if ($discountAmount > 0): ?>
                             <tr>
-                                <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
+                                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
                                 <td style="text-align: right; padding: 6px 4px;"><strong>-<?= $discountFormatted ?></strong></td>
                             </tr>
                         <?php endif; ?>
                         <?php if ($deliveryCost > 0): ?>
                             <tr>
-                                <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Delivery Cost:</strong></td>
+                                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Delivery Cost:</strong></td>
                                 <td style="text-align: right; padding: 6px 4px;"><strong><?= $deliveryCostFormatted ?></strong></td>
                             </tr>
                         <?php endif; ?>
                         <tr>
-                            <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Total(Excl. tax):</strong></td>
+                            <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Total(Excl. tax):</strong></td>
                             <td style="text-align: right; padding: 6px 4px;"><strong><?= $subtotalFormatted ?></strong></td>
                         </tr>
                         <?php
@@ -1132,7 +1124,7 @@ require_once APP_PATH . '/includes/header.php';
                                 $taxAmountFormatted = $paymentCurrency ? formatCurrencyAmount($taxAmount, $paymentCurrencyId, $db) : formatCurrency($taxAmount);
                         ?>
                             <tr>
-                                <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
+                                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
                                 <td style="text-align: right; padding: 6px 4px;"><strong><?= $taxAmountFormatted ?></strong></td>
                             </tr>
                         <?php
@@ -1140,7 +1132,7 @@ require_once APP_PATH . '/includes/header.php';
                         }
                         ?>
                         <tr class="total-row">
-                            <td colspan="4" style="text-align: right; padding: 6px 4px; border-top: 2px solid #333;"><strong>Total(Incl. tax):</strong></td>
+                            <td colspan="3" style="text-align: right; padding: 6px 4px; border-top: 2px solid #333;"><strong>Total(Incl. tax):</strong></td>
                             <td style="text-align: right; padding: 6px 4px; border-top: 2px solid #333;"><strong><?= $totalFormatted ?></strong></td>
                         </tr>
                         <?php 

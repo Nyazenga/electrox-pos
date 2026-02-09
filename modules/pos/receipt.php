@@ -61,11 +61,16 @@ if ($items === false) {
 }
 
 // Get product_specific_list entries for each sale item
+// CRITICAL: Entries are DELETED when sold, but if delete fails they're marked as 'sold' with sale_item_id set
 foreach ($items as &$item) {
+    // Query for entries linked by sale_item_id (includes entries that weren't successfully deleted)
     $specificEntries = $db->getRows(
-        "SELECT * FROM product_specific_list WHERE sale_item_id = :sale_item_id ORDER BY id",
+        "SELECT * FROM product_specific_list 
+         WHERE sale_item_id = :sale_item_id 
+         ORDER BY id",
         [':sale_item_id' => $item['id']]
     );
+    
     $item['specific_list_entries'] = $specificEntries !== false ? $specificEntries : [];
 }
 unset($item);
@@ -338,19 +343,18 @@ if ($usePDF) {
         $pdf->Ln(5);
     } else {
         $pdf->Ln(8);
+        $pdf->Line(15, $pdf->GetY(), 195, $pdf->GetY());
+        $pdf->Ln(10);
     }
-    $pdf->Line(15, $pdf->GetY(), 195, $pdf->GetY());
-    $pdf->Ln(10);
     
     // Items Table Header
     $pdf->SetFillColor(30, 58, 138);
     $pdf->SetTextColor(255, 255, 255);
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(90, 10, 'Description', 1, 0, 'L', true);
+    $pdf->Cell(120, 10, 'Description', 1, 0, 'L', true);
     $pdf->Cell(20, 10, 'Qty', 1, 0, 'C', true);
-    $pdf->Cell(25, 10, 'Tax %', 1, 0, 'C', true);
     $pdf->Cell(30, 10, 'Price', 1, 0, 'R', true);
-    $pdf->Cell(30, 10, 'Total', 1, 1, 'R', true);
+    $pdf->Cell(25, 10, 'Total', 1, 1, 'R', true);
     
     // Items Table Rows
     $pdf->SetTextColor(0, 0, 0);
@@ -368,25 +372,47 @@ if ($usePDF) {
             $details = [];
             foreach ($item['specific_list_entries'] as $entry) {
                 $entryDetails = [];
-                if (!empty($entry['serial_number'])) {
-                    $entryDetails[] = "S/N: " . htmlspecialchars($entry['serial_number']);
+                // Always check for serial_number and imei - they might be in the database
+                if (isset($entry['serial_number']) && $entry['serial_number'] !== null && trim($entry['serial_number']) !== '') {
+                    $entryDetails[] = "S/N: " . htmlspecialchars(trim($entry['serial_number']));
                 }
-                if (!empty($entry['imei'])) {
-                    $entryDetails[] = "IMEI: " . htmlspecialchars($entry['imei']);
+                if (isset($entry['imei']) && $entry['imei'] !== null && trim($entry['imei']) !== '') {
+                    $entryDetails[] = "IMEI: " . htmlspecialchars(trim($entry['imei']));
                 }
+                // Only add color and storage if serial/IMEI are present, or if they're the only details
                 if (!empty($entryDetails)) {
+                    // Add color and storage if available
+                    if (isset($entry['color']) && $entry['color'] !== null && trim($entry['color']) !== '') {
+                        $colorValue = trim($entry['color']);
+                        if (!preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $colorValue)) {
+                                            $entryDetails[] = "Color: " . htmlspecialchars($colorValue);
+                        }
+                    }
+                    if (isset($entry['storage']) && $entry['storage'] !== null && trim($entry['storage']) !== '') {
+                        $entryDetails[] = "Storage: " . htmlspecialchars(trim($entry['storage']));
+                    }
                     $details[] = implode(", ", $entryDetails);
+                } elseif ((isset($entry['color']) && $entry['color'] !== null && trim($entry['color']) !== '') || 
+                          (isset($entry['storage']) && $entry['storage'] !== null && trim($entry['storage']) !== '')) {
+                    // If no serial/IMEI but has color/storage, show those
+                    $entryDetails = [];
+                    if (isset($entry['color']) && $entry['color'] !== null && trim($entry['color']) !== '') {
+                        $colorValue = trim($entry['color']);
+                        if (!preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $colorValue)) {
+                            $entryDetails[] = "Color: " . htmlspecialchars($colorValue);
+                        }
+                    }
+                    if (isset($entry['storage']) && $entry['storage'] !== null && trim($entry['storage']) !== '') {
+                        $entryDetails[] = "Storage: " . htmlspecialchars(trim($entry['storage']));
+                    }
+                    if (!empty($entryDetails)) {
+                        $details[] = implode(", ", $entryDetails);
+                    }
                 }
             }
             if (!empty($details)) {
                 $description .= " (" . implode("; ", $details) . ")";
             }
-        }
-        
-        // Get tax percent for this item
-        $taxPercentDisplay = '-';
-        if (isset($item['tax_percent']) && $item['tax_percent'] !== null && $item['tax_code'] !== 'E') {
-            $taxPercentDisplay = number_format($item['tax_percent'], 1) . '%';
         }
         
         // Convert to payment currency if needed (for PDF display)
@@ -403,23 +429,30 @@ if ($usePDF) {
         
         $pdf->SetFont('helvetica', '', 9);
         
-        // Calculate height needed for description
+        // Calculate height needed for description (wrap text if needed)
         $testY = $pdf->GetY();
-        $pdf->MultiCell(90, $lineHeight, $description, 0, 'L', false, 0);
+        $pdf->MultiCell(120, $lineHeight, $description, 0, 'L', false, 0);
         $measuredHeight = $pdf->GetY() - $testY;
         $actualRowHeight = max($minHeight, $measuredHeight);
         
         $pdf->SetXY($startX, $startY);
-        // Use Cell instead of MultiCell with border to avoid row separators
-        $pdf->Cell(90, $actualRowHeight, $description, 1, 0, 'L', false);
+        // Use MultiCell for description to handle wrapping properly
+        $pdf->MultiCell(120, $lineHeight, $description, 1, 'L', false, 0);
         
-        $pdf->SetXY($startX + 90, $startY);
+        // Get the end Y position after MultiCell
+        $descEndY = $pdf->GetY();
+        $actualRowHeight = max($minHeight, $descEndY - $startY);
+        
+        // Draw the other cells aligned to the same row
+        $pdf->SetXY($startX + 120, $startY);
         $pdf->Cell(20, $actualRowHeight, $quantity, 1, 0, 'C');
-        $pdf->Cell(25, $actualRowHeight, $taxPercentDisplay, 1, 0, 'C');
         $pdf->Cell(30, $actualRowHeight, number_format($unitPrice, 2), 1, 0, 'R');
-        $pdf->Cell(30, $actualRowHeight, number_format($totalPrice, 2), 1, 1, 'R');
+        $pdf->Cell(25, $actualRowHeight, number_format($totalPrice, 2), 1, 1, 'R');
         
-        $pdf->SetY($startY + $actualRowHeight);
+        // Make sure we're at the right Y position
+        if ($pdf->GetY() < $startY + $actualRowHeight) {
+            $pdf->SetY($startY + $actualRowHeight);
+        }
     }
     
     $pdf->Ln(10);
@@ -491,31 +524,28 @@ if ($usePDF) {
     
     if ($pdfDiscountAmount > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(90, 0, '', 0, 0);
+        $pdf->Cell(120, 0, '', 0, 0);
         $pdf->Cell(20, 0, '', 0, 0);
-        $pdf->Cell(25, 0, '', 0, 0);
-        $pdf->Cell(60, 8, 'Discount:', 1, 0, 'L');
+        $pdf->Cell(55, 8, 'Discount:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(30, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
+        $pdf->Cell(25, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
     }
     
     if ($pdfDeliveryCost > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(90, 0, '', 0, 0);
+        $pdf->Cell(120, 0, '', 0, 0);
         $pdf->Cell(20, 0, '', 0, 0);
-        $pdf->Cell(25, 0, '', 0, 0);
-        $pdf->Cell(60, 8, 'Delivery Cost:', 1, 0, 'L');
+        $pdf->Cell(55, 8, 'Delivery Cost:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(30, 8, number_format($pdfDeliveryCost, 2), 1, 1, 'R');
+        $pdf->Cell(25, 8, number_format($pdfDeliveryCost, 2), 1, 1, 'R');
     }
     
     $pdf->SetFont('helvetica', '', 9);
-    $pdf->Cell(90, 0, '', 0, 0);
+    $pdf->Cell(120, 0, '', 0, 0);
     $pdf->Cell(20, 0, '', 0, 0);
-    $pdf->Cell(25, 0, '', 0, 0);
-    $pdf->Cell(60, 8, 'Total(Excl. tax):', 1, 0, 'L');
+    $pdf->Cell(55, 8, 'Total(Excl. tax):', 1, 0, 'L');
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(30, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
+    $pdf->Cell(25, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
     
     // Tax Breakdown (if fiscalized)
     if ($fiscalReceipt && !empty($fiscalReceiptTaxes)) {
@@ -557,9 +587,8 @@ if ($usePDF) {
         // Display tax breakdowns
         foreach ($taxGroups as $group) {
             $pdf->SetFont('helvetica', '', 9);
-            $pdf->Cell(90, 0, '', 0, 0);
+            $pdf->Cell(120, 0, '', 0, 0);
             $pdf->Cell(20, 0, '', 0, 0);
-            $pdf->Cell(25, 0, '', 0, 0);
             
             // Format label based on tax type
             if ($group['taxCode'] === 'E') {
@@ -570,7 +599,7 @@ if ($usePDF) {
                 $label = 'Total ' . number_format($group['taxPercent'], 1) . '% VAT';
             }
             
-            $pdf->Cell(60, 8, $label . ':', 1, 0, 'L');
+            $pdf->Cell(55, 8, $label . ':', 1, 0, 'L');
             $pdf->SetFont('helvetica', 'B', 9);
             
             // Convert tax amount to payment currency if needed
@@ -579,16 +608,15 @@ if ($usePDF) {
                 $pdfTaxAmount = $pdfTaxAmount * $exchangeRate;
             }
             
-            $pdf->Cell(30, 8, number_format($pdfTaxAmount, 2), 1, 1, 'R');
+            $pdf->Cell(25, 8, number_format($pdfTaxAmount, 2), 1, 1, 'R');
         }
     }
     
     $pdf->SetFont('helvetica', 'B', 10);
-    $pdf->Cell(90, 0, '', 0, 0);
+    $pdf->Cell(120, 0, '', 0, 0);
     $pdf->Cell(20, 0, '', 0, 0);
-    $pdf->Cell(25, 0, '', 0, 0);
-    $pdf->Cell(60, 10, 'Total(Incl. tax):', 1, 0, 'L');
-    $pdf->Cell(30, 10, number_format($pdfTotalAmount, 2), 1, 1, 'R');
+    $pdf->Cell(55, 10, 'Total(Incl. tax):', 1, 0, 'L');
+    $pdf->Cell(25, 10, number_format($pdfTotalAmount, 2), 1, 1, 'R');
     
     $pdf->Ln(12);
     
@@ -1266,9 +1294,8 @@ body, html {
     
     <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
         <colgroup>
-            <col style="min-width: 120px;">
+            <col style="min-width: 150px;">
             <col style="width: 60px; min-width: 50px;">
-            <col style="width: 70px; min-width: 60px;">
             <col style="width: 90px; min-width: 70px;">
             <col style="width: 90px; min-width: 70px;">
         </colgroup>
@@ -1276,7 +1303,6 @@ body, html {
             <tr>
                 <th style="text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: normal;">Description</th>
                 <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Qty</th>
-                <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Tax %</th>
                 <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Price</th>
                 <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Total</th>
             </tr>
@@ -1307,14 +1333,42 @@ body, html {
                             $details = [];
                             foreach ($item['specific_list_entries'] as $entry) {
                                 $entryDetails = [];
-                                if (!empty($entry['serial_number'])) {
-                                    $entryDetails[] = "S/N: " . escapeHtml($entry['serial_number']);
+                                // Always check for serial_number and imei - they might be in the database
+                                if (isset($entry['serial_number']) && $entry['serial_number'] !== null && trim($entry['serial_number']) !== '') {
+                                    $entryDetails[] = "S/N: " . escapeHtml(trim($entry['serial_number']));
                                 }
-                                if (!empty($entry['imei'])) {
-                                    $entryDetails[] = "IMEI: " . escapeHtml($entry['imei']);
+                                if (isset($entry['imei']) && $entry['imei'] !== null && trim($entry['imei']) !== '') {
+                                    $entryDetails[] = "IMEI: " . escapeHtml(trim($entry['imei']));
                                 }
+                                // Only add color and storage if serial/IMEI are present, or if they're the only details
                                 if (!empty($entryDetails)) {
+                                    // Add color and storage if available
+                                    if (isset($entry['color']) && $entry['color'] !== null && trim($entry['color']) !== '') {
+                                        $colorValue = trim($entry['color']);
+                                        if (!preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $colorValue)) {
+                                            $entryDetails[] = "Color: " . escapeHtml($colorValue);
+                                        }
+                                    }
+                                    if (isset($entry['storage']) && $entry['storage'] !== null && trim($entry['storage']) !== '') {
+                                        $entryDetails[] = "Storage: " . escapeHtml(trim($entry['storage']));
+                                    }
                                     $details[] = implode(", ", $entryDetails);
+                                } elseif ((isset($entry['color']) && $entry['color'] !== null && trim($entry['color']) !== '') || 
+                                          (isset($entry['storage']) && $entry['storage'] !== null && trim($entry['storage']) !== '')) {
+                                    // If no serial/IMEI but has color/storage, show those
+                                    $entryDetails = [];
+                                    if (isset($entry['color']) && $entry['color'] !== null && trim($entry['color']) !== '') {
+                                        $colorValue = trim($entry['color']);
+                                        if (!preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $colorValue)) {
+                                            $entryDetails[] = "Color: " . escapeHtml($colorValue);
+                                        }
+                                    }
+                                    if (isset($entry['storage']) && $entry['storage'] !== null && trim($entry['storage']) !== '') {
+                                        $entryDetails[] = "Storage: " . escapeHtml(trim($entry['storage']));
+                                    }
+                                    if (!empty($entryDetails)) {
+                                        $details[] = implode(", ", $entryDetails);
+                                    }
                                 }
                             }
                             if (!empty($details)) {
@@ -1325,15 +1379,6 @@ body, html {
                         ?>
                     </td>
                     <td style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $item['quantity'] ?></td>
-                    <td style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">
-                        <?php 
-                        if (isset($item['tax_percent']) && $item['tax_percent'] !== null && $item['tax_code'] !== 'E') {
-                            echo number_format($item['tax_percent'], 1) . '%';
-                        } else {
-                            echo '-';
-                        }
-                        ?>
-                    </td>
                     <td style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $unitPriceFormatted ?></td>
                     <td style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;"><?= $totalPriceFormatted ?></td>
                 </tr>
@@ -1376,18 +1421,18 @@ body, html {
             ?>
             <?php if ($discountAmount > 0): ?>
                 <tr>
-                    <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
+                    <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Discount:</strong></td>
                     <td style="text-align: right; padding: 6px 4px;"><strong>-<?= $discountFormatted ?></strong></td>
                 </tr>
             <?php endif; ?>
             <?php if ($deliveryCost > 0): ?>
                 <tr>
-                    <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Delivery Cost:</strong></td>
+                    <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Delivery Cost:</strong></td>
                     <td style="text-align: right; padding: 6px 4px;"><strong><?= $deliveryCostFormatted ?></strong></td>
                 </tr>
             <?php endif; ?>
             <tr>
-                <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong>Total(Excl. tax):</strong></td>
+                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong>Total(Excl. tax):</strong></td>
                 <td style="text-align: right; padding: 6px 4px;"><strong><?= $subtotalFormatted ?></strong></td>
             </tr>
             <?php
@@ -1447,7 +1492,7 @@ body, html {
                         $groupTaxFormatted = $paymentCurrency ? formatCurrencyAmount($groupTaxAmount, $paymentCurrencyId, $db) : formatCurrency($groupTaxAmount);
                         ?>
                             <tr>
-                                <td colspan="4" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
+                                <td colspan="3" style="text-align: right; padding: 6px 4px;"><strong><?= escapeHtml($label) ?>:</strong></td>
                                 <td style="text-align: right; padding: 6px 4px;"><strong><?= $groupTaxFormatted ?></strong></td>
                             </tr>
                         <?php
@@ -1455,7 +1500,7 @@ body, html {
             }
             ?>
             <tr class="total-row">
-                <td colspan="4" style="text-align: right; padding: 6px 4px; border-top: 2px solid #333;"><strong>Total(Incl. tax):</strong></td>
+                <td colspan="3" style="text-align: right; padding: 6px 4px; border-top: 2px solid #333;"><strong>Total(Incl. tax):</strong></td>
                 <td style="text-align: right; padding: 6px 4px; border-top: 2px solid #333;"><strong><?= $totalFormatted ?></strong></td>
             </tr>
             <?php 
