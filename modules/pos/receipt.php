@@ -1507,6 +1507,7 @@ body, html {
                         }
                         
                         // Add tax info to description in brackets
+                        // Format: (15.5% tax), (0% tax), (EXT tax), (5% tax)
                         $taxSuffix = '';
                         if (isset($item['tax_code']) && $item['tax_code'] === 'E') {
                             $taxSuffix = ' (EXT tax)'; // Exempt
