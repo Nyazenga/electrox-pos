@@ -1062,9 +1062,9 @@ require_once APP_PATH . '/includes/header.php';
                                     echo $description;
                                     ?>
                                 </td>
-                                <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $item['quantity'] ?></td>
-                                <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $unitPriceFormatted ?></td>
-                                <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $totalPriceFormatted ?></td>
+                                <td style="text-align: center; padding: 6px 2px; border-bottom: 1px solid #ddd;"><?= $item['quantity'] ?></td>
+                                <td style="text-align: right; padding: 6px 2px; border-bottom: 1px solid #ddd;"><?= $unitPriceFormatted ?></td>
+                                <td style="text-align: right; padding: 6px 2px; border-bottom: 1px solid #ddd;"><?= $totalPriceFormatted ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
