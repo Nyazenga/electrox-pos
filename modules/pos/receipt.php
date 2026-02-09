@@ -2589,10 +2589,11 @@ function updateRefundTotal() {
     let refundTotal = refundSubtotal;
     
     if (currentRefundSale) {
+        // Use display amounts if available (already converted to payment currency)
         const originalSubtotal = parseFloat(currentRefundSale.subtotal) || 0;
-        const originalDiscount = parseFloat(currentRefundSale.discount_amount) || 0;
-        const originalDeliveryCost = parseFloat(currentRefundSale.delivery_cost) || 0;
-        const originalTotal = parseFloat(currentRefundSale.total_amount) || 0;
+        const originalDiscount = parseFloat(currentRefundSale.display_discount_amount !== undefined ? currentRefundSale.display_discount_amount : currentRefundSale.discount_amount) || 0;
+        const originalDeliveryCost = parseFloat(currentRefundSale.display_delivery_cost !== undefined ? currentRefundSale.display_delivery_cost : currentRefundSale.delivery_cost) || 0;
+        const originalTotal = parseFloat(currentRefundSale.display_total_amount !== undefined ? currentRefundSale.display_total_amount : currentRefundSale.total_amount) || 0;
         
         // Check if all items are selected (full refund)
         const allCheckboxes = document.querySelectorAll('.refund-item-checkbox');
