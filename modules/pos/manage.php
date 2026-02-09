@@ -1041,29 +1041,29 @@ require_once APP_PATH . '/includes/header.php';
                                         }
                                     }
                                     
-                                    // Format tax display
-                                    $taxDisplay = '-';
+                                    // Add tax info to description in brackets
+                                    $taxSuffix = '';
                                     if (isset($item['tax_code']) && $item['tax_code'] === 'E') {
-                                        $taxDisplay = '-'; // Exempt
+                                        $taxSuffix = ' (EXT tax)'; // Exempt
                                     } elseif (isset($item['tax_percent'])) {
                                         $taxPercent = floatval($item['tax_percent']);
                                         if ($taxPercent == 0) {
-                                            $taxDisplay = '0%';
+                                            $taxSuffix = ' (0% tax)';
                                         } elseif ($taxPercent == 5) {
-                                            $taxDisplay = '5%';
+                                            $taxSuffix = ' (5% tax)';
                                         } elseif ($taxPercent == 15.5) {
-                                            $taxDisplay = '15.5%';
+                                            $taxSuffix = ' (15.5% tax)';
                                         } else {
-                                            $taxDisplay = number_format($taxPercent, 1) . '%';
+                                            $taxSuffix = ' (' . number_format($taxPercent, 1) . '% tax)';
                                         }
                                     }
+                                    $description .= $taxSuffix;
                                     
                                     echo $description;
                                     ?>
                                 </td>
                                 <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $item['quantity'] ?></td>
                                 <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $unitPriceFormatted ?></td>
-                                <td style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd; font-size: 11px;"><?= escapeHtml($taxDisplay) ?></td>
                                 <td style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;"><?= $totalPriceFormatted ?></td>
                             </tr>
                         <?php endforeach; ?>
