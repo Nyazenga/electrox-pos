@@ -2524,7 +2524,8 @@ function fiscalizeCreditNote($refundId, $branchId, $db = null) {
         $paymentMismatch = abs($receiptTotalAbs - $totalRefundPaymentAmountInPaymentCurrency);
         
         if ($paymentMismatch > 0.01) {
-            error_log("FISCALIZE CREDIT NOTE: WARNING - Refund payments total ($totalRefundPaymentAmount) doesn't match refund total ($refundTotal), recalculating payments");
+            error_log("FISCALIZE CREDIT NOTE: WARNING - Refund payments total in payment currency ($totalRefundPaymentAmountInPaymentCurrency) doesn't match receiptTotal ($receiptTotalAbs), recalculating payments");
+            error_log("FISCALIZE CREDIT NOTE: Base currency refund total: $totalRefundPaymentAmount, Exchange rate: $exchangeRateToPayment, Payment currency: $paymentCurrencyCode");
             
             // Recalculate payments proportionally from refund payments, or use single payment
             if (count($refundPayments) > 1) {
