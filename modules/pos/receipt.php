@@ -316,6 +316,14 @@ if ($usePDF) {
             $logoHeight = 25;
         }
     }
+    // Fallback to default logo if no receipt logo is set
+    if (empty($logoPath)) {
+        $defaultLogoPath = APP_PATH . '/assets/images/logo.png';
+        if (file_exists($defaultLogoPath)) {
+            $logoPath = realpath($defaultLogoPath);
+            $logoHeight = 25;
+        }
+    }
     
     // Start Y position
     $startY = 15;
