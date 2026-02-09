@@ -263,6 +263,7 @@ if ($receiptLogoPath && !empty($receiptLogoPath)) {
         $receiptLogoPath = '';
     }
 }
+
 // Fallback to default logo if no receipt logo is set
 if (empty($receiptLogoPath)) {
     $defaultLogoPath = 'assets/images/logo.png';
@@ -271,6 +272,7 @@ if (empty($receiptLogoPath)) {
         $receiptLogoPath = $defaultLogoPath;
     }
 }
+
 $receiptLogoUrl = '';
 if ($receiptLogoPath) {
     $receiptLogoUrl = BASE_URL . ltrim($receiptLogoPath, '/');
@@ -430,22 +432,6 @@ if ($usePDF) {
         $quantity = $item['quantity'];
         $unitPrice = floatval($item['unit_price']);
         $totalPrice = floatval($item['total_price']);
-        
-        // CRITICAL: If prices_include_tax is enabled, unit_price is stored WITHOUT tax
-        // But for display (to match ZIMRA), we need to show prices WITH tax
-        if ($pricesIncludeTax) {
-            $taxPercent = $item['tax_percent'] ?? null;
-            $taxCode = $item['tax_code'] ?? '';
-            
-            // Convert back to tax-inclusive price (matching ZIMRA)
-            // Skip conversion for exempt items (taxCode='E' or taxPercent=null/0)
-            if ($taxCode !== 'E' && $taxPercent !== null && $taxPercent > 0) {
-                $taxDecimal = $taxPercent / 100;
-                $unitPrice = $unitPrice * (1 + $taxDecimal);
-                $totalPrice = $totalPrice * (1 + $taxDecimal);
-            }
-            // For exempt/zero-rated items, price stays the same (already tax-inclusive)
-        }
         
         // Add serial numbers and IMEI inline in description (not separate lines)
         if (!empty($item['specific_list_entries'])) {
@@ -1424,22 +1410,6 @@ body, html {
             foreach ($items as $item): 
                 $unitPrice = floatval($item['unit_price']);
                 $totalPrice = floatval($item['total_price']);
-                
-                // CRITICAL: If prices_include_tax is enabled, unit_price is stored WITHOUT tax
-                // But for display (to match ZIMRA), we need to show prices WITH tax
-                if ($pricesIncludeTax) {
-                    $taxPercent = $item['tax_percent'] ?? null;
-                    $taxCode = $item['tax_code'] ?? '';
-                    
-                    // Convert back to tax-inclusive price (matching ZIMRA)
-                    // Skip conversion for exempt items (taxCode='E' or taxPercent=null/0)
-                    if ($taxCode !== 'E' && $taxPercent !== null && $taxPercent > 0) {
-                        $taxDecimal = $taxPercent / 100;
-                        $unitPrice = $unitPrice * (1 + $taxDecimal);
-                        $totalPrice = $totalPrice * (1 + $taxDecimal);
-                    }
-                    // For exempt/zero-rated items, price stays the same (already tax-inclusive)
-                }
                 
                 // Convert to payment currency if needed (base currency -> payment currency)
                 if ($paymentCurrency && $paymentCurrencyId && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
