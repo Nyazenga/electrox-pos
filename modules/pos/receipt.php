@@ -604,31 +604,34 @@ if ($usePDF) {
         $pdfTotalAmount = $pdfTotalAmount * $exchangeRate;
     }
     
-    // Footer widths: 110 + 20 + 25 + 25 = 180mm (match table width)
+    // Footer: Use 2-column layout for labels and values to prevent text overflow
+    // Left side: Description column (110mm) + Qty (20mm) = 130mm
+    // Right side: Label column (35mm) + Value column (15mm) = 50mm
+    // Total: 130 + 50 = 180mm (matches table width)
+    $labelColWidth = 35;  // Wider for long labels like "Total: Exempt from VAT:"
+    $valueColWidth = 15;   // Narrower for values
+    
     if ($pdfDiscountAmount > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(110, 0, '', 0, 0);
-        $pdf->Cell(20, 0, '', 0, 0);
-        $pdf->Cell(25, 8, 'Discount:', 1, 0, 'L');
+        $pdf->Cell(130, 0, '', 0, 0); // Description + Qty columns
+        $pdf->Cell($labelColWidth, 8, 'Discount:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(25, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
+        $pdf->Cell($valueColWidth, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
     }
     
     if ($pdfDeliveryCost > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(110, 0, '', 0, 0);
-        $pdf->Cell(20, 0, '', 0, 0);
-        $pdf->Cell(25, 8, 'Delivery Cost:', 1, 0, 'L');
+        $pdf->Cell(130, 0, '', 0, 0); // Description + Qty columns
+        $pdf->Cell($labelColWidth, 8, 'Delivery Cost:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(25, 8, number_format($pdfDeliveryCost, 2), 1, 1, 'R');
+        $pdf->Cell($valueColWidth, 8, number_format($pdfDeliveryCost, 2), 1, 1, 'R');
     }
     
     $pdf->SetFont('helvetica', '', 9);
-    $pdf->Cell(110, 0, '', 0, 0);
-    $pdf->Cell(20, 0, '', 0, 0);
-    $pdf->Cell(25, 8, 'Total(Excl. tax):', 1, 0, 'L');
+    $pdf->Cell(130, 0, '', 0, 0); // Description + Qty columns
+    $pdf->Cell($labelColWidth, 8, 'Total(Excl. tax):', 1, 0, 'L');
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(25, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
+    $pdf->Cell($valueColWidth, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
     
     // Tax Breakdown (if fiscalized)
     if ($fiscalReceipt && !empty($fiscalReceiptTaxes)) {
