@@ -29,6 +29,7 @@ try {
     require_once APP_PATH . '/includes/settings_functions.php';
     
     // Get sale with all details including customer and cashier info
+    // CRITICAL: Include is_wholesale_sale to know if sale was made at wholesale prices
     $sale = $db->getRow("SELECT s.*, 
                           c.first_name, c.last_name, c.email, c.phone, c.address, c.company_name,
                           u.first_name as cashier_first, u.last_name as cashier_last, u.username as cashier_username,
@@ -141,6 +142,13 @@ try {
         }
     }
     
+    // Check if sale was made at wholesale prices
+    $isWholesaleSale = isset($sale['is_wholesale_sale']) && (
+        $sale['is_wholesale_sale'] === 1 || 
+        $sale['is_wholesale_sale'] === '1' || 
+        $sale['is_wholesale_sale'] === true
+    );
+    
     // Attach fiscalized prices AND calculate display prices for each item
     foreach ($items as &$item) {
         // Attach fiscalized prices (for fiscalization use only)
@@ -151,10 +159,28 @@ try {
             $item['fiscal_tax_id'] = $fiscalPriceMap[$item['id']]['tax_id'];
         }
         
+        // CRITICAL FIX: For refund display, use the ACTUAL stored unit_price from sale_items
+        // This already contains the correct price (wholesale if sale was wholesale, retail otherwise)
+        // The stored price is what the customer actually paid (after tax calculation if prices_include_tax)
+        // We should NOT recalculate it - just use it as-is for refund display
+        
+        // Get the stored price (this is the price that was actually charged to the customer)
+        $storedUnitPrice = floatval($item['unit_price']);
+        $storedTotalPrice = floatval($item['total_price']);
+        
+        // If the sale was fiscalized, we have the exact prices sent to ZIMRA
+        // For display in refund modal, use stored prices (which match what customer paid)
+        // For fiscalization, we'll use fiscal_unit_price/fiscal_total_price
+        
+        // CRITICAL: The stored unit_price in sale_items is ALREADY the correct price:
+        // - If wholesale sale: it's the wholesale price (with tax extracted if prices_include_tax)
+        // - If retail sale: it's the retail price (with tax extracted if prices_include_tax)
+        // - The price stored is what was actually charged, so we use it directly for refund
+        
         // Calculate DISPLAY prices (what customer actually paid)
         // If prices_include_tax is enabled, stored prices are WITHOUT tax, so add tax back
-        $displayUnitPrice = floatval($item['unit_price']);
-        $displayTotalPrice = floatval($item['total_price']);
+        $displayUnitPrice = $storedUnitPrice;
+        $displayTotalPrice = $storedTotalPrice;
         
         if ($pricesIncludeTax) {
             // Get the product's actual tax rate
@@ -178,10 +204,11 @@ try {
             }
             
             // Convert stored price (without tax) back to price with tax
-            if ($productTaxRate > 0) {
+            // This gives us the price the customer actually paid
+            if ($productTaxRate !== null && $productTaxRate > 0) {
                 $taxDecimal = $productTaxRate / 100;
-                $displayUnitPrice = $displayUnitPrice * (1 + $taxDecimal);
-                $displayTotalPrice = $displayTotalPrice * (1 + $taxDecimal);
+                $displayUnitPrice = $storedUnitPrice * (1 + $taxDecimal);
+                $displayTotalPrice = $storedTotalPrice * (1 + $taxDecimal);
             }
         }
         // If prices_include_tax is false, display prices = stored prices (no conversion needed)
@@ -189,6 +216,9 @@ try {
         // Round to 2 decimal places
         $item['display_unit_price'] = round($displayUnitPrice, 2);
         $item['display_total_price'] = round($displayTotalPrice, 2);
+        
+        // Store flag for frontend to know if this was a wholesale sale
+        $item['is_wholesale_sale'] = $isWholesaleSale;
     }
     unset($item);
     
@@ -213,6 +243,7 @@ try {
     $sale['fiscal_receipt'] = $fiscalReceipt;
     $sale['prices_include_tax'] = $pricesIncludeTax;
     $sale['default_tax_rate'] = $defaultTaxRate;
+    $sale['is_wholesale_sale'] = $isWholesaleSale;
     
     echo json_encode(['success' => true, 'sale' => $sale]);
     

@@ -364,7 +364,8 @@ try {
     // Generate credit note number
     $creditNoteNumber = 'CN-' . $branchPrefix . '-' . $datePart . substr(str_replace('.', '', microtime(true)), -6);
     
-    // Check if original sale was fiscalized
+    // CRITICAL: Check if original sale was fiscalized
+    // Only fiscalize credit note if original sale was fiscalized
     $primaryDb = Database::getPrimaryInstance();
     $originalFiscalReceipt = $primaryDb->getRow(
         "SELECT * FROM fiscal_receipts WHERE sale_id = :sale_id AND submission_status = 'Submitted' LIMIT 1",
@@ -374,7 +375,8 @@ try {
     $creditNoteId = null;
     $fiscalized = false;
     
-    // Create credit note record
+    // ALWAYS create credit note record (even if not fiscalized)
+    // This allows tracking of all refunds/credit notes
     $creditNoteData = [
         'credit_note_number' => $creditNoteNumber,
         'refund_id' => $refundId,
@@ -383,7 +385,7 @@ try {
         'customer_id' => $sale['customer_id'],
         'credit_note_date' => date('Y-m-d H:i:s'),
         'total_amount' => $refundTotal,
-        'fiscalized' => 0,
+        'fiscalized' => 0, // Will be updated to 1 if fiscalization succeeds
         'created_by' => $userId
     ];
     
@@ -409,7 +411,8 @@ try {
             'credit_note_number' => $creditNoteNumber
         ], ['id' => $refundId]);
         
-        // Fiscalize credit note if original sale was fiscalized
+        // CRITICAL FIX: Only fiscalize credit note if original sale was fiscalized
+        // If original sale was NOT fiscalized, skip fiscalization (refund only, no ZIMRA posting)
         if ($originalFiscalReceipt && $branchId) {
             try {
                 require_once APP_PATH . '/includes/fiscal_helper.php';
@@ -417,11 +420,17 @@ try {
                 if ($fiscalResult) {
                     $fiscalized = true;
                     error_log("Credit note fiscalized successfully for refund $refundId");
+                } else {
+                    error_log("Credit note fiscalization returned false for refund $refundId");
                 }
             } catch (Exception $fiscalError) {
                 error_log("Failed to fiscalize credit note for refund $refundId: " . $fiscalError->getMessage());
                 // Don't fail the refund if fiscalization fails, but log it
+                // The refund is still processed, just without ZIMRA posting
             }
+        } else {
+            // Original sale was NOT fiscalized - refund only, no ZIMRA posting
+            error_log("Refund $refundId: Original sale was not fiscalized, skipping credit note fiscalization to ZIMRA");
         }
     }
     
