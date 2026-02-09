@@ -454,9 +454,18 @@ try {
                     $applicableTaxes = json_decode($config['applicable_taxes'], true);
                     if (is_array($applicableTaxes)) {
                         // Create a map of taxID -> taxPercent for quick lookup
+                        // CRITICAL: Include exempt taxes (taxPercent=null) with special marker
                         foreach ($applicableTaxes as $tax) {
-                            if (isset($tax['taxID']) && isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
-                                $productTaxRates[intval($tax['taxID'])] = floatval($tax['taxPercent']);
+                            if (isset($tax['taxID'])) {
+                                $taxId = intval($tax['taxID']);
+                                $taxCode = $tax['taxCode'] ?? '';
+                                
+                                // For exempt taxes (taxCode='E' or taxPercent=null), store as 0 (no tax extraction)
+                                if ($taxCode === 'E' || (!isset($tax['taxPercent']) || $tax['taxPercent'] === null)) {
+                                    $productTaxRates[$taxId] = 0; // Exempt = 0% (no tax to extract)
+                                } elseif (isset($tax['taxPercent']) && $tax['taxPercent'] !== null) {
+                                    $productTaxRates[$taxId] = floatval($tax['taxPercent']);
+                                }
                             }
                         }
                     }
@@ -577,22 +586,36 @@ try {
         if ($pricesIncludeTax) {
             // Get the ACTUAL tax rate for this product (not the default)
             $productTaxRate = null;
+            $isExempt = false;
             
             // Priority 1: Product's own tax_id
             if (!empty($product['tax_id']) && isset($productTaxRates[intval($product['tax_id'])])) {
                 $productTaxRate = $productTaxRates[intval($product['tax_id'])];
+                // Check if this is exempt (taxRate = 0 from our map, or check taxCode from applicable taxes)
+                if ($productTaxRate == 0) {
+                    $isExempt = true;
+                }
             }
             // Priority 2: Category's tax_id
             elseif (!empty($product['category_tax_id']) && isset($productTaxRates[intval($product['category_tax_id'])])) {
                 $productTaxRate = $productTaxRates[intval($product['category_tax_id'])];
+                if ($productTaxRate == 0) {
+                    $isExempt = true;
+                }
             }
-            // Fallback: Use default tax rate
+            // Fallback: Use default tax rate (ONLY if not exempt)
             elseif ($defaultTaxRate > 0) {
                 $productTaxRate = $defaultTaxRate;
             }
             
-            // Calculate price without tax using the product's actual tax rate
-            if ($productTaxRate > 0) {
+            // CRITICAL: For exempt products (taxRate = 0), do NOT extract tax
+            // Price with tax = Price without tax for exempt items
+            if ($isExempt || $productTaxRate == 0) {
+                // Exempt: No tax extraction, price stays the same
+                $unitPriceWithoutTax = $unitPriceWithTax;
+                error_log("PROCESS SALE: Product '{$item['name']}' - EXEMPT TAX - Price: $unitPriceWithTax (no tax extraction)");
+            } elseif ($productTaxRate > 0) {
+                // Calculate price without tax using the product's actual tax rate
                 $taxDecimal = $productTaxRate / 100;
                 $unitPriceWithoutTax = $unitPriceWithTax / (1 + $taxDecimal);
                 error_log("PROCESS SALE: Product '{$item['name']}' - Price with tax: $unitPriceWithTax, Tax rate: $productTaxRate%, Price without tax: $unitPriceWithoutTax");
