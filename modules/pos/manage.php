@@ -989,8 +989,7 @@ require_once APP_PATH . '/includes/header.php';
                     <colgroup>
                         <col style="width: auto;">
                         <col style="width: 50px;">
-                        <col style="width: 70px;">
-                        <col style="width: 60px;">
+                        <col style="width: 80px;">
                         <col style="width: 80px;">
                     </colgroup>
                     <thead>
@@ -998,7 +997,6 @@ require_once APP_PATH . '/includes/header.php';
                             <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">Description</th>
                             <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">Qty</th>
                             <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Price</th>
-                            <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">Tax</th>
                             <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Total</th>
                         </tr>
                     </thead>

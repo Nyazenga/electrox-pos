@@ -1425,9 +1425,8 @@ body, html {
     <table style="width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed;">
         <colgroup>
             <col style="width: auto;">
-            <col style="width: 50px;">
-            <col style="width: 70px;">
             <col style="width: 60px;">
+            <col style="width: 80px;">
             <col style="width: 80px;">
         </colgroup>
         <thead>
@@ -1435,7 +1434,6 @@ body, html {
                 <th style="text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: normal;">Description</th>
                 <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Qty</th>
                 <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Price</th>
-                <th style="text-align: center; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Tax</th>
                 <th style="text-align: right; padding: 6px 8px; border-bottom: 1px solid #ddd; white-space: nowrap;">Total</th>
             </tr>
         </thead>
