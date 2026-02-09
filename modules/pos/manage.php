@@ -1830,10 +1830,13 @@ function showRefundModal(sale) {
     // Store sale currency for use in formatCurrency calls
     currentRefundSaleCurrency = saleCurrency;
     
+    // Use display_total_amount if available (already converted to payment currency)
+    const displayTotalAmount = sale.display_total_amount !== undefined ? sale.display_total_amount : sale.total_amount;
+    
     // Populate sale information
     document.getElementById('refundSaleId').value = sale.id;
     document.getElementById('refundReceiptNumber').textContent = sale.receipt_number || 'N/A';
-    document.getElementById('refundOriginalAmount').textContent = formatCurrency(sale.total_amount, saleCurrency);
+    document.getElementById('refundOriginalAmount').textContent = formatCurrency(displayTotalAmount, saleCurrency);
     document.getElementById('refundDate').textContent = new Date(sale.sale_date).toLocaleString();
     
     // Populate cashier name
