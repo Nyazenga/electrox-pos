@@ -51,7 +51,7 @@ if (!$sale) {
     die('Receipt not found');
 }
 
-$items = $db->getRows("SELECT si.*, p.tax_id as product_tax_id, pc.tax_id as category_tax_id 
+$items = $db->getRows("SELECT si.*, si.specific_item_data, p.tax_id as product_tax_id, pc.tax_id as category_tax_id 
                        FROM sale_items si 
                        LEFT JOIN products p ON si.product_id = p.id 
                        LEFT JOIN product_categories pc ON p.category_id = pc.id 
@@ -74,6 +74,7 @@ foreach ($items as &$item) {
     }
     
     // Priority 2: Query for entries that still exist (if delete failed, they're marked as 'sold')
+    // Also check for entries that might have been soft-deleted or archived
     if (empty($specificEntries)) {
         $existingEntries = $db->getRows(
             "SELECT serial_number, imei, color, storage FROM product_specific_list 
@@ -83,6 +84,31 @@ foreach ($items as &$item) {
         );
         if ($existingEntries !== false && !empty($existingEntries)) {
             $specificEntries = $existingEntries;
+        } else {
+            // Try to find by product_id and sale date (for old sales where sale_item_id wasn't set)
+            // This is a fallback for old sales where entries might still exist but aren't linked
+            $saleInfo = $db->getRow("SELECT branch_id, created_at FROM sales WHERE id = :sale_id", [':sale_id' => $id]);
+            if ($saleInfo) {
+                $quantity = intval($item['quantity']);
+                $productEntries = $db->getRows(
+                    "SELECT psl.serial_number, psl.imei, psl.color, psl.storage 
+                     FROM product_specific_list psl
+                     WHERE psl.product_id = :product_id 
+                       AND psl.branch_id = :branch_id
+                       AND (psl.status = 'sold' OR psl.sale_item_id IS NULL OR psl.sale_item_id = 0)
+                       AND psl.updated_at <= DATE_ADD(:sale_date, INTERVAL 1 DAY)
+                     ORDER BY psl.updated_at DESC, psl.id DESC
+                     LIMIT " . $quantity,
+                    [
+                        ':product_id' => $item['product_id'],
+                        ':branch_id' => $saleInfo['branch_id'],
+                        ':sale_date' => $saleInfo['created_at']
+                    ]
+                );
+                if ($productEntries !== false && !empty($productEntries)) {
+                    $specificEntries = $productEntries;
+                }
+            }
         }
     }
     
@@ -362,14 +388,15 @@ if ($usePDF) {
         $pdf->Ln(10);
     }
     
-    // Items Table Header - Adjust widths to fit A4 (195mm total width, 15mm margins each side = 165mm usable)
+    // Items Table Header - A4 width = 210mm, margins = 15mm each, usable = 180mm
+    // Column widths: Description=110mm, Qty=20mm, Price=25mm, Total=25mm = 180mm
     $pdf->SetFillColor(30, 58, 138);
     $pdf->SetTextColor(255, 255, 255);
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(100, 10, 'Description', 1, 0, 'L', true);
-    $pdf->Cell(18, 10, 'Qty', 1, 0, 'C', true);
+    $pdf->Cell(110, 10, 'Description', 1, 0, 'L', true);
+    $pdf->Cell(20, 10, 'Qty', 1, 0, 'C', true);
     $pdf->Cell(25, 10, 'Price', 1, 0, 'R', true);
-    $pdf->Cell(22, 10, 'Total', 1, 1, 'R', true);
+    $pdf->Cell(25, 10, 'Total', 1, 1, 'R', true);
     
     // Items Table Rows
     $pdf->SetTextColor(0, 0, 0);
@@ -445,41 +472,50 @@ if ($usePDF) {
         $pdf->SetFont('helvetica', '', 9);
         
         // Calculate height needed for description (wrap text if needed)
+        $descWidth = 110; // Match header width
         $testY = $pdf->GetY();
-        $pdf->MultiCell(100, $lineHeight, $description, 0, 'L', false, 0);
+        $pdf->MultiCell($descWidth, $lineHeight, $description, 0, 'L', false, 0);
         $measuredHeight = $pdf->GetY() - $testY;
         $actualRowHeight = max($minHeight, $measuredHeight);
         
         $pdf->SetXY($startX, $startY);
         // Use MultiCell for description WITHOUT border to avoid spacing issues
-        $pdf->MultiCell(100, $lineHeight, $description, 0, 'L', false, 0);
+        $pdf->MultiCell($descWidth, $lineHeight, $description, 0, 'L', false, 0);
         
         // Get the end Y position after MultiCell
         $descEndY = $pdf->GetY();
         $actualRowHeight = max($minHeight, $descEndY - $startY);
         
         // Draw borders manually for the entire row to ensure they connect
-        // Total width: 100 + 18 + 25 + 22 = 165mm (fits A4 with 15mm margins)
-        $tableWidth = 165;
-        // Left border for description
+        // A4 width = 210mm, margins = 15mm each side, usable width = 180mm
+        // Column widths: Description=110mm, Qty=20mm, Price=25mm, Total=25mm = 180mm total
+        $descWidth = 110;
+        $qtyWidth = 20;
+        $priceWidth = 25;
+        $totalWidth = 25;
+        $tableWidth = $descWidth + $qtyWidth + $priceWidth + $totalWidth; // 180mm
+        
+        // Left border for description (at startX = 15mm)
         $pdf->Line($startX, $startY, $startX, $startY + $actualRowHeight);
         // Right border for description
-        $pdf->Line($startX + 100, $startY, $startX + 100, $startY + $actualRowHeight);
-        // Top border
+        $pdf->Line($startX + $descWidth, $startY, $startX + $descWidth, $startY + $actualRowHeight);
+        // Top border (full width)
         $pdf->Line($startX, $startY, $startX + $tableWidth, $startY);
-        // Bottom border
+        // Bottom border (full width)
         $pdf->Line($startX, $startY + $actualRowHeight, $startX + $tableWidth, $startY + $actualRowHeight);
+        // Right border (full table - THIS WAS MISSING!)
+        $pdf->Line($startX + $tableWidth, $startY, $startX + $tableWidth, $startY + $actualRowHeight);
         
         // Draw the other cells aligned to the same row
-        $pdf->SetXY($startX + 100, $startY);
-        $pdf->Cell(18, $actualRowHeight, $quantity, 0, 0, 'C'); // No border, we draw manually
-        $pdf->Cell(25, $actualRowHeight, number_format($unitPrice, 2), 0, 0, 'R'); // No border
-        $pdf->Cell(22, $actualRowHeight, number_format($totalPrice, 2), 0, 1, 'R'); // No border
+        $pdf->SetXY($startX + $descWidth, $startY);
+        $pdf->Cell($qtyWidth, $actualRowHeight, $quantity, 0, 0, 'C'); // No border, we draw manually
+        $pdf->Cell($priceWidth, $actualRowHeight, number_format($unitPrice, 2), 0, 0, 'R'); // No border
+        $pdf->Cell($totalWidth, $actualRowHeight, number_format($totalPrice, 2), 0, 1, 'R'); // No border
         
         // Draw vertical borders between columns
-        $pdf->Line($startX + 100, $startY, $startX + 100, $startY + $actualRowHeight);
-        $pdf->Line($startX + 118, $startY, $startX + 118, $startY + $actualRowHeight);
-        $pdf->Line($startX + 143, $startY, $startX + 143, $startY + $actualRowHeight);
+        $pdf->Line($startX + $descWidth, $startY, $startX + $descWidth, $startY + $actualRowHeight);
+        $pdf->Line($startX + $descWidth + $qtyWidth, $startY, $startX + $descWidth + $qtyWidth, $startY + $actualRowHeight);
+        $pdf->Line($startX + $descWidth + $qtyWidth + $priceWidth, $startY, $startX + $descWidth + $qtyWidth + $priceWidth, $startY + $actualRowHeight);
         
         // Make sure we're at the right Y position
         if ($pdf->GetY() < $startY + $actualRowHeight) {
@@ -554,30 +590,31 @@ if ($usePDF) {
         $pdfTotalAmount = $pdfTotalAmount * $exchangeRate;
     }
     
+    // Footer widths: 110 + 20 + 25 + 25 = 180mm (match table width)
     if ($pdfDiscountAmount > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(100, 0, '', 0, 0);
-        $pdf->Cell(18, 0, '', 0, 0);
-        $pdf->Cell(47, 8, 'Discount:', 1, 0, 'L');
+        $pdf->Cell(110, 0, '', 0, 0);
+        $pdf->Cell(20, 0, '', 0, 0);
+        $pdf->Cell(25, 8, 'Discount:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(22, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
+        $pdf->Cell(25, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
     }
     
     if ($pdfDeliveryCost > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(100, 0, '', 0, 0);
-        $pdf->Cell(18, 0, '', 0, 0);
-        $pdf->Cell(47, 8, 'Delivery Cost:', 1, 0, 'L');
+        $pdf->Cell(110, 0, '', 0, 0);
+        $pdf->Cell(20, 0, '', 0, 0);
+        $pdf->Cell(25, 8, 'Delivery Cost:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
-        $pdf->Cell(22, 8, number_format($pdfDeliveryCost, 2), 1, 1, 'R');
+        $pdf->Cell(25, 8, number_format($pdfDeliveryCost, 2), 1, 1, 'R');
     }
     
     $pdf->SetFont('helvetica', '', 9);
-    $pdf->Cell(100, 0, '', 0, 0);
-    $pdf->Cell(18, 0, '', 0, 0);
-    $pdf->Cell(47, 8, 'Total(Excl. tax):', 1, 0, 'L');
+    $pdf->Cell(110, 0, '', 0, 0);
+    $pdf->Cell(20, 0, '', 0, 0);
+    $pdf->Cell(25, 8, 'Total(Excl. tax):', 1, 0, 'L');
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(22, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
+    $pdf->Cell(25, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
     
     // Tax Breakdown (if fiscalized)
     if ($fiscalReceipt && !empty($fiscalReceiptTaxes)) {
@@ -619,8 +656,8 @@ if ($usePDF) {
         // Display tax breakdowns
         foreach ($taxGroups as $group) {
             $pdf->SetFont('helvetica', '', 9);
-            $pdf->Cell(100, 0, '', 0, 0);
-            $pdf->Cell(18, 0, '', 0, 0);
+            $pdf->Cell(110, 0, '', 0, 0);
+            $pdf->Cell(20, 0, '', 0, 0);
             
             // Format label based on tax type
             if ($group['taxCode'] === 'E') {
@@ -631,7 +668,7 @@ if ($usePDF) {
                 $label = 'Total ' . number_format($group['taxPercent'], 1) . '% VAT';
             }
             
-            $pdf->Cell(47, 8, $label . ':', 1, 0, 'L');
+            $pdf->Cell(25, 8, $label . ':', 1, 0, 'L');
             $pdf->SetFont('helvetica', 'B', 9);
             
             // Convert tax amount to payment currency if needed
@@ -640,15 +677,15 @@ if ($usePDF) {
                 $pdfTaxAmount = $pdfTaxAmount * $exchangeRate;
             }
             
-            $pdf->Cell(22, 8, number_format($pdfTaxAmount, 2), 1, 1, 'R');
+            $pdf->Cell(25, 8, number_format($pdfTaxAmount, 2), 1, 1, 'R');
         }
     }
     
     $pdf->SetFont('helvetica', 'B', 10);
-    $pdf->Cell(100, 0, '', 0, 0);
-    $pdf->Cell(18, 0, '', 0, 0);
-    $pdf->Cell(47, 10, 'Total(Incl. tax):', 1, 0, 'L');
-    $pdf->Cell(22, 10, number_format($pdfTotalAmount, 2), 1, 1, 'R');
+    $pdf->Cell(110, 0, '', 0, 0);
+    $pdf->Cell(20, 0, '', 0, 0);
+    $pdf->Cell(25, 10, 'Total(Incl. tax):', 1, 0, 'L');
+    $pdf->Cell(25, 10, number_format($pdfTotalAmount, 2), 1, 1, 'R');
     
     $pdf->Ln(12);
     

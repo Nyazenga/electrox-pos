@@ -111,7 +111,7 @@ if (isset($_GET['id'])) {
                                   WHERE s.id = :id", [':id' => intval($_GET['id'])]);
     
     if ($selectedSale) {
-        $items = $db->getRows("SELECT si.*, p.tax_id as product_tax_id, pc.tax_id as category_tax_id 
+        $items = $db->getRows("SELECT si.*, si.specific_item_data, p.tax_id as product_tax_id, pc.tax_id as category_tax_id 
                                 FROM sale_items si 
                                 LEFT JOIN products p ON si.product_id = p.id 
                                 LEFT JOIN product_categories pc ON p.category_id = pc.id 
