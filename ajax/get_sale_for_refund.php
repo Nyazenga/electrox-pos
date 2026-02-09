@@ -262,7 +262,7 @@ try {
             $paymentCurrency = $db->getRow("SELECT * FROM currencies WHERE id = :id", [':id' => $paymentCurrencyId]);
             if ($paymentCurrency && $baseCurrency && $paymentCurrencyId != $baseCurrency['id']) {
                 // Get exchange rate from BASE currency to PAYMENT currency
-                require_once APP_PATH . '/includes/currency_functions.php';
+                // currency_functions.php is already included at the top of the file
                 $exchangeRate = getExchangeRate($baseCurrency['id'], $paymentCurrencyId, $db);
                 
                 // Convert all display prices from base to payment currency
