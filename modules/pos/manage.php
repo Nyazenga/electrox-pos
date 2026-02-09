@@ -988,16 +988,16 @@ require_once APP_PATH . '/includes/header.php';
                 <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
                     <colgroup>
                         <col style="width: auto;">
-                        <col style="width: 45px;">
-                        <col style="width: 75px;">
-                        <col style="width: 75px;">
+                        <col style="width: 35px;">
+                        <col style="width: 65px;">
+                        <col style="width: 65px;">
                     </colgroup>
                     <thead>
                         <tr>
                             <th style="text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd;">Description</th>
-                            <th style="text-align: center; padding: 6px 4px; border-bottom: 1px solid #ddd;">Qty</th>
-                            <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Price</th>
-                            <th style="text-align: right; padding: 6px 4px; border-bottom: 1px solid #ddd;">Total</th>
+                            <th style="text-align: center; padding: 6px 2px; border-bottom: 1px solid #ddd;">Qty</th>
+                            <th style="text-align: right; padding: 6px 2px; border-bottom: 1px solid #ddd;">Price</th>
+                            <th style="text-align: right; padding: 6px 2px; border-bottom: 1px solid #ddd;">Total</th>
                         </tr>
                     </thead>
                     <tbody>
