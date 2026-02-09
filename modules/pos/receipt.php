@@ -2248,15 +2248,37 @@ function refundSale(saleId) {
 }
 
 let currentRefundSale = null;
+let currentRefundSaleCurrency = null;
 let refundPaymentMethods = [];
 
 function showRefundModal(sale) {
     currentRefundSale = sale;
     
+    // Determine original sale currency from payments
+    let saleCurrency = null;
+    if (sale.payment_currency) {
+        saleCurrency = sale.payment_currency;
+    } else if (sale.payments && sale.payments.length > 0) {
+        const firstPayment = sale.payments[0];
+        if (firstPayment.currency_id && sale.currencies) {
+            saleCurrency = sale.currencies.find(c => c.id == firstPayment.currency_id);
+        }
+    }
+    // Fallback to base currency if no payment currency found
+    if (!saleCurrency && sale.base_currency) {
+        saleCurrency = sale.base_currency;
+    }
+    
+    // Store sale currency for use in formatCurrency calls
+    currentRefundSaleCurrency = saleCurrency;
+    
+    // Use display_total_amount if available (already converted to payment currency)
+    const displayTotalAmount = sale.display_total_amount !== undefined ? sale.display_total_amount : sale.total_amount;
+    
     // Populate sale information
     document.getElementById('refundSaleId').value = sale.id;
     document.getElementById('refundReceiptNumber').textContent = sale.receipt_number || 'N/A';
-    document.getElementById('refundOriginalAmount').textContent = formatCurrency(sale.total_amount);
+    document.getElementById('refundOriginalAmount').textContent = formatCurrency(displayTotalAmount, saleCurrency);
     document.getElementById('refundDate').textContent = new Date(sale.sale_date).toLocaleString();
     
     // Populate cashier name
