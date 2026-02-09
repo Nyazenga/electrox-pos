@@ -332,6 +332,7 @@ try {
     
     // Check if this is a wholesale sale
     // FIXED: Accept both boolean true and number 1 (frontend sends 1 as number)
+    // This ensures wholesale mode is properly detected when toggle is enabled
     $isWholesaleSale = isset($input['is_wholesale_sale']) && (
         $input['is_wholesale_sale'] === true || 
         $input['is_wholesale_sale'] === 1 || 
