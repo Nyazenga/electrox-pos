@@ -1952,16 +1952,26 @@ function fiscalizeCreditNote($refundId, $branchId, $db = null) {
             [':id' => $refundId]
         );
         
-        // Determine receipt currency
-        $receiptCurrency = 'USD';
-        if (!empty($refundPayments)) {
-            $currencyCodes = array_filter(array_column($refundPayments, 'currency_code'));
-            if (!empty($currencyCodes)) {
-                $receiptCurrency = strtoupper(trim($currencyCodes[0] ?? 'USD'));
+        // CRITICAL: Credit note MUST use the SAME currency as the original invoice
+        // ZIMRA validation requires: "Credit/debit note uses other currency than is used in the original invoice"
+        // Get currency from original fiscal receipt (this is the currency that was used in the original invoice)
+        $receiptCurrency = 'USD'; // Default fallback
+        if (!empty($originalFiscalReceipt['receipt_currency'])) {
+            $receiptCurrency = strtoupper(trim($originalFiscalReceipt['receipt_currency']));
+            error_log("FISCALIZE CREDIT NOTE: Using original invoice currency from fiscal_receipts: $receiptCurrency");
+        } else {
+            // Fallback: Use currency from refund payments (shouldn't happen if original was fiscalized correctly)
+            error_log("FISCALIZE CREDIT NOTE: WARNING - Original fiscal receipt has no receipt_currency, falling back to refund payments");
+            if (!empty($refundPayments)) {
+                $currencyCodes = array_filter(array_column($refundPayments, 'currency_code'));
+                if (!empty($currencyCodes)) {
+                    $receiptCurrency = strtoupper(trim($currencyCodes[0] ?? 'USD'));
+                }
             }
         }
         
         $receiptCurrencyForZimra = mapCurrencyCodeForZimra($receiptCurrency);
+        error_log("FISCALIZE CREDIT NOTE: Final receipt currency for ZIMRA: $receiptCurrencyForZimra (original: $receiptCurrency)");
         
         // Get device and config
         $device = $primaryDb->getRow(
@@ -2480,19 +2490,38 @@ function fiscalizeCreditNote($refundId, $branchId, $db = null) {
         // Build payments (negative for credit note)
         // RCPT039: receiptTotal must equal sum of all paymentAmount
         // For credit notes, payment amounts must be negative and match receiptTotal exactly
-        // CRITICAL: receiptTotal is already negative for credit notes (e.g., -1200.00)
-        $receiptTotal = floatval($receiptData['receiptTotal']); // Already negative for credit notes
+        // CRITICAL: receiptTotal is already negative for credit notes (e.g., -45,500.00 in ZWL)
+        // receiptTotal is calculated from receiptLines which are in payment currency (from fiscal_receipt_lines)
+        $receiptTotal = floatval($receiptData['receiptTotal']); // Already negative for credit notes, in payment currency
         
-        // Calculate total of refund payments (positive amounts from database)
+        // CRITICAL: receiptTotal is in payment currency (same as original invoice)
+        // refund['total_amount'] is in base currency, so we should NOT use it for payment calculation
+        // Instead, use receiptTotal directly (which is already in the correct currency)
+        $receiptTotalAbs = abs($receiptTotal); // Positive amount for comparison
+        
+        // Calculate total of refund payments (positive amounts from database, in base currency)
         $totalRefundPaymentAmount = 0;
         foreach ($refundPayments as $payment) {
             $totalRefundPaymentAmount += floatval($payment['amount']);
         }
         
-        // CRITICAL FIX: If refund payments don't match refund total, recalculate payments
-        // This handles cases where duplicate/incorrect payments were created
-        $refundTotal = floatval($refund['total_amount']);
-        $paymentMismatch = abs($totalRefundPaymentAmount - $refundTotal);
+        // CRITICAL: Convert refund payments from base currency to payment currency for comparison
+        // Get exchange rate from base to payment currency
+        require_once APP_PATH . '/includes/currency_functions.php';
+        $baseCurrency = getBaseCurrency($db);
+        $paymentCurrencyCode = $receiptCurrency; // Already determined from original fiscal receipt
+        $paymentCurrencyObj = $db->getRow("SELECT * FROM currencies WHERE code = :code", [':code' => $paymentCurrencyCode]);
+        
+        $exchangeRateToPayment = 1.0;
+        if ($baseCurrency && $paymentCurrencyObj && $paymentCurrencyObj['id'] != $baseCurrency['id']) {
+            $exchangeRateToPayment = getExchangeRate($baseCurrency['id'], $paymentCurrencyObj['id'], $db);
+        }
+        
+        // Convert refund payment total to payment currency
+        $totalRefundPaymentAmountInPaymentCurrency = $totalRefundPaymentAmount * $exchangeRateToPayment;
+        
+        // Compare receiptTotal (in payment currency) with refund payments (converted to payment currency)
+        $paymentMismatch = abs($receiptTotalAbs - $totalRefundPaymentAmountInPaymentCurrency);
         
         if ($paymentMismatch > 0.01) {
             error_log("FISCALIZE CREDIT NOTE: WARNING - Refund payments total ($totalRefundPaymentAmount) doesn't match refund total ($refundTotal), recalculating payments");
