@@ -2595,7 +2595,7 @@ function fiscalizeCreditNote($refundId, $branchId, $db = null) {
                 ]];
             }
         } else {
-            // Payments match refund total: use them as-is (make negative for credit note)
+            // Payments match receiptTotal: use them as-is (convert to payment currency and make negative for credit note)
             $totalPaymentAmount = 0;
             foreach ($refundPayments as $payment) {
                 $method = strtolower($payment['payment_method'] ?? 'cash');
@@ -2616,8 +2616,12 @@ function fiscalizeCreditNote($refundId, $branchId, $db = null) {
                     $moneyTypeCode = 6;
                 }
                 
+                // Convert payment amount from base currency to payment currency
+                $paymentAmountInBaseCurrency = floatval($payment['amount']);
+                $paymentAmountInPaymentCurrency = $paymentAmountInBaseCurrency * $exchangeRateToPayment;
+                
                 // Credit note payment amounts are negative
-                $paymentAmount = -abs(floatval($payment['amount']));
+                $paymentAmount = -abs($paymentAmountInPaymentCurrency);
                 $totalPaymentAmount += $paymentAmount;
                 
                 $receiptData['receiptPayments'][] = [
