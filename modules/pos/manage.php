@@ -2210,11 +2210,11 @@ function updateRefundTotal() {
         // Full refund only: remaining is always 0
         remaining = 0;
         
-        document.getElementById('remainingInvoiceAmount').textContent = formatCurrency(remaining);
+        document.getElementById('remainingInvoiceAmount').textContent = formatCurrency(remaining, currentRefundSaleCurrency);
     }
     
     // Display refund total (which includes discount and delivery cost)
-    document.getElementById('refundTotalAmount').textContent = formatCurrency(refundTotal);
+    document.getElementById('refundTotalAmount').textContent = formatCurrency(refundTotal, currentRefundSaleCurrency);
     
     // Update split payments if active
     if (document.getElementById('refundPaymentMethod').value === 'split') {
