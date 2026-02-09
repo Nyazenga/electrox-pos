@@ -647,15 +647,16 @@ if ($usePDF) {
     }
     
     // Footer: Use 2-column layout for labels and values to prevent text overflow
-    // Left side: Description column (110mm) + Qty (20mm) = 130mm
+    // Left side: Description (95mm) + Qty (18mm) + Price (22mm) + Tax (20mm) = 155mm
     // Right side: Label column (35mm) + Value column (15mm) = 50mm
-    // Total: 130 + 50 = 180mm (matches table width)
+    // Total: 155 + 50 = 205mm (but we only have 180mm, so adjust)
+    // Adjusted: Left = 130mm, Right = 50mm = 180mm
     $labelColWidth = 35;  // Wider for long labels like "Total: Exempt from VAT:"
     $valueColWidth = 15;   // Narrower for values
     
     if ($pdfDiscountAmount > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(130, 0, '', 0, 0); // Description + Qty columns
+        $pdf->Cell(130, 0, '', 0, 0); // Description + Qty + Price + Tax columns (spans to match table)
         $pdf->Cell($labelColWidth, 8, 'Discount:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
         $pdf->Cell($valueColWidth, 8, '-' . number_format($pdfDiscountAmount, 2), 1, 1, 'R');
@@ -663,14 +664,14 @@ if ($usePDF) {
     
     if ($pdfDeliveryCost > 0) {
         $pdf->SetFont('helvetica', '', 9);
-        $pdf->Cell(130, 0, '', 0, 0); // Description + Qty columns
+        $pdf->Cell(130, 0, '', 0, 0); // Description + Qty + Price + Tax columns
         $pdf->Cell($labelColWidth, 8, 'Delivery Cost:', 1, 0, 'L');
         $pdf->SetFont('helvetica', 'B', 9);
         $pdf->Cell($valueColWidth, 8, number_format($pdfDeliveryCost, 2), 1, 1, 'R');
     }
     
     $pdf->SetFont('helvetica', '', 9);
-    $pdf->Cell(130, 0, '', 0, 0); // Description + Qty columns
+    $pdf->Cell(130, 0, '', 0, 0); // Description + Qty + Price + Tax columns
     $pdf->Cell($labelColWidth, 8, 'Total(Excl. tax):', 1, 0, 'L');
     $pdf->SetFont('helvetica', 'B', 9);
     $pdf->Cell($valueColWidth, 8, number_format($pdfSubtotal, 2), 1, 1, 'R');
