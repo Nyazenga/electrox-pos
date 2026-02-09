@@ -2345,8 +2345,8 @@ function processRefund() {
         html: `
             <p>Refund Type: <strong>${refundType === 'full' ? 'Full' : 'Partial'}</strong></p>
             <p>Items: <strong>${selectedItems.length}</strong></p>
-            <p>Total Refund Amount: <strong>${formatCurrency(totalRefund)}</strong></p>
-            ${includeDeliveryCost && currentRefundSale && currentRefundSale.delivery_cost > 0 ? `<p>Includes Delivery Cost: <strong>${formatCurrency(currentRefundSale.delivery_cost)}</strong></p>` : ''}
+            <p>Total Refund Amount: <strong>${formatCurrency(totalRefund, currentRefundSaleCurrency)}</strong></p>
+            ${includeDeliveryCost && currentRefundSale && currentRefundSale.delivery_cost > 0 ? `<p>Includes Delivery Cost: <strong>${formatCurrency(currentRefundSale.delivery_cost, currentRefundSaleCurrency)}</strong></p>` : ''}
             <p>Payment Method: <strong>${paymentMethod === 'split' ? 'Split Payment' : paymentMethod.toUpperCase()}</strong></p>
             <p>Reason: <strong>${escapeHtml(reason)}</strong></p>
             <p class="text-muted small mt-3">A credit note will be generated and fiscalized to ZIMRA if the original sale was fiscalized.</p>
