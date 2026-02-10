@@ -1419,13 +1419,17 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
                 }
             }
             
+            // CRITICAL: Round paymentAmount to 2 decimal places to match ZIMRA's decimal(21,2) requirement
+            // This prevents floating point precision issues and ensures sum of payments matches receiptTotal exactly
+            $paymentAmount = round($paymentAmount, 2);
+            
             $totalPaymentAmount += $paymentAmount;
             
             writeFiscalLog("FISCALIZE SALE: Payment - method: $method, moneyTypeCode: $moneyTypeCode, amount: $paymentAmount, currency: " . ($payment['currency_code'] ?? 'N/A'));
             
             $receiptData['receiptPayments'][] = [
                 'moneyTypeCode' => $moneyTypeCode, // Integer (0-6) per ZIMRA MoneyType enum
-                'paymentAmount' => $paymentAmount // Already in payment currency
+                'paymentAmount' => $paymentAmount // Rounded to 2 decimal places, already in payment currency
             ];
         }
         
