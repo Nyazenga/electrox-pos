@@ -1482,7 +1482,8 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
         }
         
         $finalDifference = abs($receiptTotal - $finalPaymentSum);
-        if ($finalDifference > 0.01) {
+        // CRITICAL: Use >= 0.01 to catch differences of exactly 0.01 (ZIMRA requires exact match)
+        if ($finalDifference >= 0.01) {
             error_log("FISCALIZE SALE: WARNING - After adjustment, payment sum ($finalPaymentSum) still doesn't match receiptTotal ($receiptTotal), difference: $finalDifference");
             // CRITICAL: receiptTotal is the source of truth (sum of receipt lines)
             // NEVER adjust receiptTotal to match payments - always adjust payments to match receiptTotal
