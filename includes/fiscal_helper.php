@@ -1440,7 +1440,10 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
         
         error_log("FISCALIZE SALE: Payment validation - receiptTotal: $receiptTotal, sum of payments: $totalPaymentAmount, difference: $difference");
         
-        if ($difference > 0.01) { // Allow 1 cent tolerance for floating point
+        // CRITICAL: ZIMRA requires exact match (or very small tolerance)
+        // Use >= 0.01 instead of > 0.01 to catch differences of exactly 0.01
+        // This ensures payment sum always matches receiptTotal exactly
+        if ($difference >= 0.01) { // Adjust if difference is >= 1 cent
             if ($totalPaymentAmount == 0) {
                 // No payments found - add a default cash payment
                 error_log("FISCALIZE SALE: No payments found, adding default cash payment equal to receiptTotal");
