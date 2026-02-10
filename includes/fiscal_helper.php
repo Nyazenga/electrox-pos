@@ -1509,6 +1509,18 @@ function fiscalizeSale($saleId, $branchId, $db = null) {
                 }
             }
         } else {
+            // Final check: Ensure payment sum equals receiptTotal exactly (handle any remaining small differences)
+            // This is a safety net to catch any edge cases where difference is < 0.01 but not exactly 0
+            if ($finalDifference > 0.0001 && $finalDifference < 0.01) {
+                // Small difference (< 0.01 but > 0.0001) - adjust last payment to match exactly
+                if (!empty($receiptData['receiptPayments'])) {
+                    $lastIndex = count($receiptData['receiptPayments']) - 1;
+                    $lastPayment = &$receiptData['receiptPayments'][$lastIndex];
+                    $adjustment = $receiptTotal - $finalPaymentSum;
+                    $lastPayment['paymentAmount'] = round($lastPayment['paymentAmount'] + $adjustment, 2);
+                    error_log("FISCALIZE SALE: Final micro-adjustment - Adjusted last payment by $adjustment to ensure exact match");
+                }
+            }
             error_log("FISCALIZE SALE: Payment validation passed - receiptTotal: $receiptTotal, payment sum: $finalPaymentSum");
         }
         
