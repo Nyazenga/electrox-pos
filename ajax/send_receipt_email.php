@@ -445,7 +445,7 @@ try {
         
         // Fallback: Generate QR code URL for display
         if (!$qrCodeDisplayed && isset($fiscalReceipt['receipt_qr_data']) && !empty($fiscalReceipt['receipt_qr_data'])) {
-            $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdmstest.zimra.co.zw';
+            $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdms.zimra.co.zw';
             $deviceId = $fiscalReceipt['device_id'] ?? '';
             $receiptDate = $fiscalReceipt['receipt_date'] ?? '';
             $receiptGlobalNo = $fiscalReceipt['receipt_global_no'] ?? '';

@@ -735,7 +735,7 @@ if ($usePDF) {
         // Fallback: Generate QR code on-the-fly
         if (!$qrCodeDisplayed && isset($fiscalReceipt['receipt_qr_data']) && !empty($fiscalReceipt['receipt_qr_data'])) {
             try {
-                $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdmstest.zimra.co.zw';
+                $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdms.zimra.co.zw';
                 $deviceId = $fiscalReceipt['device_id'] ?? '';
                 $receiptDate = $fiscalReceipt['receipt_date'] ?? '';
                 $receiptGlobalNo = $fiscalReceipt['receipt_global_no'] ?? '';
@@ -779,7 +779,7 @@ if ($usePDF) {
         $pdf->Cell(0, 3, 'You can verify this receipt manually at', 0, 1, 'C');
         $pdf->SetFont('helvetica', 'U', 7);
         $pdf->SetTextColor(30, 58, 138);
-        $pdf->Cell(0, 3, 'https://receipt.zimra.org/', 0, 1, 'C', false, 'https://receipt.zimra.org/');
+        $pdf->Cell(0, 3, 'https://fdms.zimra.co.zw', 0, 1, 'C', false, 'https://fdms.zimra.co.zw');
         $pdf->SetTextColor(0, 0, 0);
         
         $pdf->Ln(10);

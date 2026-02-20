@@ -141,17 +141,17 @@ class ZimraLogger {
         if (!self::$txtLogFile) return;
         
         $txt = "========================================\n";
-        $txt .= "TIMESTAMP: {$entry['timestamp']}\n";
-        $txt .= "OPERATION: {$entry['operation']}\n";
-        if ($entry['device_id']) {
+        $txt .= "TIMESTAMP: " . (isset($entry['timestamp']) ? $entry['timestamp'] : date('Y-m-d H:i:s')) . "\n";
+        $txt .= "OPERATION: " . (isset($entry['operation']) ? $entry['operation'] : 'UNKNOWN') . "\n";
+        if (isset($entry['device_id']) && $entry['device_id']) {
             $txt .= "DEVICE ID: {$entry['device_id']}\n";
         }
-        $txt .= "STATUS: {$entry['status']}\n";
+        $txt .= "STATUS: " . (isset($entry['status']) ? $entry['status'] : 'UNKNOWN') . "\n";
         $txt .= "----------------------------------------\n";
         $txt .= "REQUEST DATA:\n";
-        $txt .= json_encode($entry['request_data'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+        $txt .= json_encode(isset($entry['request_data']) ? $entry['request_data'] : [], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
         $txt .= "----------------------------------------\n";
-        if ($entry['response']) {
+        if (isset($entry['response']) && $entry['response']) {
             $txt .= "RESPONSE:\n";
             $txt .= json_encode($entry['response'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
         }
@@ -173,12 +173,12 @@ class ZimraLogger {
         }
         
         $logMessage = "[{$entry['timestamp']}] ZIMRA OPERATION: {$entry['operation']}\n";
-        if ($entry['device_id']) {
+        if (isset($entry['device_id']) && $entry['device_id']) {
             $logMessage .= "[{$entry['timestamp']}] Device ID: {$entry['device_id']}\n";
         }
-        $logMessage .= "[{$entry['timestamp']}] Status: {$entry['status']}\n";
-        $logMessage .= "[{$entry['timestamp']}] Request: " . json_encode($entry['request_data'], JSON_UNESCAPED_SLASHES) . "\n";
-        if ($entry['response']) {
+        $logMessage .= "[{$entry['timestamp']}] Status: " . (isset($entry['status']) ? $entry['status'] : 'UNKNOWN') . "\n";
+        $logMessage .= "[{$entry['timestamp']}] Request: " . json_encode(isset($entry['request_data']) ? $entry['request_data'] : [], JSON_UNESCAPED_SLASHES) . "\n";
+        if (isset($entry['response']) && $entry['response']) {
             $logMessage .= "[{$entry['timestamp']}] Response: " . json_encode($entry['response'], JSON_UNESCAPED_SLASHES) . "\n";
         }
         $logMessage .= "[{$entry['timestamp']}] ========== END ZIMRA OPERATION ==========\n";
@@ -198,12 +198,12 @@ class ZimraLogger {
                 VALUES (:timestamp, :operation, :device_id, :request_data, :response_data, :status)
             ");
             $stmt->execute([
-                ':timestamp' => $entry['timestamp'],
-                ':operation' => $entry['operation'],
-                ':device_id' => $entry['device_id'],
-                ':request_data' => json_encode($entry['request_data'], JSON_UNESCAPED_SLASHES),
-                ':response_data' => $entry['response'] ? json_encode($entry['response'], JSON_UNESCAPED_SLASHES) : null,
-                ':status' => $entry['status']
+                ':timestamp' => isset($entry['timestamp']) ? $entry['timestamp'] : date('Y-m-d H:i:s'),
+                ':operation' => isset($entry['operation']) ? $entry['operation'] : 'UNKNOWN',
+                ':device_id' => isset($entry['device_id']) ? $entry['device_id'] : null,
+                ':request_data' => json_encode(isset($entry['request_data']) ? $entry['request_data'] : [], JSON_UNESCAPED_SLASHES),
+                ':response_data' => (isset($entry['response']) && $entry['response']) ? json_encode($entry['response'], JSON_UNESCAPED_SLASHES) : null,
+                ':status' => isset($entry['status']) ? $entry['status'] : 'UNKNOWN'
             ]);
         } catch (Exception $e) {
             // Silently fail database logging (don't break the operation)

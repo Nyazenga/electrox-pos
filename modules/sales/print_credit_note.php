@@ -18,24 +18,29 @@ if (!$refundId) {
 $db = Database::getInstance();
 $primaryDb = Database::getPrimaryInstance();
 
-// Get refund with credit note
+// Get refund with credit note and currency
 $refund = $db->getRow("SELECT r.*, s.receipt_number, s.sale_date,
                         c.first_name, c.last_name, c.company_name, c.email, c.phone, c.address,
                         u.first_name as cashier_first, u.last_name as cashier_last,
-                        b.branch_name, b.address as branch_address, b.phone as branch_phone
+                        b.branch_name, b.address as branch_address, b.phone as branch_phone,
+                        curr.code as currency_code, curr.symbol as currency_symbol
                         FROM refunds r
                         LEFT JOIN sales s ON r.sale_id = s.id
                         LEFT JOIN customers c ON r.customer_id = c.id
                         LEFT JOIN users u ON r.user_id = u.id
                         LEFT JOIN branches b ON r.branch_id = b.id
-                        WHERE r.id = :id", [':id' => $refundId]);
+                        LEFT JOIN sale_payments sp ON s.id = sp.sale_id
+                        LEFT JOIN currencies curr ON sp.currency_id = curr.id
+                        WHERE r.id = :id
+                        LIMIT 1", [':id' => $refundId]);
 
 if (!$refund || !$refund['credit_note_number']) {
     redirectTo('modules/sales/cancelled_sales.php');
 }
 
-// Get credit note items
-$creditNoteItems = $db->getRows("SELECT * FROM credit_note_items WHERE credit_note_id = (SELECT id FROM credit_notes WHERE refund_id = :id LIMIT 1)", [':id' => $refundId]);
+// Get credit note items - credit_note_items is in primary database
+// Use ORDER BY id DESC to get the most recent credit note (there may be multiple for the same refund_id)
+$creditNoteItems = $primaryDb->getRows("SELECT * FROM credit_note_items WHERE credit_note_id = (SELECT id FROM credit_notes WHERE refund_id = :id ORDER BY id DESC LIMIT 1)", [':id' => $refundId]);
 if ($creditNoteItems === false) {
     $creditNoteItems = [];
 }
@@ -282,8 +287,10 @@ foreach ($creditNoteItems as $index => $item) {
     $pdf->Cell(10, 8, ($index + 1), 1, 0, 'C');
     $pdf->Cell(80, 8, htmlspecialchars($item['product_name']), 1, 0, 'L');
     $pdf->Cell(25, 8, $item['quantity'], 1, 0, 'C');
-    $pdf->Cell(30, 8, formatCurrency($item['unit_price']), 1, 0, 'R');
-    $pdf->Cell(35, 8, formatCurrency($item['total_price']), 1, 1, 'R');
+    // Get currency code from original sale
+    $currencyCode = $refund['currency_code'] ?? 'USD';
+    $pdf->Cell(30, 8, formatCurrency($item['unit_price'], $currencyCode), 1, 0, 'R');
+    $pdf->Cell(35, 8, formatCurrency($item['total_price'], $currencyCode), 1, 1, 'R');
 }
 
 $pdf->Ln(10);
@@ -293,21 +300,24 @@ $pdf->SetFont('helvetica', '', 9);
 $pdf->Cell(126, 0, '', 0, 0); // Spacer
 $pdf->Cell(54, 8, 'Subtotal:', 1, 0, 'L');
 $pdf->SetFont('helvetica', 'B', 9);
-$pdf->Cell(0, 8, formatCurrency($refund['subtotal']), 1, 1, 'R');
+$currencyCode = $refund['currency_code'] ?? 'USD';
+$pdf->Cell(0, 8, formatCurrency($refund['subtotal'], $currencyCode), 1, 1, 'R');
 
 if ($refund['discount_amount'] > 0) {
     $pdf->SetFont('helvetica', '', 9);
     $pdf->Cell(126, 0, '', 0, 0); // Spacer
     $pdf->Cell(54, 8, 'Discount:', 1, 0, 'L');
     $pdf->SetFont('helvetica', 'B', 9);
-    $pdf->Cell(0, 8, '-' . formatCurrency($refund['discount_amount']), 1, 1, 'R');
+    $currencyCode = $refund['currency_code'] ?? 'USD';
+    $pdf->Cell(0, 8, '-' . formatCurrency($refund['discount_amount'], $currencyCode), 1, 1, 'R');
 }
 
 $pdf->SetFont('helvetica', 'B', 10);
 $pdf->SetTextColor(220, 53, 69); // Red color for credit note total
 $pdf->Cell(126, 0, '', 0, 0); // Spacer
 $pdf->Cell(54, 10, 'Total Credit:', 1, 0, 'L');
-$pdf->Cell(0, 10, formatCurrency($refund['total_amount']), 1, 1, 'R');
+$currencyCode = $refund['currency_code'] ?? 'USD';
+$pdf->Cell(0, 10, formatCurrency($refund['total_amount'], $currencyCode), 1, 1, 'R');
 $pdf->SetTextColor(0, 0, 0);
 
 $pdf->Ln(12);
@@ -361,7 +371,7 @@ if ($fiscalDetails && $fiscalReceipt) {
     // Fallback: Generate QR code on-the-fly
     if (!$qrCodeDisplayed && isset($fiscalReceipt['receipt_qr_data']) && !empty($fiscalReceipt['receipt_qr_data'])) {
         try {
-            $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdmstest.zimra.co.zw';
+            $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdms.zimra.co.zw';
             $deviceId = $fiscalReceipt['device_id'] ?? '';
             $receiptDate = $fiscalReceipt['receipt_date'] ?? '';
             $receiptGlobalNo = $fiscalReceipt['receipt_global_no'] ?? '';
@@ -405,7 +415,7 @@ if ($fiscalDetails && $fiscalReceipt) {
     $pdf->Cell(0, 3, 'You can verify this receipt manually at', 0, 1, 'C');
     $pdf->SetFont('helvetica', 'U', 7);
     $pdf->SetTextColor(30, 58, 138);
-    $pdf->Cell(0, 3, 'https://receipt.zimra.org/', 0, 1, 'C', false, 'https://receipt.zimra.org/');
+        $pdf->Cell(0, 3, 'https://fdms.zimra.co.zw', 0, 1, 'C', false, 'https://fdms.zimra.co.zw');
     $pdf->SetTextColor(0, 0, 0);
     
     $pdf->Ln(10);

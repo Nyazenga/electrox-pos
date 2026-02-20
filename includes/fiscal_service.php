@@ -61,29 +61,32 @@ class FiscalService {
         
         $this->deviceId = $this->device['device_id'];
         
+        // Use PRODUCTION environment (live)
         // Initialize API client
         $this->api = new ZimraApi(
             $this->device['device_model_name'],
             $this->device['device_model_version'],
-            true // Use test environment
+            false // false = use PRODUCTION environment (https://fdmsapi.zimra.co.zw)
         );
         
-        // CRITICAL: Always load certificate using CertificateStorage (single source of truth)
-        // This ensures consistency with receipt submission and fiscal day closing
+        // Load certificate using CertificateStorage (single source of truth)
+        // NOTE: Certificate may not exist if device is not yet registered - that's OK for registration
         require_once APP_PATH . '/includes/certificate_storage.php';
         $certData = CertificateStorage::loadCertificate($this->deviceId);
         
-        if (!$certData || !$certData['certificate'] || !$certData['privateKey']) {
-            error_log("FISCAL SERVICE: ERROR - No certificate found in CertificateStorage for device {$this->deviceId}");
-            throw new Exception("Certificate not found for device {$this->deviceId}. Please ensure the device is registered and certificate is stored in CertificateStorage.");
+        if ($certData && $certData['certificate'] && $certData['privateKey']) {
+            // Certificate exists - load it for authenticated operations
+            error_log("FISCAL SERVICE: Certificate loaded from CertificateStorage for device {$this->deviceId}");
+            $this->api->setCertificate($certData['certificate'], $certData['privateKey']);
+            
+            // Update device record in memory for backward compatibility (don't save to DB - CertificateStorage is source of truth)
+            $this->device['certificate_pem'] = $certData['certificate'];
+            $this->device['private_key_pem'] = $certData['privateKey'];
+        } else {
+            // Certificate doesn't exist yet - this is OK for registration, but will be required for other operations
+            error_log("FISCAL SERVICE: No certificate found for device {$this->deviceId} - device may not be registered yet");
+            // Don't throw exception - allow registration to proceed
         }
-        
-        error_log("FISCAL SERVICE: Certificate loaded from CertificateStorage for device {$this->deviceId}");
-        $this->api->setCertificate($certData['certificate'], $certData['privateKey']);
-        
-        // Update device record in memory for backward compatibility (don't save to DB - CertificateStorage is source of truth)
-        $this->device['certificate_pem'] = $certData['certificate'];
-        $this->device['private_key_pem'] = $certData['privateKey'];
     }
     
     /**
@@ -349,6 +352,51 @@ class FiscalService {
             // Return null to indicate status couldn't be fetched
             // Caller should handle this gracefully and show a warning
             return null;
+        }
+    }
+    
+    /**
+     * Ping ZIMRA server to report device is online
+     * Returns array with operationID and reportingFrequency (in minutes)
+     */
+    public function ping() {
+        try {
+            // Call ZIMRA API ping endpoint
+            $response = $this->api->ping($this->deviceId);
+            
+            // Log operation
+            ZimraLogger::log('PING', ['device_id' => $this->deviceId], $response, $this->deviceId);
+            
+            // Update last_ping timestamp and store reporting frequency
+            $updateData = [
+                'last_ping' => date('Y-m-d H:i:s')
+            ];
+            
+            // Store reporting frequency if provided
+            if (isset($response['reportingFrequency'])) {
+                $updateData['reporting_frequency'] = intval($response['reportingFrequency']);
+            }
+            
+            // Update database (will fail gracefully if reporting_frequency column doesn't exist)
+            try {
+                $this->db->update('fiscal_devices', $updateData, ['id' => $this->device['id']]);
+            } catch (Exception $e) {
+                // If reporting_frequency column doesn't exist, try without it
+                if (isset($updateData['reporting_frequency'])) {
+                    unset($updateData['reporting_frequency']);
+                    $this->db->update('fiscal_devices', $updateData, ['id' => $this->device['id']]);
+                    error_log("PING: Could not update reporting_frequency (column may not exist): " . $e->getMessage());
+                } else {
+                    throw $e; // Re-throw if it's a different error
+                }
+            }
+            
+            error_log("PING: Device {$this->deviceId} pinged successfully. Reporting frequency: " . ($response['reportingFrequency'] ?? 'N/A') . " minutes");
+            
+            return $response;
+        } catch (Exception $e) {
+            error_log("PING ERROR: Device {$this->deviceId} - " . $e->getMessage());
+            throw $e;
         }
     }
     

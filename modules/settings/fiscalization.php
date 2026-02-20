@@ -39,6 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Validate
         if (empty($deviceSerialNo) || empty($activationKey)) {
             $error = 'Device Serial Number and Activation Key are required';
+            $_SESSION['fiscal_error'] = $error;
         } else {
             try {
                 $db->beginTransaction();
@@ -48,7 +49,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'fiscalization_enabled' => $enableFiscalization
                 ], ['id' => $branchId]);
                 
-                // Check if device exists (use primary DB)
+                // First, deactivate ALL other devices for this branch to prevent multiple active devices
+                $db->executeQuery(
+                    "UPDATE fiscal_devices SET is_active = 0 WHERE branch_id = :branch_id",
+                    [':branch_id' => $branchId]
+                );
+                
+                // Check if device with this device_id already exists for this branch
                 $existing = $db->getRow(
                     "SELECT * FROM fiscal_devices WHERE branch_id = :branch_id AND device_id = :device_id",
                     [':branch_id' => $branchId, ':device_id' => $deviceId]
@@ -65,17 +72,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ];
                 
                 if ($existing) {
+                    // Update existing device with same device_id
                     $db->update('fiscal_devices', $deviceData, ['id' => $existing['id']]);
                 } else {
+                    // Insert new device
                     $db->insert('fiscal_devices', $deviceData);
                 }
                 
                 $db->commitTransaction();
                 $success = 'Fiscal device settings saved successfully!';
+                $_SESSION['fiscal_success'] = $success;
             } catch (Exception $e) {
                 $db->rollbackTransaction();
                 $error = 'Error saving settings: ' . $e->getMessage();
                 $_SESSION['fiscal_error'] = $error;
+                // Log detailed error for debugging
+                error_log("Fiscal device save error: " . $e->getMessage() . "\n" . $e->getTraceAsString());
             }
         }
     } elseif ($action === 'register_device') {
@@ -255,8 +267,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Get device info for each branch from PRIMARY database
 $branchDevices = [];
 foreach ($branches as $branch) {
+    // Get the most recent active device (in case there are multiple, get the latest one)
     $device = $db->getRow(
-        "SELECT * FROM fiscal_devices WHERE branch_id = :branch_id AND is_active = 1",
+        "SELECT * FROM fiscal_devices WHERE branch_id = :branch_id AND is_active = 1 ORDER BY id DESC LIMIT 1",
         [':branch_id' => $branch['id']]
     );
     
@@ -501,16 +514,50 @@ if (isset($_SESSION['status_result'])) {
     </div>
 </div>
 
-<!-- Step 1: Initial Setup - Verify Taxpayer -->
-<?php if ($auth->hasPermission('fiscalization.verify_taxpayer')): ?>
+<!-- Step 1: Register Device -->
+<?php if ($auth->hasPermission('fiscalization.register_device')): ?>
 <div class="card mb-4">
-    <div class="card-header bg-info text-white">
-        <h5 class="mb-0"><i class="bi bi-1-circle"></i> Step 1: Verify Taxpayer Information</h5>
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0"><i class="bi bi-1-circle"></i> Step 1: Register Device with ZIMRA</h5>
     </div>
     <div class="card-body">
         <p class="text-muted mb-3">
-            <strong>Purpose:</strong> Verify taxpayer information <strong>before</strong> device registration.<br>
-            <small class="text-warning">⚠️ <strong>Note:</strong> Activation keys may only work before registration. If device is already registered, this may fail.</small>
+            <strong>Purpose:</strong> Register the device with ZIMRA and obtain the device certificate.<br>
+            <small><strong>Prerequisites:</strong> Device must be configured in "Device Configuration" section above.</small>
+        </p>
+        <form method="POST" class="row g-3">
+            <input type="hidden" name="action" value="register_device">
+            <div class="col-md-4">
+                <label class="form-label">Select Branch *</label>
+                <select name="branch_id" class="form-select form-select-sm" required>
+                    <option value="">Select Branch</option>
+                    <?php foreach ($branches as $branch): ?>
+                        <option value="<?= $branch['id'] ?>">
+                            <?= escapeHtml($branch['branch_name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-8 d-flex align-items-end">
+                <button type="submit" class="btn btn-sm btn-success">
+                    <i class="bi bi-key"></i> Register Device
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
+<!-- Step 2: Verify Taxpayer Information -->
+<?php if ($auth->hasPermission('fiscalization.verify_taxpayer')): ?>
+<div class="card mb-4">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0"><i class="bi bi-2-circle"></i> Step 2: Verify Taxpayer Information</h5>
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-3">
+            <strong>Purpose:</strong> Verify taxpayer information <strong>after</strong> device registration.<br>
+            <small class="text-info">ℹ️ <strong>Note:</strong> Device must be registered with ZIMRA first before you can verify taxpayer information.</small>
         </p>
         <form method="POST" class="row g-3">
             <input type="hidden" name="action" value="verify_taxpayer">
@@ -541,40 +588,6 @@ if (isset($_SESSION['status_result'])) {
                 Device 30200: Key 00294543, Serial electrox-2 (Both branches use this for testing)
             </small>
         </div>
-    </div>
-</div>
-<?php endif; ?>
-
-<!-- Step 2: Register Device -->
-<?php if ($auth->hasPermission('fiscalization.register_device')): ?>
-<div class="card mb-4">
-    <div class="card-header bg-success text-white">
-        <h5 class="mb-0"><i class="bi bi-2-circle"></i> Step 2: Register Device with ZIMRA</h5>
-    </div>
-    <div class="card-body">
-        <p class="text-muted mb-3">
-            <strong>Purpose:</strong> Register the device with ZIMRA and obtain the device certificate.<br>
-            <small><strong>Prerequisites:</strong> Device must be configured in "Device Configuration" section above, and taxpayer must be verified.</small>
-        </p>
-        <form method="POST" class="row g-3">
-            <input type="hidden" name="action" value="register_device">
-            <div class="col-md-4">
-                <label class="form-label">Select Branch *</label>
-                <select name="branch_id" class="form-select form-select-sm" required>
-                    <option value="">Select Branch</option>
-                    <?php foreach ($branches as $branch): ?>
-                        <option value="<?= $branch['id'] ?>">
-                            <?= escapeHtml($branch['branch_name']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-md-8 d-flex align-items-end">
-                <button type="submit" class="btn btn-sm btn-success">
-                    <i class="bi bi-key"></i> Register Device
-                </button>
-            </div>
-        </form>
     </div>
 </div>
 <?php endif; ?>

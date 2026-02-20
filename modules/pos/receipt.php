@@ -891,7 +891,7 @@ if ($usePDF) {
         if (!$qrCodeDisplayed && isset($fiscalReceipt['receipt_qr_data']) && !empty($fiscalReceipt['receipt_qr_data'])) {
             try {
                 // Build full QR URL from qr_data
-                $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdmstest.zimra.co.zw';
+                $qrUrl = $fiscalReceipt['qr_url'] ?? 'https://fdms.zimra.co.zw';
                 $deviceId = $fiscalReceipt['device_id'] ?? '';
                 $receiptDate = $fiscalReceipt['receipt_date'] ?? '';
                 $receiptGlobalNo = $fiscalReceipt['receipt_global_no'] ?? '';
@@ -940,7 +940,7 @@ if ($usePDF) {
         $pdf->Cell(0, 4, 'You can verify this receipt manually at', 0, 1, 'C');
         $pdf->SetFont('helvetica', 'U', 8);
         $pdf->SetTextColor(30, 58, 138);
-        $pdf->Cell(0, 4, 'https://receipt.zimra.org/', 0, 1, 'C', false, 'https://receipt.zimra.org/');
+        $pdf->Cell(0, 4, 'https://fdms.zimra.co.zw', 0, 1, 'C', false, 'https://fdms.zimra.co.zw');
         $pdf->SetTextColor(0, 0, 0);
         
         $pdf->Ln(5);
@@ -1310,6 +1310,9 @@ body, html {
             <?php if ($sale['payment_status'] !== 'refunded'): ?>
                 <button class="btn btn-warning" onclick="refundSale(<?= $id ?>)">
                     <i class="bi bi-arrow-counterclockwise"></i> Refund
+                </button>
+                <button class="btn btn-info" onclick="createDebitNote(<?= $id ?>)">
+                    <i class="bi bi-plus-circle"></i> Create Debit Note
                 </button>
                 <button class="btn btn-danger" onclick="deleteReceipt(<?= $id ?>)">
                     <i class="bi bi-trash"></i> Delete
@@ -1842,7 +1845,7 @@ body, html {
         <!-- Verification URL -->
         <div style="text-align: center; margin: 5px 0; font-size: 9px; color: #666;">
             You can verify this receipt manually at<br>
-            <a href="https://receipt.zimra.org/" target="_blank" style="color: #1e3a8a; text-decoration: underline;">https://receipt.zimra.org/</a>
+            <a href="https://fdms.zimra.co.zw" target="_blank" style="color: #1e3a8a; text-decoration: underline;">https://fdms.zimra.co.zw</a>
         </div>
     </div>
     <?php
@@ -2088,6 +2091,179 @@ body, html {
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger" id="processRefundBtn" onclick="processRefund()" disabled style="opacity: 0.5;">
                     <i class="bi bi-check-circle"></i> Process Refund & Generate Credit Note
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Debit Note Modal -->
+<div class="modal fade" id="debitNoteModal" tabindex="-1" aria-labelledby="debitNoteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="debitNoteModalLabel">
+                    <i class="bi bi-plus-circle"></i> Create Debit Note
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="max-height: 80vh; overflow-y: auto;">
+                <input type="hidden" id="debitNoteSaleId" value="">
+                
+                <!-- Step 1: Sale Information -->
+                <div class="card mb-3">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-info-circle"></i> Original Sale Information</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <strong>Receipt Number:</strong><br>
+                                <span id="debitNoteReceiptNumber" class="text-primary"></span>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Sale Date:</strong><br>
+                                <span id="debitNoteDate"></span>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Original Amount:</strong><br>
+                                <span id="debitNoteOriginalAmount" class="text-primary fw-bold"></span>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Sold By:</strong><br>
+                                <span id="debitNoteCashierName"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Customer Details -->
+                <div class="card mb-3" id="debitNoteCustomerDetailsCard" style="display: none;">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-person"></i> Customer Details</h6>
+                    </div>
+                    <div class="card-body" id="debitNoteCustomerDetailsBody">
+                        <!-- Customer details will be populated here -->
+                    </div>
+                </div>
+                
+                <!-- Important Notice -->
+                <div class="alert alert-info mb-3">
+                    <i class="bi bi-info-circle"></i> <strong>Important:</strong> Debit notes are used to add charges or adjustments to an original invoice. 
+                    The debit note must reference the original fiscalized sale and will be submitted to ZIMRA.
+                </div>
+                
+                <!-- Original Sale Items (Reference Only) -->
+                <div class="card mb-3">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-receipt"></i> Original Sale Items (Reference Only)</h6>
+                    </div>
+                    <div class="card-body">
+                        <div id="debitNoteOriginalItemsList" style="max-height: 200px; overflow-y: auto;">
+                            <!-- Original items will be populated here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Step 2: Add Items -->
+                <div class="card mb-3">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0"><i class="bi bi-box-seam"></i> Add Items to Debit Note</h6>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="addDebitNoteItem()">
+                            <i class="bi bi-plus"></i> Add Item
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="debitNoteItemsList">
+                            <!-- Items will be added here -->
+                        </div>
+                        <div class="mt-3 text-end">
+                            <strong>Debit Note Total:</strong>
+                            <span id="debitNoteTotalAmount" class="text-primary fw-bold fs-5">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Step 3: Reason (Mandatory) -->
+                <div class="card mb-3">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-chat-left-text"></i> Reason for Debit Note <span class="text-danger">*</span></h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Reason <span class="text-danger">*</span></strong></label>
+                            <textarea class="form-control" id="debitNoteReason" rows="3" required placeholder="Enter reason for this debit note (mandatory for ZIMRA submission)..."></textarea>
+                            <small class="text-muted">This field is mandatory for ZIMRA fiscalization (RCPT034).</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Summary -->
+                <div class="alert alert-warning">
+                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>Original sale must be fiscalized to create a debit note</li>
+                        <li>Debit note will be fiscalized to ZIMRA automatically</li>
+                        <li>All items added will increase the amount owed by the customer</li>
+                        <li>Reason field is mandatory and cannot be empty</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-info" id="processDebitNoteBtn" onclick="processDebitNote()" disabled style="opacity: 0.5;">
+                    <i class="bi bi-check-circle"></i> Create Debit Note
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Debit Note Item Modal -->
+<div class="modal fade" id="addDebitNoteItemModal" tabindex="-1" aria-labelledby="addDebitNoteItemModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="addDebitNoteItemModalLabel">
+                    <i class="bi bi-plus-circle"></i> Add Item to Debit Note
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addDebitNoteItemForm">
+                    <div class="mb-3">
+                        <label class="form-label">Product <span class="text-danger">*</span></label>
+                        <div class="position-relative">
+                            <input type="text" class="form-control" id="debitNoteProductSearch" placeholder="Type to search products..." autocomplete="off">
+                            <input type="hidden" id="debitNoteProductId">
+                            <div class="dropdown-menu position-absolute w-100" id="debitNoteProductDropdown" style="max-height: 300px; overflow-y: auto; z-index: 9999; display: none; top: 100%; left: 0; margin-top: 0;">
+                                <!-- Products will be loaded here -->
+                            </div>
+                        </div>
+                        <small class="text-muted">Select an existing product from your inventory</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Quantity <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" id="debitNoteItemQuantity" step="0.01" min="0.01" value="1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Unit Price <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" id="debitNoteItemUnitPrice" step="0.01" min="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Tax <span class="text-danger">*</span></label>
+                        <select class="form-select" id="debitNoteItemTax" required>
+                            <option value="">Select tax...</option>
+                            <!-- Tax options will be populated from original sale -->
+                        </select>
+                        <small class="text-muted">Tax must match one used in the original invoice (ZIMRA requirement)</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmAddDebitNoteItem()">
+                    <i class="bi bi-check-circle"></i> Add Item
                 </button>
             </div>
         </div>
@@ -2706,6 +2882,10 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function round(value, decimals) {
+    return Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
+}
+
 // toggleRefundType() removed - only full refunds are supported
 
 function processRefund() {
@@ -2939,6 +3119,502 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 500);
     }
 });
+// Debit Note Functions
+let currentDebitNoteSale = null;
+let currentDebitNoteSaleCurrency = null;
+let debitNoteItems = [];
+let debitNoteItemCounter = 0;
+
+function createDebitNote(saleId) {
+    // Load sale data and show debit note modal
+    fetch('<?= BASE_URL ?>ajax/get_sale_for_refund.php?id=' + saleId, {
+        method: 'GET',
+        credentials: 'same-origin'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            // We'll check fiscalization in the backend when processing
+            showDebitNoteModal(data.sale);
+        } else {
+            Swal.fire('Error', data.message || 'Failed to load sale data', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error loading sale:', error);
+        Swal.fire('Error', 'Failed to load sale data', 'error');
+    });
+}
+
+function showDebitNoteModal(sale) {
+    currentDebitNoteSale = sale;
+    debitNoteItems = [];
+    debitNoteItemCounter = 0;
+    
+    // Determine original sale currency - use payment_currency first (most reliable)
+    let saleCurrency = null;
+    if (sale.payment_currency) {
+        saleCurrency = sale.payment_currency;
+    } else if (sale.payments && sale.payments.length > 0) {
+        const firstPayment = sale.payments[0];
+        if (firstPayment.currency_id && sale.currencies) {
+            saleCurrency = sale.currencies.find(c => c.id == firstPayment.currency_id);
+        }
+    }
+    // Fallback to base currency if no payment currency found
+    if (!saleCurrency && sale.base_currency) {
+        saleCurrency = sale.base_currency;
+    }
+    
+    // Store sale currency for use in formatCurrency calls
+    currentDebitNoteSaleCurrency = saleCurrency;
+    
+    // Use display_total_amount if available
+    const displayTotalAmount = sale.display_total_amount !== undefined ? sale.display_total_amount : sale.total_amount;
+    
+    // Populate sale information
+    document.getElementById('debitNoteSaleId').value = sale.id;
+    document.getElementById('debitNoteReceiptNumber').textContent = sale.receipt_number || 'N/A';
+    document.getElementById('debitNoteOriginalAmount').textContent = formatCurrency(displayTotalAmount, saleCurrency);
+    document.getElementById('debitNoteDate').textContent = new Date(sale.sale_date).toLocaleString();
+    
+    // Populate cashier name
+    const cashierName = (sale.cashier_first || '') + ' ' + (sale.cashier_last || '');
+    document.getElementById('debitNoteCashierName').textContent = cashierName.trim() || 'N/A';
+    
+    // Populate customer details
+    if (sale.customer_id && (sale.first_name || sale.last_name || sale.company_name)) {
+        const customerDetailsBody = document.getElementById('debitNoteCustomerDetailsBody');
+        customerDetailsBody.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <strong>Name:</strong> ${escapeHtml((sale.first_name || '') + ' ' + (sale.last_name || '') || sale.company_name || 'Walk-in')}
+                </div>
+                ${sale.email ? `<div class="col-md-6"><strong>Email:</strong> ${escapeHtml(sale.email)}</div>` : ''}
+                ${sale.phone ? `<div class="col-md-6"><strong>Phone:</strong> ${escapeHtml(sale.phone)}</div>` : ''}
+                ${sale.address ? `<div class="col-md-12 mt-2"><strong>Address:</strong> ${escapeHtml(sale.address)}</div>` : ''}
+            </div>
+        `;
+        document.getElementById('debitNoteCustomerDetailsCard').style.display = 'block';
+    } else {
+        document.getElementById('debitNoteCustomerDetailsCard').style.display = 'none';
+    }
+    
+    // Populate original sale items (for reference)
+    const originalItemsContainer = document.getElementById('debitNoteOriginalItemsList');
+    if (sale.items && sale.items.length > 0) {
+        originalItemsContainer.innerHTML = '';
+        sale.items.forEach((item, index) => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'original-item mb-2 p-2 border rounded bg-light';
+            
+            // Use display prices if available, otherwise use regular prices
+            const unitPrice = item.display_unit_price !== undefined ? item.display_unit_price : item.unit_price;
+            const totalPrice = item.display_total_price !== undefined ? item.display_total_price : item.total_price;
+            const productName = item.product_name || item.name || 'Unknown Product';
+            
+            itemDiv.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="flex-grow-1">
+                        <strong>${escapeHtml(productName)}</strong>
+                        <div class="text-muted small">
+                            Qty: ${item.quantity} × ${formatCurrency(unitPrice, saleCurrency)} = ${formatCurrency(totalPrice, saleCurrency)}
+                        </div>
+                    </div>
+                </div>
+            `;
+            originalItemsContainer.appendChild(itemDiv);
+        });
+        
+        // Get taxes from original fiscal receipt (RCPT036 requirement)
+        // Use applicable_taxes from backend if available (from fiscal_receipt_taxes or fiscal_config)
+        if (sale.applicable_taxes && sale.applicable_taxes.length > 0) {
+            currentDebitNoteSale.availableTaxes = sale.applicable_taxes.map(tax => ({
+                tax_id: tax.tax_id,
+                tax_percent: tax.tax_percent,
+                tax_code: tax.tax_code || null
+            }));
+        } else {
+            // Fallback: Extract from sale items if applicable_taxes not provided
+            const availableTaxes = new Map();
+            sale.items.forEach(item => {
+                // Try fiscal tax info first (most accurate)
+                if (item.fiscal_tax_id && item.fiscal_tax_percent !== null && item.fiscal_tax_percent !== undefined) {
+                    const taxKey = `${item.fiscal_tax_id}_${item.fiscal_tax_percent}`;
+                    if (!availableTaxes.has(taxKey)) {
+                        availableTaxes.set(taxKey, {
+                            tax_id: item.fiscal_tax_id,
+                            tax_percent: item.fiscal_tax_percent,
+                            tax_code: null // tax_code not stored in fiscal_receipt_lines
+                        });
+                    }
+                }
+            });
+            currentDebitNoteSale.availableTaxes = Array.from(availableTaxes.values());
+        }
+    } else {
+        originalItemsContainer.innerHTML = '<div class="text-muted text-center py-2">No items found in original sale</div>';
+        currentDebitNoteSale.availableTaxes = [];
+    }
+    
+    // Clear items list
+    document.getElementById('debitNoteItemsList').innerHTML = '';
+    document.getElementById('debitNoteReason').value = '';
+    updateDebitNoteTotal();
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('debitNoteModal'));
+    modal.show();
+}
+
+function addDebitNoteItem() {
+    // Populate tax dropdown from original sale taxes
+    const taxSelect = document.getElementById('debitNoteItemTax');
+    taxSelect.innerHTML = '<option value="">Select tax...</option>';
+    
+    if (currentDebitNoteSale && currentDebitNoteSale.availableTaxes && currentDebitNoteSale.availableTaxes.length > 0) {
+        currentDebitNoteSale.availableTaxes.forEach(tax => {
+            const option = document.createElement('option');
+            option.value = `${tax.tax_id}|${tax.tax_percent}|${tax.tax_code || ''}`;
+            option.textContent = `${tax.tax_percent}%${tax.tax_code ? ' (' + tax.tax_code + ')' : ''}`;
+            option.dataset.taxId = tax.tax_id;
+            option.dataset.taxPercent = tax.tax_percent;
+            option.dataset.taxCode = tax.tax_code || '';
+            taxSelect.appendChild(option);
+        });
+    } else {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No taxes available from original sale';
+        option.disabled = true;
+        taxSelect.appendChild(option);
+    }
+    
+    // Clear form
+    document.getElementById('debitNoteProductSearch').value = '';
+    document.getElementById('debitNoteProductId').value = '';
+    document.getElementById('debitNoteItemQuantity').value = '1';
+    document.getElementById('debitNoteItemUnitPrice').value = '';
+    document.getElementById('debitNoteItemTax').value = '';
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('addDebitNoteItemModal'));
+    modal.show();
+    
+    // Focus on product search
+    setTimeout(() => {
+        document.getElementById('debitNoteProductSearch').focus();
+    }, 300);
+}
+
+function confirmAddDebitNoteItem() {
+    const productId = document.getElementById('debitNoteProductId').value;
+    const productName = document.getElementById('debitNoteProductSearch').value.trim();
+    const quantity = parseFloat(document.getElementById('debitNoteItemQuantity').value);
+    const unitPrice = parseFloat(document.getElementById('debitNoteItemUnitPrice').value);
+    const taxValue = document.getElementById('debitNoteItemTax').value;
+    
+    // Validation
+    if (!productId || !productName) {
+        Swal.fire('Error', 'Please select a product', 'error');
+        return;
+    }
+    
+    if (!quantity || quantity <= 0) {
+        Swal.fire('Error', 'Please enter a valid quantity', 'error');
+        return;
+    }
+    
+    if (!unitPrice || unitPrice <= 0) {
+        Swal.fire('Error', 'Please enter a valid unit price', 'error');
+        return;
+    }
+    
+    if (!taxValue) {
+        Swal.fire('Error', 'Please select a tax (must match original invoice)', 'error');
+        return;
+    }
+    
+    // Parse tax values
+    const taxParts = taxValue.split('|');
+    const taxId = parseInt(taxParts[0]);
+    const taxPercent = parseFloat(taxParts[1]);
+    const taxCode = taxParts[2] || null;
+    
+    // Create item
+    const item = {
+        id: ++debitNoteItemCounter,
+        product_id: parseInt(productId),
+        product_name: productName,
+        quantity: quantity,
+        unit_price: unitPrice,
+        total_price: round(unitPrice * quantity, 2),
+        tax_id: taxId,
+        tax_percent: taxPercent,
+        tax_code: taxCode
+    };
+    
+    debitNoteItems.push(item);
+    renderDebitNoteItems();
+    updateDebitNoteTotal();
+    
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('addDebitNoteItemModal'));
+    modal.hide();
+}
+
+function renderDebitNoteItems() {
+    const container = document.getElementById('debitNoteItemsList');
+    container.innerHTML = '';
+    
+    if (debitNoteItems.length === 0) {
+        container.innerHTML = '<div class="text-muted text-center py-3">No items added yet. Click "Add Item" to add items.</div>';
+        return;
+    }
+    
+    debitNoteItems.forEach((item, index) => {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'debit-note-item mb-3 p-3 border rounded';
+        itemDiv.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="flex-grow-1">
+                    <strong>${escapeHtml(item.product_name)}</strong>
+                    <div class="text-muted small">
+                        Qty: ${item.quantity} × ${formatCurrency(item.unit_price, currentDebitNoteSaleCurrency)} = ${formatCurrency(item.total_price, currentDebitNoteSaleCurrency)}
+                        ${item.tax_percent !== null && item.tax_percent !== undefined ? ` | Tax: ${item.tax_percent}%` : ''}
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-danger" onclick="removeDebitNoteItem(${index})">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        `;
+        container.appendChild(itemDiv);
+    });
+}
+
+function removeDebitNoteItem(index) {
+    debitNoteItems.splice(index, 1);
+    renderDebitNoteItems();
+    updateDebitNoteTotal();
+}
+
+function updateDebitNoteTotal() {
+    const total = debitNoteItems.reduce((sum, item) => sum + parseFloat(item.total_price || 0), 0);
+    document.getElementById('debitNoteTotalAmount').textContent = formatCurrency(total, currentDebitNoteSaleCurrency);
+    
+    // Enable/disable process button based on items and reason
+    const hasItems = debitNoteItems.length > 0;
+    const hasReason = document.getElementById('debitNoteReason').value.trim().length > 0;
+    const processBtn = document.getElementById('processDebitNoteBtn');
+    
+    if (hasItems && hasReason) {
+        processBtn.disabled = false;
+        processBtn.style.opacity = '1';
+    } else {
+        processBtn.disabled = true;
+        processBtn.style.opacity = '0.5';
+    }
+}
+
+// Listen for reason input changes
+document.addEventListener('DOMContentLoaded', function() {
+    const reasonInput = document.getElementById('debitNoteReason');
+    if (reasonInput) {
+        reasonInput.addEventListener('input', updateDebitNoteTotal);
+    }
+});
+
+function processDebitNote() {
+    const saleId = document.getElementById('debitNoteSaleId').value;
+    const reason = document.getElementById('debitNoteReason').value.trim();
+    
+    if (!reason) {
+        Swal.fire('Error', 'Reason is mandatory for debit notes', 'error');
+        return;
+    }
+    
+    if (debitNoteItems.length === 0) {
+        Swal.fire('Error', 'Please add at least one item to the debit note', 'error');
+        return;
+    }
+    
+    // Prepare items for submission
+    const items = debitNoteItems.map(item => ({
+        product_id: item.product_id || 0,
+        product_name: item.product_name,
+        quantity: parseFloat(item.quantity),
+        unit_price: parseFloat(item.unit_price),
+        total_price: parseFloat(item.total_price),
+        tax_id: item.tax_id || null,
+        tax_percent: item.tax_percent !== null && item.tax_percent !== undefined ? parseFloat(item.tax_percent) : null,
+        tax_code: item.tax_code || null
+    }));
+    
+    // Show loading
+    Swal.fire({
+        title: 'Processing...',
+        text: 'Creating debit note and fiscalizing to ZIMRA',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+    
+    fetch('<?= BASE_URL ?>ajax/process_debit_note.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+            sale_id: parseInt(saleId),
+            items: items,
+            reason: reason
+        })
+    })
+    .then(async response => {
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('Non-JSON response:', text.substring(0, 500));
+            throw new Error('Server returned non-JSON response. Check console for details.');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Success!',
+                text: data.message || 'Debit note created successfully',
+                confirmButtonText: 'OK'
+            }).then(() => {
+                // Close modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('debitNoteModal'));
+                if (modal) modal.hide();
+                
+                // Redirect to debit note view page
+                if (data.debit_note_id) {
+                    window.location.href = '<?= BASE_URL ?>modules/sales/view_debit_note.php?id=' + data.debit_note_id;
+                } else {
+                    // Fallback: reload page
+                    location.reload();
+                }
+            });
+        } else {
+            Swal.fire('Error', data.message || 'Failed to create debit note', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error creating debit note:', error);
+        Swal.fire('Error', 'Failed to create debit note: ' + error.message, 'error');
+    });
+}
+
+// Product search for debit note items
+document.addEventListener('DOMContentLoaded', function() {
+    const productSearch = document.getElementById('debitNoteProductSearch');
+    const productDropdown = document.getElementById('debitNoteProductDropdown');
+    const productIdInput = document.getElementById('debitNoteProductId');
+    let searchTimeout;
+    
+    if (productSearch && productDropdown) {
+        productSearch.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            const searchTerm = this.value.trim();
+            
+            if (searchTerm.length < 2) {
+                productDropdown.innerHTML = '';
+                productDropdown.style.display = 'none';
+                productIdInput.value = '';
+                return;
+            }
+            
+            searchTimeout = setTimeout(() => {
+                // Use session branch_id (from top nav bar) - consistent with POS and other pages
+                let searchUrl = '<?= BASE_URL ?>ajax/search_products.php?q=' + encodeURIComponent(searchTerm);
+                
+                fetch(searchUrl)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success && data.products && data.products.length > 0) {
+                            productDropdown.innerHTML = '';
+                            data.products.forEach(product => {
+                                const item = document.createElement('a');
+                                item.className = 'dropdown-item';
+                                item.href = '#';
+                                item.innerHTML = `
+                                    <div>
+                                        <strong>${escapeHtml(product.display_name || product.product_name || 'Product')}</strong>
+                                        ${product.product_code ? `<small class="text-muted"> - ${escapeHtml(product.product_code)}</small>` : ''}
+                                    </div>
+                                `;
+                                item.addEventListener('click', function(e) {
+                                    e.preventDefault();
+                                    productSearch.value = product.display_name || product.product_name || 'Product';
+                                    productIdInput.value = product.id;
+                                    productDropdown.style.display = 'none';
+                                    
+                                    // Try to get product price if available
+                                    // CRITICAL: Convert price from base currency to payment currency
+                                    if (product.selling_price) {
+                                        let unitPrice = parseFloat(product.selling_price);
+                                        
+                                        // Convert to payment currency if different from base currency
+                                        if (currentDebitNoteSale && currentDebitNoteSale.payment_currency && currentDebitNoteSale.base_currency) {
+                                            const paymentCurrencyId = currentDebitNoteSale.payment_currency.id || currentDebitNoteSale.payment_currency_id;
+                                            const baseCurrencyId = currentDebitNoteSale.base_currency.id;
+                                            
+                                            // Only convert if payment currency is different from base currency
+                                            if (paymentCurrencyId && baseCurrencyId && paymentCurrencyId != baseCurrencyId) {
+                                                // Calculate exchange rate from display_total_amount / total_amount
+                                                // This gives us the conversion factor from base to payment currency
+                                                if (currentDebitNoteSale.display_total_amount && currentDebitNoteSale.total_amount) {
+                                                    const baseTotal = parseFloat(currentDebitNoteSale.total_amount);
+                                                    const displayTotal = parseFloat(currentDebitNoteSale.display_total_amount);
+                                                    if (baseTotal > 0) {
+                                                        const exchangeRate = displayTotal / baseTotal;
+                                                        unitPrice = unitPrice * exchangeRate;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        
+                                        document.getElementById('debitNoteItemUnitPrice').value = round(unitPrice, 2).toFixed(2);
+                                    }
+                                });
+                                productDropdown.appendChild(item);
+                            });
+                            productDropdown.style.display = 'block';
+                        } else {
+                            productDropdown.innerHTML = '<div class="dropdown-item text-muted">No products found. Try a different search term.</div>';
+                            productDropdown.style.display = 'block';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error searching products:', error);
+                        productDropdown.innerHTML = '<div class="dropdown-item text-danger">Error searching products. Please try again.</div>';
+                        productDropdown.style.display = 'block';
+                    });
+            }, 300);
+        });
+        
+        productSearch.addEventListener('focus', function() {
+            if (this.value.trim().length >= 2) {
+                productDropdown.style.display = 'block';
+            }
+        });
+        
+        // Hide dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!productSearch.contains(e.target) && !productDropdown.contains(e.target)) {
+                productDropdown.style.display = 'none';
+            }
+        });
+    }
+});
+
 </script>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>
