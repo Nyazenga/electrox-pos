@@ -120,7 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $deviceSerialNo = trim($_POST['device_serial_no']);
         
         try {
-            $api = new ZimraApi('Server', 'v1', true);
+            // Use PRODUCTION environment (same as registration)
+            $api = new ZimraApi('Server', 'v1', false); // false = production
             $result = $api->verifyTaxpayerInformation($deviceId, $activationKey, $deviceSerialNo);
             $success = 'Taxpayer information verified! Taxpayer: ' . $result['taxPayerName'];
             $_SESSION['fiscal_success'] = $success;
