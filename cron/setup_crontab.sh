@@ -8,7 +8,7 @@ PHP_BIN="/usr/bin/php"
 crontab -l > /tmp/crontab_backup_$(date +%Y%m%d_%H%M%S).txt 2>/dev/null || true
 
 # Remove old entries for these scripts
-crontab -l 2>/dev/null | grep -v "close_fiscal_day.php\|open_fiscal_day.php\|expiry_notifications.php\|low_stock_notifications.php" > /tmp/crontab_new.txt 2>/dev/null || true
+crontab -l 2>/dev/null | grep -v "close_fiscal_day.php\|open_fiscal_day.php\|ping_device.php\|expiry_notifications.php\|low_stock_notifications.php" > /tmp/crontab_new.txt 2>/dev/null || true
 
 # Add new cron entries
 cat >> /tmp/crontab_new.txt <<EOF
@@ -19,6 +19,9 @@ cat >> /tmp/crontab_new.txt <<EOF
 
 # Open Fiscal Day - Daily at 4:00 AM (0400)
 0 4 * * * cd $CRON_DIR/.. && $PHP_BIN cron/open_fiscal_day.php >> /var/log/electrox_cron_open.log 2>&1
+
+# Ping ZIMRA Server - Every 5 minutes (reporting frequency from ZIMRA response)
+*/5 * * * * cd $CRON_DIR/.. && $PHP_BIN cron/ping_device.php >> /var/log/electrox_cron_ping.log 2>&1
 
 # Expiry Notifications - Daily at 8:00 AM
 0 8 * * * cd $CRON_DIR/.. && $PHP_BIN cron/expiry_notifications.php >> /var/log/electrox_cron_expiry.log 2>&1
