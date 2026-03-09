@@ -25,7 +25,7 @@ $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
 if ($branches === false) $branches = [];
 
 // Build query
-$whereConditions = ["DATE(s.sale_date) BETWEEN :start_date AND :end_date"];
+$whereConditions = ["DATE(s.sale_date) BETWEEN :start_date AND :end_date", "s.deleted_at IS NULL"];
 $params = [':start_date' => $startDate, ':end_date' => $endDate];
 
 if ($selectedBranch !== 'all' && $selectedBranch) {
@@ -184,6 +184,13 @@ require_once APP_PATH . '/includes/header.php';
                                         <i class="bi bi-arrow-counterclockwise"></i>
                                     </button>
                                 <?php endif; ?>
+                                <?php if ($auth->hasPermission('sales.delete')): ?>
+                                    <button onclick="confirmDeleteSale(<?= $sale['id'] ?>, '<?= escapeHtml($sale['receipt_number']) ?>')" 
+                                            class="btn btn-danger" 
+                                            title="Delete Sale">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                <?php endif; ?>
                             </div>
                         </td>
                     </tr>
@@ -209,6 +216,79 @@ require_once APP_PATH . '/includes/header.php';
 </div>
 
 <script>
+function confirmDeleteSale(saleId, receiptNumber) {
+    Swal.fire({
+        title: 'Delete Sale',
+        html: `
+            <div class="text-start">
+                <p>Are you sure you want to delete sale <strong>${receiptNumber}</strong>?</p>
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle"></i> This will:
+                    <ul class="mb-0 mt-1">
+                        <li>Restore all stock quantities</li>
+                        <li>Reverse shift cash adjustments</li>
+                        <li>Soft-delete the sale record</li>
+                    </ul>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Reason for deletion <span class="text-danger">*</span></label>
+                    <textarea id="deleteReason" class="form-control" rows="3" placeholder="Enter reason for deleting this sale..." required></textarea>
+                </div>
+            </div>
+        `,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: '<i class="bi bi-trash"></i> Delete Sale',
+        cancelButtonText: 'Cancel',
+        focusCancel: true,
+        preConfirm: () => {
+            const reason = document.getElementById('deleteReason').value.trim();
+            if (!reason) {
+                Swal.showValidationMessage('Please provide a reason for deletion');
+                return false;
+            }
+            return reason;
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'Deleting Sale...',
+                text: 'Please wait while the sale is being deleted and stock is restored.',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+            
+            fetch('<?= BASE_URL ?>ajax/delete_sale.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    sale_id: saleId,
+                    reason: result.value
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire({
+                        title: 'Deleted!',
+                        text: data.message,
+                        icon: 'success'
+                    }).then(() => {
+                        window.location.reload();
+                    });
+                } else {
+                    Swal.fire('Error', data.message || 'Failed to delete sale', 'error');
+                }
+            })
+            .catch(err => {
+                Swal.fire('Error', 'Network error. Please try again.', 'error');
+            });
+        }
+    });
+}
+
 function showRefundModal(saleId) {
     fetch('<?= BASE_URL ?>ajax/get_sale_for_refund.php?id=' + saleId)
         .then(r => r.json())

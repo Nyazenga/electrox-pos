@@ -25,7 +25,7 @@ $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
 if ($branches === false) $branches = [];
 
 // Build query conditions
-$whereConditions = ["s.is_credit_sale = 1"];
+$whereConditions = ["s.is_credit_sale = 1", "s.deleted_at IS NULL"];
 $params = [];
 
 if ($selectedBranch !== 'all' && $selectedBranch) {

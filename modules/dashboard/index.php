@@ -24,7 +24,7 @@ $endDate = $_GET['end_date'] ?? date('Y-m-d');
 $branches = $db->getRows("SELECT * FROM branches WHERE status = 'Active' ORDER BY branch_name");
 
 // Build WHERE clause
-$whereClause = "DATE(sale_date) BETWEEN :start_date AND :end_date";
+$whereClause = "DATE(sale_date) BETWEEN :start_date AND :end_date AND deleted_at IS NULL";
 $params = [':start_date' => $startDate, ':end_date' => $endDate];
 
 if ($branchId) {
@@ -99,7 +99,7 @@ $inventoryValue = $db->getRow("SELECT COALESCE(SUM(quantity_in_stock * cost_pric
 // Credit Sales (if enabled)
 $creditSalesStats = ['total_credit_sales' => 0, 'total_outstanding' => 0, 'outstanding_count' => 0];
 if (getSetting('allow_credit_sales', '0') == '1') {
-    $creditSalesWhere = "DATE(sale_date) BETWEEN :start_date AND :end_date AND is_credit_sale = 1";
+    $creditSalesWhere = "DATE(sale_date) BETWEEN :start_date AND :end_date AND is_credit_sale = 1 AND deleted_at IS NULL";
     $creditSalesParams = [':start_date' => $startDate, ':end_date' => $endDate];
     if ($branchId) {
         $creditSalesWhere .= " AND branch_id = :branch_id";
@@ -136,7 +136,7 @@ if ($startDate === $endDate) {
         COALESCE(SUM(discount_amount), 0) as discount_amount,
         COALESCE(SUM((SELECT SUM(si2.quantity * p2.cost_price) FROM sale_items si2 INNER JOIN products p2 ON si2.product_id = p2.id WHERE si2.sale_id = s.id)), 0) as cost_of_sales
         FROM sales s
-        WHERE DATE(sale_date) BETWEEN :start_date AND :end_date" . ($branchId ? " AND branch_id = :branch_id" : "") . "
+        WHERE DATE(sale_date) BETWEEN :start_date AND :end_date AND s.deleted_at IS NULL" . ($branchId ? " AND branch_id = :branch_id" : "") . "
         GROUP BY HOUR(sale_date)
         ORDER BY hour", 
         array_merge([':start_date' => $startDate, ':end_date' => $endDate], $branchId ? [':branch_id' => $branchId] : [])) ?: [];
@@ -205,7 +205,7 @@ for ($i = 29; $i >= 0; $i--) {
     $date = date('Y-m-d', strtotime("-$i days"));
     $daySales = $db->getRow("SELECT COALESCE(SUM(total_amount), 0) as total 
         FROM sales 
-        WHERE DATE(sale_date) = :date" . ($branchId ? " AND branch_id = :branch_id" : ""), 
+        WHERE DATE(sale_date) = :date AND deleted_at IS NULL" . ($branchId ? " AND branch_id = :branch_id" : ""), 
         array_merge([':date' => $date], $branchId ? [':branch_id' => $branchId] : [])) ?: ['total' => 0];
     $trendData[] = [
         'date' => date('M d', strtotime($date)),

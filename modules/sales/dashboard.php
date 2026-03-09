@@ -24,7 +24,7 @@ $branches = $db->getRows("SELECT * FROM branches ORDER BY branch_name");
 if ($branches === false) $branches = [];
 
 // Build query conditions
-$whereConditions = ["DATE(s.sale_date) BETWEEN :start_date AND :end_date"];
+$whereConditions = ["DATE(s.sale_date) BETWEEN :start_date AND :end_date", "s.deleted_at IS NULL"];
 $params = [':start_date' => $startDate, ':end_date' => $endDate];
 
 if ($selectedBranch !== 'all' && $selectedBranch) {
