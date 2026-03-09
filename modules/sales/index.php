@@ -222,12 +222,13 @@ function confirmDeleteSale(saleId, receiptNumber) {
         html: `
             <div class="text-start">
                 <p>Are you sure you want to delete sale <strong>${receiptNumber}</strong>?</p>
-                <div class="alert alert-warning mb-3">
-                    <i class="bi bi-exclamation-triangle"></i> This will:
+                <div class="alert alert-danger mb-3">
+                    <i class="bi bi-exclamation-triangle"></i> <strong>This action is permanent!</strong> It will:
                     <ul class="mb-0 mt-1">
+                        <li>Permanently remove the sale record from the database</li>
+                        <li>Delete all related payments, items, and fiscal records</li>
                         <li>Restore all stock quantities</li>
                         <li>Reverse shift cash adjustments</li>
-                        <li>Soft-delete the sale record</li>
                     </ul>
                 </div>
                 <div class="mb-3">

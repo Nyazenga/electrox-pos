@@ -1,10 +1,10 @@
 <?php
 /**
- * Delete Sale (Soft Delete)
+ * Delete Sale (Hard Delete)
  * - Restores stock quantities
  * - Restores specific items (product_specific_list) if applicable
  * - Reverses shift cash for cash payments
- * - Soft-deletes the sale record
+ * - Permanently removes the sale and all related records from the database
  * Requires: sales.delete permission
  */
 
@@ -49,60 +49,32 @@ if (empty($reason)) {
 
 $db = Database::getInstance();
 
-// Check if deleted_at column exists
-$hasDeletedAtColumn = false;
-try {
-    $colCheck = $db->getRow("SELECT COUNT(*) as count FROM information_schema.COLUMNS 
-                            WHERE TABLE_SCHEMA = DATABASE() 
-                            AND TABLE_NAME = 'sales' 
-                            AND COLUMN_NAME = 'deleted_at'");
-    $hasDeletedAtColumn = ($colCheck && $colCheck['count'] > 0);
-} catch (Exception $e) {
-    $hasDeletedAtColumn = false;
-}
-
-// Check if delete_reason column exists
-$hasReasonColumn = false;
-try {
-    $colCheck = $db->getRow("SELECT COUNT(*) as count FROM information_schema.COLUMNS 
-                            WHERE TABLE_SCHEMA = DATABASE() 
-                            AND TABLE_NAME = 'sales' 
-                            AND COLUMN_NAME = 'delete_reason'");
-    $hasReasonColumn = ($colCheck && $colCheck['count'] > 0);
-} catch (Exception $e) {
-    $hasReasonColumn = false;
-}
-
 try {
     $db->beginTransaction();
     
     // Get sale details
-    $saleQuery = "SELECT * FROM sales WHERE id = :id";
-    if ($hasDeletedAtColumn) {
-        $saleQuery .= " AND deleted_at IS NULL";
-    }
-    $sale = $db->getRow($saleQuery, [':id' => $saleId]);
+    $sale = $db->getRow("SELECT * FROM sales WHERE id = :id", [':id' => $saleId]);
     
     if (!$sale) {
-        throw new Exception('Sale not found or already deleted');
+        throw new Exception('Sale not found');
     }
     
     // Check if sale has been fiscalized - warn but allow deletion
     $isFiscalized = false;
     try {
-        $fiscalReceipt = $db->getRow("SELECT id FROM fiscal_receipt_log WHERE sale_id = :sale_id LIMIT 1", [':sale_id' => $saleId]);
+        $fiscalReceipt = $db->getRow("SELECT id FROM fiscal_receipts WHERE sale_id = :sale_id LIMIT 1", [':sale_id' => $saleId]);
         $isFiscalized = !empty($fiscalReceipt);
     } catch (Exception $e) {
-        // fiscal_receipt_log may not exist
+        // fiscal_receipts table may not exist
     }
     
-    // Get sale items
+    // Get sale items before deletion
     $items = $db->getRows("SELECT * FROM sale_items WHERE sale_id = :id", [':id' => $saleId]);
     if ($items === false) $items = [];
     
     $branchId = $sale['branch_id'] ?? null;
     
-    // Restore stock and specific items for each sale item
+    // 1. Restore stock and specific items for each sale item
     foreach ($items as $item) {
         if (!$item['product_id']) continue;
         
@@ -119,7 +91,6 @@ try {
             $specificItems = json_decode($item['specific_item_data'], true);
             if (is_array($specificItems)) {
                 foreach ($specificItems as $specificData) {
-                    // Re-create the specific item entry
                     $restoreData = [
                         'product_id' => $item['product_id'],
                         'branch_id' => $branchId,
@@ -127,7 +98,6 @@ try {
                         'created_by' => $userId
                     ];
                     
-                    // Restore all known fields
                     $knownFields = ['color', 'storage', 'serial_number', 'imei', 'sim_configuration', 
                                    'battery_health', 'manufacturer', 'warranty_months', 'warranty_terms',
                                    'condition', 'trade_in_eligible', 'cost_price', 'selling_price', 'wholesale_price'];
@@ -166,7 +136,7 @@ try {
                 'quantity' => $item['quantity'],
                 'previous_quantity' => ($currentQty['quantity_in_stock'] ?? 0) - $item['quantity'],
                 'new_quantity' => $currentQty['quantity_in_stock'] ?? 0,
-                'reference' => 'Sale #' . ($sale['receipt_number'] ?? $saleId) . ' deleted',
+                'reference' => 'Sale #' . ($sale['receipt_number'] ?? $saleId) . ' deleted - Reason: ' . $reason,
                 'user_id' => $userId,
                 'created_at' => date('Y-m-d H:i:s')
             ]);
@@ -175,7 +145,7 @@ try {
         }
     }
     
-    // Reverse shift cash for cash payments
+    // 2. Reverse shift cash for cash payments
     $payments = $db->getRows("SELECT * FROM sale_payments WHERE sale_id = :id", [':id' => $saleId]);
     if ($payments === false) $payments = [];
     
@@ -188,51 +158,59 @@ try {
         }
     }
     
-    // Ensure deleted_at and related columns exist
-    if (!$hasDeletedAtColumn) {
-        $db->commitTransaction();
-        try {
-            $db->executeQuery("ALTER TABLE sales ADD COLUMN deleted_at DATETIME NULL");
-            $db->executeQuery("ALTER TABLE sales ADD COLUMN deleted_by INT(11) NULL");
-        } catch (Exception $e) {
-            // Columns may already exist
-        }
-        $hasDeletedAtColumn = true;
-        $db->beginTransaction();
+    // 3. Delete all related records (order matters for foreign key constraints)
+    
+    // Delete credit notes linked to this sale
+    try {
+        $db->executeQuery("DELETE FROM credit_notes WHERE sale_id = :sale_id", [':sale_id' => $saleId]);
+    } catch (Exception $e) {
+        error_log("Warning: Could not delete credit_notes: " . $e->getMessage());
     }
     
-    if (!$hasReasonColumn) {
-        try {
-            $db->commitTransaction();
-            $db->executeQuery("ALTER TABLE sales ADD COLUMN delete_reason TEXT NULL");
-            $hasReasonColumn = true;
-            $db->beginTransaction();
-        } catch (Exception $e) {
-            // Column may already exist
-        }
+    // Delete refunds linked to this sale
+    try {
+        $db->executeQuery("DELETE FROM refunds WHERE sale_id = :sale_id", [':sale_id' => $saleId]);
+    } catch (Exception $e) {
+        error_log("Warning: Could not delete refunds: " . $e->getMessage());
     }
     
-    // Soft-delete the sale
-    $updateSql = "UPDATE sales SET deleted_at = NOW(), deleted_by = :user_id";
-    $updateParams = [':user_id' => $userId, ':id' => $saleId];
-    if ($hasReasonColumn) {
-        $updateSql .= ", delete_reason = :reason";
-        $updateParams[':reason'] = $reason;
+    // Delete account payments linked to this sale
+    try {
+        $db->executeQuery("DELETE FROM account_payments WHERE sale_id = :sale_id", [':sale_id' => $saleId]);
+    } catch (Exception $e) {
+        error_log("Warning: Could not delete account_payments: " . $e->getMessage());
     }
-    $updateSql .= " WHERE id = :id";
     
-    $stmt = $db->executeQuery($updateSql, $updateParams);
-    if ($stmt === false) {
-        throw new Exception('Failed to mark sale as deleted');
+    // Nullify sale_id on laybyes (ON DELETE SET NULL)
+    try {
+        $db->executeQuery("UPDATE laybyes SET sale_id = NULL WHERE sale_id = :sale_id", [':sale_id' => $saleId]);
+    } catch (Exception $e) {
+        error_log("Warning: Could not update laybyes: " . $e->getMessage());
     }
+    
+    // Delete fiscal receipts linked to this sale
+    try {
+        $db->executeQuery("DELETE FROM fiscal_receipts WHERE sale_id = :sale_id", [':sale_id' => $saleId]);
+    } catch (Exception $e) {
+        error_log("Warning: Could not delete fiscal_receipts: " . $e->getMessage());
+    }
+    
+    // Delete sale payments
+    $db->executeQuery("DELETE FROM sale_payments WHERE sale_id = :sale_id", [':sale_id' => $saleId]);
+    
+    // Delete sale items
+    $db->executeQuery("DELETE FROM sale_items WHERE sale_id = :sale_id", [':sale_id' => $saleId]);
+    
+    // 4. Delete the sale record itself
+    $db->executeQuery("DELETE FROM sales WHERE id = :id", [':id' => $saleId]);
     
     $db->commitTransaction();
     
     ob_clean();
     
-    $message = 'Sale deleted successfully. Stock has been restored.';
+    $message = 'Sale permanently deleted. Stock has been restored.';
     if ($isFiscalized) {
-        $message .= ' Note: This sale was fiscalized with ZIMRA - the fiscal record remains.';
+        $message .= ' Note: This sale was fiscalized with ZIMRA - the fiscal record has also been removed locally.';
     }
     
     echo json_encode([
