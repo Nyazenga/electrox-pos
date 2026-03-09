@@ -1081,7 +1081,13 @@ require_once APP_PATH . '/includes/header.php';
         <div class="product-grid" id="productGrid">
             <?php 
             // Only show products from current branch
-            $productsQuery = "SELECT p.*, pc.name as category_name, COALESCE(p.is_trade_in, 0) as is_trade_in 
+            // Include specific item price: use min available specific item selling_price if product has specific items
+            $productsQuery = "SELECT p.*, pc.name as category_name, COALESCE(p.is_trade_in, 0) as is_trade_in,
+                             COALESCE(pc.is_specific, 0) as is_specific,
+                             (SELECT MIN(psl.selling_price) FROM product_specific_list psl 
+                              WHERE psl.product_id = p.id AND psl.status = 'available' AND psl.selling_price > 0) as specific_min_price,
+                             (SELECT MAX(psl.selling_price) FROM product_specific_list psl 
+                              WHERE psl.product_id = p.id AND psl.status = 'available' AND psl.selling_price > 0) as specific_max_price
                              FROM products p 
                              LEFT JOIN product_categories pc ON p.category_id = pc.id 
                              WHERE p.status = 'Active' AND p.quantity_in_stock > 0";
@@ -1118,21 +1124,38 @@ require_once APP_PATH . '/includes/header.php';
                 $productImage = !empty($product['images']) ? json_decode($product['images'], true)[0] ?? null : null;
                 $productDisplayName = !empty($product['product_name']) ? $product['product_name'] : ($product['brand'] . ' ' . $product['model']);
                 // Calculate display price
+                // For specific items: use specific item price if base price is 0 or empty
+                $baseSellingPrice = $product['selling_price'];
+                $specificMinPrice = $product['specific_min_price'] ?? null;
+                $specificMaxPrice = $product['specific_max_price'] ?? null;
+                $isSpecificProduct = !empty($product['is_specific']);
+                
+                // If this is a specific product and base price is 0/empty, use specific item price
+                if ($isSpecificProduct && (empty($baseSellingPrice) || $baseSellingPrice <= 0) && $specificMinPrice > 0) {
+                    $baseSellingPrice = $specificMinPrice;
+                }
+                
                 // If prices_include_tax is TRUE: selling_price already includes tax, use as-is
                 // If prices_include_tax is FALSE: selling_price does NOT include tax, add tax for display
-                $displayPrice = $product['selling_price'];
+                $displayPrice = $baseSellingPrice;
                 if (!$pricesIncludeTax) {
-                    // Price does NOT include tax, so add tax for display
-                    $displayPrice = calculatePriceWithTax($product['selling_price'], $defaultTaxRate);
+                    $displayPrice = calculatePriceWithTax($baseSellingPrice, $defaultTaxRate);
                 }
-                // If pricesIncludeTax is true, displayPrice = selling_price (already includes tax)
+                
+                // Determine if we should show a price range
+                $showPriceRange = $isSpecificProduct && $specificMinPrice > 0 && $specificMaxPrice > 0 && $specificMinPrice != $specificMaxPrice;
+                $displayMaxPrice = $specificMaxPrice;
+                if (!$pricesIncludeTax && $specificMaxPrice > 0) {
+                    $displayMaxPrice = calculatePriceWithTax($specificMaxPrice, $defaultTaxRate);
+                }
             ?>
                 <div class="product-card" 
                      data-product-id="<?= $product['id'] ?>" 
                      data-category-id="<?= $product['category_id'] ?? 'no-category' ?>" 
                      data-product-name="<?= escapeHtml($productDisplayName) ?>"
                      data-product-price="<?= $displayPrice ?>"
-                     data-product-price-base="<?= $product['selling_price'] ?>"
+                     data-product-price-base="<?= $baseSellingPrice ?>"
+                     data-is-specific="<?= $isSpecificProduct ? '1' : '0' ?>"
                      data-product-stock="<?= $product['quantity_in_stock'] ?>"
                      data-product-barcode="<?= escapeHtml($product['barcode'] ?? '') ?>"
                      data-is-trade-in="<?= ($product['is_trade_in'] ?? 0) ? '1' : '0' ?>"
@@ -1169,7 +1192,16 @@ require_once APP_PATH . '/includes/header.php';
                         <?php endif; ?>
                     </div>
                     <div class="product-name"><?= escapeHtml($productDisplayName) ?></div>
-                    <div class="product-price"><?= formatCurrency($displayPrice) ?><?= $pricesIncludeTax ? ' <small style="color: rgba(255, 255, 255, 0.8);">(incl. tax)</small>' : '' ?></div>
+                    <div class="product-price">
+                        <?php if ($showPriceRange): ?>
+                            <?= formatCurrency($displayPrice) ?> - <?= formatCurrency($displayMaxPrice) ?>
+                        <?php elseif ($isSpecificProduct && $specificMinPrice > 0 && (empty($product['selling_price']) || $product['selling_price'] <= 0)): ?>
+                            <?= formatCurrency($displayPrice) ?>
+                        <?php else: ?>
+                            <?= formatCurrency($displayPrice) ?>
+                        <?php endif; ?>
+                        <?= $pricesIncludeTax ? ' <small style="color: rgba(255, 255, 255, 0.8);">(incl. tax)</small>' : '' ?>
+                    </div>
                 </div>
             <?php endforeach; ?>
             
