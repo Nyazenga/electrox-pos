@@ -4,7 +4,9 @@
  * - Restores stock quantities
  * - Restores specific items (product_specific_list) if applicable
  * - Reverses shift cash for cash payments
- * - Permanently removes the sale and all related records from the database
+ * - Permanently removes the sale and ALL related records from the database
+ *   (sale_items, sale_payments, stock_movements, refunds, refund_items,
+ *    credit_notes, account_payments, fiscal_receipts, product_specific_list refs)
  * Requires: sales.delete permission
  */
 
@@ -72,6 +74,9 @@ try {
     $items = $db->getRows("SELECT * FROM sale_items WHERE sale_id = :id", [':id' => $saleId]);
     if ($items === false) $items = [];
     
+    // Collect all sale_item IDs for cleanup
+    $saleItemIds = array_column($items, 'id');
+    
     $branchId = $sale['branch_id'] ?? null;
     
     // 1. Restore stock and specific items for each sale item
@@ -126,22 +131,29 @@ try {
                              [':qty' => $item['quantity'], ':product_id' => $item['product_id']]);
         }
         
-        // Add stock movement record for the reversal
+        // Delete the original "Sale" stock movement for this product created by the sale
         try {
-            $currentQty = $db->getRow("SELECT quantity_in_stock FROM products WHERE id = :id", [':id' => $item['product_id']]);
-            $db->insert('stock_movements', [
-                'product_id' => $item['product_id'],
-                'branch_id' => $branchId,
-                'movement_type' => 'Sale Deleted',
-                'quantity' => $item['quantity'],
-                'previous_quantity' => ($currentQty['quantity_in_stock'] ?? 0) - $item['quantity'],
-                'new_quantity' => $currentQty['quantity_in_stock'] ?? 0,
-                'reference' => 'Sale #' . ($sale['receipt_number'] ?? $saleId) . ' deleted - Reason: ' . $reason,
-                'user_id' => $userId,
-                'created_at' => date('Y-m-d H:i:s')
-            ]);
+            $db->executeQuery("DELETE FROM stock_movements 
+                             WHERE product_id = :product_id 
+                             AND movement_type = 'Sale' 
+                             AND reference_id = :sale_id 
+                             AND reference_type = 'sale'", 
+                             [':product_id' => $item['product_id'], ':sale_id' => $saleId]);
         } catch (Exception $e) {
-            error_log("Warning: Could not create stock movement for delete: " . $e->getMessage());
+            // Fallback: try deleting by product + branch + approximate time
+            try {
+                $db->executeQuery("DELETE FROM stock_movements 
+                                 WHERE product_id = :product_id 
+                                 AND branch_id = :branch_id 
+                                 AND movement_type = 'Sale' 
+                                 AND created_at BETWEEN :start AND :end", 
+                                 [':product_id' => $item['product_id'], 
+                                  ':branch_id' => $branchId,
+                                  ':start' => date('Y-m-d H:i:s', strtotime($sale['sale_date']) - 60),
+                                  ':end' => date('Y-m-d H:i:s', strtotime($sale['sale_date']) + 60)]);
+            } catch (Exception $e2) {
+                error_log("Warning: Could not delete stock_movements for product {$item['product_id']}: " . $e2->getMessage());
+            }
         }
     }
     
@@ -158,7 +170,17 @@ try {
         }
     }
     
-    // 3. Delete all related records (order matters for foreign key constraints)
+    // 3. Delete ALL related records (order matters for foreign key constraints)
+    
+    // Delete refund_items linked to sale_items
+    if (!empty($saleItemIds)) {
+        $placeholders = implode(',', array_fill(0, count($saleItemIds), '?'));
+        try {
+            $db->getPdo()->prepare("DELETE FROM refund_items WHERE sale_item_id IN ($placeholders)")->execute($saleItemIds);
+        } catch (Exception $e) {
+            error_log("Warning: Could not delete refund_items: " . $e->getMessage());
+        }
+    }
     
     // Delete credit notes linked to this sale
     try {
@@ -188,6 +210,16 @@ try {
         error_log("Warning: Could not update laybyes: " . $e->getMessage());
     }
     
+    // Clear product_specific_list references to sale_items
+    if (!empty($saleItemIds)) {
+        $placeholders = implode(',', array_fill(0, count($saleItemIds), '?'));
+        try {
+            $db->getPdo()->prepare("UPDATE product_specific_list SET sale_item_id = NULL WHERE sale_item_id IN ($placeholders)")->execute($saleItemIds);
+        } catch (Exception $e) {
+            error_log("Warning: Could not clear product_specific_list sale_item_id refs: " . $e->getMessage());
+        }
+    }
+    
     // Delete fiscal receipts linked to this sale
     try {
         $db->executeQuery("DELETE FROM fiscal_receipts WHERE sale_id = :sale_id", [':sale_id' => $saleId]);
@@ -208,7 +240,7 @@ try {
     
     ob_clean();
     
-    $message = 'Sale permanently deleted. Stock has been restored.';
+    $message = 'Sale permanently deleted. Stock restored, all related records removed.';
     if ($isFiscalized) {
         $message .= ' Note: This sale was fiscalized with ZIMRA - the fiscal record has also been removed locally.';
     }
