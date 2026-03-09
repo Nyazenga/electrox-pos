@@ -4,7 +4,7 @@
  */
 $isLocal = (php_uname('s') === 'Windows NT' || strpos(php_uname('n'), 'DESKTOP') !== false || file_exists('C:/xampp'));
 $dbUser = $isLocal ? 'root' : 'grcadmin';
-$dbPass = $isLocal ? '' : 'Adm1n@GRC2024!';
+$dbPass = $isLocal ? '' : 'GRCAdmin123/';
 $dbHost = 'localhost';
 
 try {
