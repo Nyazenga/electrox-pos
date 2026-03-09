@@ -29,6 +29,9 @@ try {
         exit;
     }
     
+    // Delete characteristic assignments first (foreign key cascade should handle this, but be explicit)
+    $db->delete('category_characteristic_assignments', ['category_id' => $id]);
+    
     $db->delete('product_categories', ['id' => $id]);
     
     echo json_encode(['success' => true, 'message' => 'Category deleted successfully']);

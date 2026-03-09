@@ -33,18 +33,39 @@ if (!$product) {
 // Check if product requires specific list
 $requiresSpecificList = !empty($product['requires_specific_list']);
 
-// Determine category-specific field visibility
+// Also check by category is_specific flag
+if (!$requiresSpecificList && !empty($product['category_id'])) {
+    $catCheck = $db->getRow("SELECT is_specific FROM product_categories WHERE id = :id", [':id' => $product['category_id']]);
+    if ($catCheck && !empty($catCheck['is_specific'])) {
+        $requiresSpecificList = true;
+    }
+}
+
+// Get category characteristics for dynamic field display
+$categoryCharacteristics = [];
+if ($requiresSpecificList && !empty($product['category_id'])) {
+    $categoryCharacteristics = getCategoryCharacteristics($product['category_id'], $db);
+}
+
+// Determine category-specific field visibility (from characteristics assignments or legacy)
 $categoryName = strtolower($product['category_name'] ?? '');
-$isSmartphoneOrTablet = strpos($categoryName, 'smartphone') !== false || 
-                        strpos($categoryName, 'phone') !== false || 
-                        strpos($categoryName, 'tablet') !== false;
+$assignedCharNames = array_column($categoryCharacteristics, 'name');
+
+// Use characteristic assignments if available, otherwise fall back to legacy detection
+if (!empty($assignedCharNames)) {
+    $showIMEI = in_array('imei', $assignedCharNames);
+    $showSIMConfig = in_array('sim_configuration', $assignedCharNames);
+    $showBatteryHealth = in_array('battery_health', $assignedCharNames);
+} else {
+    $isSmartphoneOrTablet = strpos($categoryName, 'smartphone') !== false || 
+                            strpos($categoryName, 'phone') !== false || 
+                            strpos($categoryName, 'tablet') !== false;
+    $showIMEI = $isSmartphoneOrTablet;
+    $showSIMConfig = $isSmartphoneOrTablet;
+    $showBatteryHealth = $isSmartphoneOrTablet;
+}
 $isLaptop = strpos($categoryName, 'laptop') !== false;
 $isAudioDevice = strpos($categoryName, 'audio') !== false;
-
-// Fields to show/hide based on category
-$showIMEI = $isSmartphoneOrTablet;
-$showSIMConfig = $isSmartphoneOrTablet; // Only for phones/tablets
-$showBatteryHealth = $isSmartphoneOrTablet; // Only for phones/tablets (laptops have batteries but not tracked the same way)
 
 // Get product_specific_list entries if product requires it
 $specificListEntries = [];

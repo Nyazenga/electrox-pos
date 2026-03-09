@@ -30,5 +30,16 @@ if (!$category) {
     exit;
 }
 
-echo json_encode(['success' => true, 'category' => $category]);
+// Get assigned characteristics
+$characteristics = $db->getRows(
+    "SELECT cc.*, cca.is_required, cca.sort_order as assignment_order
+     FROM category_characteristics cc
+     INNER JOIN category_characteristic_assignments cca ON cc.id = cca.characteristic_id
+     WHERE cca.category_id = :category_id AND cc.is_active = 1
+     ORDER BY cca.sort_order, cc.sort_order",
+    [':category_id' => $id]
+);
 
+$category['characteristics'] = $characteristics ?: [];
+
+echo json_encode(['success' => true, 'category' => $category]);

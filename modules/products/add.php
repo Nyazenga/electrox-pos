@@ -83,17 +83,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $isGeneralCategory = $category && strtolower($category['name']) === 'general';
     }
     
-    // Check if this product requires product_specific_list (smartphones, laptops, tablets, gaming)
+    // Check if this product requires product_specific_list (based on category is_specific flag)
     $requiresSpecificList = false;
     if ($categoryId) {
-        $category = $db->getRow("SELECT name FROM product_categories WHERE id = :id", [':id' => $categoryId]);
+        $category = $db->getRow("SELECT name, is_specific FROM product_categories WHERE id = :id", [':id' => $categoryId]);
         if ($category) {
-            $categoryName = strtolower($category['name']);
-            $requiresSpecificList = (strpos($categoryName, 'smartphone') !== false || 
-                                   strpos($categoryName, 'phone') !== false || 
-                                   strpos($categoryName, 'laptop') !== false ||
-                                   strpos($categoryName, 'tablet') !== false ||
-                                   strpos($categoryName, 'gaming') !== false);
+            // Use is_specific flag (new system) with legacy fallback
+            $requiresSpecificList = !empty($category['is_specific']);
+            if (!$requiresSpecificList) {
+                $categoryName = strtolower($category['name']);
+                $requiresSpecificList = (strpos($categoryName, 'smartphone') !== false || 
+                                       strpos($categoryName, 'phone') !== false || 
+                                       strpos($categoryName, 'laptop') !== false ||
+                                       strpos($categoryName, 'tablet') !== false ||
+                                       strpos($categoryName, 'gaming') !== false);
+            }
         }
     }
     
@@ -313,8 +317,12 @@ require_once APP_PATH . '/includes/header.php';
                                    href="#" 
                                    data-id="<?= $cat['id'] ?>" 
                                    data-text="<?= escapeHtml($cat['name']) ?>"
-                                   data-name="<?= escapeHtml(strtolower($cat['name'])) ?>">
+                                   data-name="<?= escapeHtml(strtolower($cat['name'])) ?>"
+                                   data-is-specific="<?= $cat['is_specific'] ?? 0 ?>">
                                     <?= escapeHtml($cat['name']) ?>
+                                    <?php if (!empty($cat['is_specific'])): ?>
+                                        <span class="badge bg-info ms-1" style="font-size:0.65rem;">Specific</span>
+                                    <?php endif; ?>
                                 </a>
                             <?php endforeach; ?>
                         </div>
@@ -739,12 +747,20 @@ function updateDynamicFields(categoryName) {
         if (field) field.style.display = 'none';
     });
     
-    // Check if this product requires specific list (smartphone, laptop, tablet, gaming)
-    const requiresSpecificList = categoryName.includes('smartphone') || 
-                                 categoryName.includes('phone') || 
-                                 categoryName.includes('laptop') || 
-                                 categoryName.includes('tablet') ||
-                                 categoryName.includes('gaming');
+    // Check if this product requires specific list (via is_specific flag on category)
+    let requiresSpecificList = false;
+    const selectedItem = categoryDropdown ? categoryDropdown.querySelector('.category-item[data-id="' + categoryId.value + '"]') : null;
+    if (selectedItem && selectedItem.dataset.isSpecific == '1') {
+        requiresSpecificList = true;
+    }
+    // Legacy fallback: check category name
+    if (!requiresSpecificList) {
+        requiresSpecificList = categoryName.includes('smartphone') || 
+                                     categoryName.includes('phone') || 
+                                     categoryName.includes('laptop') || 
+                                     categoryName.includes('tablet') ||
+                                     categoryName.includes('gaming');
+    }
     
     // Show info message for products requiring specific list
     const specificListInfo = document.getElementById('specificListInfo');

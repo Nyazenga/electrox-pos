@@ -333,21 +333,31 @@ function productRequiresSpecificList($product, $db = null) {
         return true;
     }
     
-    // Check by category name (smartphone, laptop, tablet, gaming)
-    $categoryName = '';
-    if (!empty($product['category_name'])) {
-        $categoryName = strtolower($product['category_name']);
-    } elseif (!empty($product['category_id'])) {
+    // Check by category is_specific flag (new system) or category name (legacy fallback)
+    if (!empty($product['category_id'])) {
         if (!$db) {
             $db = Database::getInstance();
         }
-        $category = $db->getRow("SELECT name FROM product_categories WHERE id = :id", [':id' => $product['category_id']]);
+        $category = $db->getRow("SELECT name, is_specific FROM product_categories WHERE id = :id", [':id' => $product['category_id']]);
         if ($category) {
+            // New system: check is_specific flag on category
+            if (isset($category['is_specific']) && $category['is_specific'] == 1) {
+                return true;
+            }
+            
+            // Legacy fallback: check by category name
             $categoryName = strtolower($category['name']);
+            if (strpos($categoryName, 'smartphone') !== false || 
+                strpos($categoryName, 'phone') !== false || 
+                strpos($categoryName, 'laptop') !== false ||
+                strpos($categoryName, 'tablet') !== false ||
+                strpos($categoryName, 'gaming') !== false) {
+                return true;
+            }
         }
-    }
-    
-    if ($categoryName) {
+    } elseif (!empty($product['category_name'])) {
+        // Legacy fallback when category_name is already in the product data
+        $categoryName = strtolower($product['category_name']);
         if (strpos($categoryName, 'smartphone') !== false || 
             strpos($categoryName, 'phone') !== false || 
             strpos($categoryName, 'laptop') !== false ||
@@ -358,6 +368,29 @@ function productRequiresSpecificList($product, $db = null) {
     }
     
     return false;
+}
+
+/**
+ * Get the characteristics assigned to a category
+ * @param int $categoryId The category ID
+ * @param Database|null $db Database instance
+ * @return array Array of characteristics with their assignments
+ */
+function getCategoryCharacteristics($categoryId, $db = null) {
+    if (!$db) {
+        $db = Database::getInstance();
+    }
+    
+    $characteristics = $db->getRows(
+        "SELECT cc.*, cca.is_required, cca.sort_order as assignment_order
+         FROM category_characteristics cc
+         INNER JOIN category_characteristic_assignments cca ON cc.id = cca.characteristic_id
+         WHERE cca.category_id = :category_id AND cc.is_active = 1
+         ORDER BY cca.sort_order, cc.sort_order",
+        [':category_id' => $categoryId]
+    );
+    
+    return $characteristics ?: [];
 }
 
 /**

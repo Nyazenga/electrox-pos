@@ -95,17 +95,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                  strpos(strtolower($newCategory['name']), 'beverage') !== false);
     }
     
-    // Check if this product requires product_specific_list (smartphones, laptops, tablets, gaming)
+    // Check if this product requires product_specific_list (based on category is_specific flag)
     $requiresSpecificList = false;
     if ($newCategoryId) {
-        $category = $db->getRow("SELECT name FROM product_categories WHERE id = :id", [':id' => $newCategoryId]);
+        $category = $db->getRow("SELECT name, is_specific FROM product_categories WHERE id = :id", [':id' => $newCategoryId]);
         if ($category) {
-            $categoryName = strtolower($category['name']);
-            $requiresSpecificList = (strpos($categoryName, 'smartphone') !== false || 
-                              strpos($categoryName, 'phone') !== false || 
-                              strpos($categoryName, 'laptop') !== false ||
-                                   strpos($categoryName, 'tablet') !== false ||
-                                   strpos($categoryName, 'gaming') !== false);
+            // Use is_specific flag (new system) with legacy fallback
+            $requiresSpecificList = !empty($category['is_specific']);
+            if (!$requiresSpecificList) {
+                $categoryName = strtolower($category['name']);
+                $requiresSpecificList = (strpos($categoryName, 'smartphone') !== false || 
+                                  strpos($categoryName, 'phone') !== false || 
+                                  strpos($categoryName, 'laptop') !== false ||
+                                       strpos($categoryName, 'tablet') !== false ||
+                                       strpos($categoryName, 'gaming') !== false);
+            }
         }
     }
     
@@ -256,6 +260,7 @@ require_once APP_PATH . '/includes/header.php';
                         <?php foreach ($categories as $cat): ?>
                             <option value="<?= $cat['id'] ?>" 
                                     data-name="<?= escapeHtml(strtolower($cat['name'])) ?>"
+                                    data-is-specific="<?= $cat['is_specific'] ?? 0 ?>"
                                     <?= $cat['id'] == $product['category_id'] ? 'selected' : '' ?>>
                                 <?= escapeHtml($cat['name']) ?>
                             </option>
@@ -505,12 +510,23 @@ function updateDynamicFields(categoryName) {
         if (field) field.style.display = 'none';
     });
     
-    // Check if this product requires specific list (smartphone, laptop, tablet, gaming)
-    const requiresSpecificList = categoryName.includes('smartphone') || 
-                            categoryName.includes('phone') || 
-                            categoryName.includes('laptop') || 
-                                 categoryName.includes('tablet') ||
-                                 categoryName.includes('gaming');
+    // Check if this product requires specific list (via is_specific flag on category)
+    let requiresSpecificList = false;
+    const catSelect = document.getElementById('categoryId');
+    if (catSelect && catSelect.selectedIndex >= 0) {
+        const selectedOpt = catSelect.options[catSelect.selectedIndex];
+        if (selectedOpt && selectedOpt.dataset.isSpecific == '1') {
+            requiresSpecificList = true;
+        }
+    }
+    // Legacy fallback: check category name
+    if (!requiresSpecificList) {
+        requiresSpecificList = categoryName.includes('smartphone') || 
+                                categoryName.includes('phone') || 
+                                categoryName.includes('laptop') || 
+                                     categoryName.includes('tablet') ||
+                                     categoryName.includes('gaming');
+    }
     
     // Products requiring specific list can have normal quantity
     // Individual instances are tracked in product_specific_list

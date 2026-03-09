@@ -20,31 +20,80 @@ if (empty($input['name'])) {
 try {
     $db = Database::getInstance();
     
+    $isSpecific = isset($input['is_specific']) ? intval($input['is_specific']) : 0;
+    
     $data = [
         'name' => $input['name'],
         'description' => $input['description'] ?? null,
         'tax_id' => isset($input['tax_id']) && $input['tax_id'] !== '' ? intval($input['tax_id']) : null,
+        'is_specific' => $isSpecific,
         'updated_at' => date('Y-m-d H:i:s')
     ];
     
     if (!empty($input['id'])) {
-        // Update - Edit existing category is allowed
-        $db->update('product_categories', $data, ['id' => intval($input['id'])]);
-    } else {
-        // DISABLED: Insert new category - No new categories are to be added to the system
-        // throw new Exception('Adding new categories is not allowed. Only editing existing categories is permitted.');
-        // $data['created_at'] = date('Y-m-d H:i:s');
-        // $db->insert('product_categories', $data);
+        // Update existing category
+        $categoryId = intval($input['id']);
+        $db->update('product_categories', $data, ['id' => $categoryId]);
         
-        // Reject attempts to add new categories
-        echo json_encode(['success' => false, 'message' => 'Adding new categories is not allowed. Only editing existing categories is permitted.']);
-        exit;
+        // Save characteristic assignments if category is specific
+        if ($isSpecific && isset($input['characteristics'])) {
+            // Remove existing assignments
+            $db->delete('category_characteristic_assignments', ['category_id' => $categoryId]);
+            
+            // Insert new assignments
+            $characteristics = $input['characteristics'];
+            foreach ($characteristics as $index => $char) {
+                $charId = intval($char['id'] ?? 0);
+                if ($charId <= 0) continue;
+                
+                $db->insert('category_characteristic_assignments', [
+                    'category_id' => $categoryId,
+                    'characteristic_id' => $charId,
+                    'is_required' => !empty($char['is_required']) ? 1 : 0,
+                    'sort_order' => $index + 1,
+                    'created_at' => date('Y-m-d H:i:s')
+                ]);
+            }
+        } elseif (!$isSpecific) {
+            // If no longer specific, remove all characteristic assignments
+            $db->delete('category_characteristic_assignments', ['category_id' => $categoryId]);
+        }
+        
+        // Update requires_specific_list flag on products in this category
+        $db->getPdo()->prepare(
+            "UPDATE products SET requires_specific_list = :is_specific WHERE category_id = :category_id"
+        )->execute([':is_specific' => $isSpecific, ':category_id' => $categoryId]);
+        
+    } else {
+        // Create new category
+        $data['created_at'] = date('Y-m-d H:i:s');
+        $categoryId = $db->insert('product_categories', $data);
+        
+        if (!$categoryId) {
+            echo json_encode(['success' => false, 'message' => 'Failed to create category']);
+            exit;
+        }
+        
+        // Save characteristic assignments if category is specific
+        if ($isSpecific && isset($input['characteristics'])) {
+            foreach ($input['characteristics'] as $index => $char) {
+                $charId = intval($char['id'] ?? 0);
+                if ($charId <= 0) continue;
+                
+                $db->insert('category_characteristic_assignments', [
+                    'category_id' => $categoryId,
+                    'characteristic_id' => $charId,
+                    'is_required' => !empty($char['is_required']) ? 1 : 0,
+                    'sort_order' => $index + 1,
+                    'created_at' => date('Y-m-d H:i:s')
+                ]);
+            }
+        }
     }
     
-    echo json_encode(['success' => true, 'message' => 'Category saved successfully']);
+    echo json_encode(['success' => true, 'message' => 'Category saved successfully', 'id' => $categoryId]);
     
 } catch (Exception $e) {
     logError("Save category error: " . $e->getMessage());
     echo json_encode(['success' => false, 'message' => 'Failed to save category: ' . $e->getMessage()]);
 }
-
