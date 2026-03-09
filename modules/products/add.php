@@ -444,8 +444,8 @@ require_once APP_PATH . '/includes/header.php';
                                             <tr>
                                                 <th width="80">Available</th>
                                                 <th>Branch</th>
-                                                <th width="120">Cost Price *</th>
-                                                <th width="120">Selling Price *</th>
+                                                <th width="120">Cost Price</th>
+                                                <th width="120">Selling Price</th>
                                                 <th width="120">Wholesale Price</th>
                                                 <th width="100" id="stockHeader" style="display: none;">In stock</th>
                                                 <th width="100" id="reorderHeader" style="display: none;">Safety stock</th>
@@ -472,9 +472,9 @@ require_once APP_PATH . '/includes/header.php';
                                                                class="form-control form-control-sm" 
                                                                name="branch_cost_price[<?= $branch['id'] ?>]" 
                                                                id="branch_cost_price_<?= $branch['id'] ?>"
-                                                               value="0" 
+                                                               value="" 
                                                                min="0"
-                                                               placeholder="0.00">
+                                                               placeholder="Optional">
                                                     </td>
                                                     <td>
                                                         <input type="number" 
@@ -482,9 +482,9 @@ require_once APP_PATH . '/includes/header.php';
                                                                class="form-control form-control-sm" 
                                                                name="branch_selling_price[<?= $branch['id'] ?>]" 
                                                                id="branch_selling_price_<?= $branch['id'] ?>"
-                                                               value="0" 
+                                                               value="" 
                                                                min="0"
-                                                               placeholder="0.00">
+                                                               placeholder="Optional">
                                                     </td>
                                                     <td>
                                                         <input type="number" 
