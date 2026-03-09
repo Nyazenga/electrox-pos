@@ -52,7 +52,7 @@ CREATE TABLE `products` (
   `reorder_quantity` int(11) DEFAULT 10,
   `warranty_months` int(11) DEFAULT 0,
   `warranty_terms` text DEFAULT NULL,
-  `condition` enum('New','Refurbished','Used') DEFAULT 'New',
+  `condition` varchar(50) DEFAULT 'New',
   `status` enum('Active','Inactive','Discontinued') DEFAULT 'Active',
   `trade_in_eligible` tinyint(1) DEFAULT 0,
   `is_trade_in` tinyint(1) DEFAULT 0,

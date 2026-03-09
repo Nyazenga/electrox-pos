@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS `product_specific_list` (
   `manufacturer` varchar(100) DEFAULT NULL,
   `warranty_months` int(11) DEFAULT 0,
   `warranty_terms` text DEFAULT NULL,
-  `condition` enum('New','Refurbished','Used') DEFAULT 'New',
+  `condition` varchar(50) DEFAULT 'New',
   `trade_in_eligible` tinyint(1) DEFAULT 0,
   `status` enum('available','sold','returned','damaged','transferred') DEFAULT 'available',
   `sale_item_id` int(11) DEFAULT NULL COMMENT 'Links to sale_items when sold',
