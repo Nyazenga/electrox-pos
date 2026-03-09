@@ -28,8 +28,9 @@ try {
     $sqlFile = __DIR__ . '/migrate_category_characteristics.sql';
     $sql = file_get_contents($sqlFile);
     
-    // Split SQL into individual statements
-    $statements = array_filter(array_map('trim', preg_split('/;\s*\n/', $sql)));
+    // Remove SQL comment lines, then split into individual statements
+    $sqlClean = preg_replace('/^\s*--.*$/m', '', $sql);
+    $statements = array_filter(array_map('trim', preg_split('/;\s*\n/', $sqlClean)));
     
     foreach ($tenants as $tenant) {
         $dbName = 'electrox_' . $tenant['tenant_slug'];
@@ -44,7 +45,7 @@ try {
             
             foreach ($statements as $stmt) {
                 $stmt = trim($stmt);
-                if (empty($stmt) || strpos($stmt, '--') === 0) continue;
+                if (empty($stmt)) continue;
                 
                 try {
                     $tenantPdo->exec($stmt);
