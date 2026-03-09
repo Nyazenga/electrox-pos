@@ -212,16 +212,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $productImages = !empty($product['images']) ? json_decode($product['images'], true) : [];
 
-// Determine category-specific field visibility
+// Category name for legacy compatibility
 $categoryName = strtolower($product['category_name'] ?? '');
-$isSmartphoneOrTablet = strpos($categoryName, 'smartphone') !== false || 
-                        strpos($categoryName, 'phone') !== false || 
-                        strpos($categoryName, 'tablet') !== false;
-
-// Fields to show/hide based on category
-$showIMEI = $isSmartphoneOrTablet;
-$showSIMConfig = $isSmartphoneOrTablet; // Only for phones/tablets
-$showBatteryHealth = $isSmartphoneOrTablet; // Only for phones/tablets
 
 // Color picker code removed - color is now captured in product_specific_list
 
@@ -648,6 +640,30 @@ if ($requiresSpecificList) {
     }
 }
 $productDisplayName = !empty($product['product_name']) ? $product['product_name'] : ($product['brand'] . ' ' . $product['model']);
+
+// Get category characteristics for dynamic fields
+$editCategoryCharacteristics = [];
+if (!empty($product['category_id'])) {
+    $editCategoryCharacteristics = getCategoryCharacteristics($product['category_id'], $db);
+}
+
+// Build characteristic field definitions from category assignments
+$editCharFields = [];
+$editHasSerialNumber = false;
+$editHasIMEI = false;
+foreach ($editCategoryCharacteristics as $char) {
+    $col = $char['system_column'] ?? $char['name'];
+    $editCharFields[] = [
+        'name' => $char['name'],
+        'label' => $char['label'],
+        'column' => $col,
+        'field_type' => $char['field_type'],
+        'is_required' => !empty($char['is_required']),
+        'options' => !empty($char['options']) ? json_decode($char['options'], true) : [],
+    ];
+    if ($col === 'serial_number') $editHasSerialNumber = true;
+    if ($col === 'imei') $editHasIMEI = true;
+}
 ?>
 <div class="modal fade" id="manageSpecificItemsModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
@@ -669,15 +685,9 @@ $productDisplayName = !empty($product['product_name']) ? $product['product_name'
                     <table class="table table-bordered table-hover">
                         <thead class="table-light">
                             <tr>
-                                <th>Color</th>
-                                <th>Storage</th>
-                                <th class="sim-config-header">SIM Config</th>
-                                <th>Serial # *</th>
-                                <th class="imei-header">IMEI</th>
-                                <th>Condition</th>
-                                <th class="battery-header">Battery %</th>
-                                <th>Manufacturer</th>
-                                <th>Warranty (Months)</th>
+                                <?php foreach ($editCharFields as $cf): ?>
+                                    <th><?= escapeHtml($cf['label']) ?><?= $cf['is_required'] ? ' *' : '' ?></th>
+                                <?php endforeach; ?>
                                 <th>Cost Price</th>
                                 <th>Selling Price *</th>
                                 <th>Wholesale Price</th>
@@ -703,26 +713,12 @@ $productDisplayName = !empty($product['product_name']) ? $product['product_name'
 
 <script>
 let specificItemsData = [];
-const categoryName = '<?= strtolower($product['category_name'] ?? '') ?>';
-const showIMEI = categoryName.includes('smartphone') || categoryName.includes('phone') || categoryName.includes('tablet');
-const showSIMConfig = showIMEI; // Only for phones/tablets
-const showBatteryHealth = showIMEI; // Only for phones/tablets
 
-// Hide columns if not needed
-document.addEventListener('DOMContentLoaded', function() {
-    if (!showIMEI) {
-        const imeiHeaders = document.querySelectorAll('.imei-header');
-        imeiHeaders.forEach(h => h.style.display = 'none');
-    }
-    if (!showSIMConfig) {
-        const simHeaders = document.querySelectorAll('.sim-config-header');
-        simHeaders.forEach(h => h.style.display = 'none');
-    }
-    if (!showBatteryHealth) {
-        const batteryHeaders = document.querySelectorAll('.battery-header');
-        batteryHeaders.forEach(h => h.style.display = 'none');
-    }
-});
+// Dynamic characteristic fields from PHP (category assignments)
+const charFields = <?= json_encode($editCharFields) ?>;
+const hasSerialNumber = <?= $editHasSerialNumber ? 'true' : 'false' ?>;
+const hasIMEI = <?= $editHasIMEI ? 'true' : 'false' ?>;
+const totalColumns = charFields.length + 5; // char fields + cost + selling + wholesale + status + actions
 
 function openManageSpecificItemsModal() {
     loadSpecificItems();
@@ -746,116 +742,122 @@ function loadSpecificItems() {
         });
 }
 
+/**
+ * Build an input cell HTML for a given characteristic field
+ */
+function buildCharFieldCell(index, field, item) {
+    const col = field.column;
+    const val = item[col] || '';
+    const escapedVal = escapeHtml(String(val));
+    
+    // Select field type
+    if (field.field_type === 'select' && field.options && field.options.length > 0) {
+        let optionsHtml = '<option value="">Select</option>';
+        field.options.forEach(opt => {
+            const selected = (String(val) === String(opt)) ? 'selected' : '';
+            optionsHtml += `<option value="${escapeHtml(opt)}" ${selected}>${escapeHtml(opt)}</option>`;
+        });
+        return `<td><select class="form-select form-select-sm" onchange="updateItemField(${index}, '${col}', this.value)">${optionsHtml}</select></td>`;
+    }
+    
+    // Number field type
+    if (field.field_type === 'number') {
+        let min = 0, max = '', step = '1', placeholder = '0';
+        if (col === 'battery_health') { max = '100'; placeholder = '0-100'; }
+        if (col === 'warranty_months') { max = '999'; placeholder = 'Months'; }
+        return `<td><input type="number" class="form-control form-control-sm" 
+                    value="${escapedVal}" 
+                    onchange="updateItemField(${index}, '${col}', this.value)"
+                    min="${min}" ${max ? 'max="' + max + '"' : ''} step="${step}"
+                    placeholder="${placeholder}"></td>`;
+    }
+    
+    // Boolean field type
+    if (field.field_type === 'boolean') {
+        const checked = val == 1 || val === true || val === 'true' || val === '1' ? 'checked' : '';
+        return `<td class="text-center"><input type="checkbox" class="form-check-input" 
+                    ${checked}
+                    onchange="updateItemField(${index}, '${col}', this.checked ? 1 : 0)"></td>`;
+    }
+    
+    // Textarea field type
+    if (field.field_type === 'textarea') {
+        return `<td><textarea class="form-control form-control-sm" rows="1"
+                    onchange="updateItemField(${index}, '${col}', this.value.trim())"
+                    placeholder="${escapeHtml(field.label)}">${escapedVal}</textarea></td>`;
+    }
+    
+    // Text (default) - with special handling for IMEI and serial_number
+    let placeholder = escapeHtml(field.label);
+    let extraAttrs = '';
+    let extraEvents = '';
+    
+    if (col === 'serial_number') {
+        placeholder = field.is_required ? 'Required' : field.label;
+        extraAttrs = `maxlength="100" data-index="${index}" ${field.is_required ? 'required' : ''}`;
+        extraEvents = `onblur="validateSerialNumber(${index}, this)"`;
+    } else if (col === 'imei') {
+        placeholder = '15 digits';
+        extraAttrs = `maxlength="15" pattern="[0-9]{15}" data-index="${index}"`;
+        extraEvents = `onblur="validateIMEI(${index}, this)"`;
+    } else if (col === 'color') {
+        placeholder = 'e.g., Red, Blue, Black';
+        extraAttrs = `maxlength="50"`;
+    } else if (col === 'storage') {
+        placeholder = 'e.g., 128GB';
+        extraAttrs = `maxlength="50"`;
+    } else if (col === 'manufacturer') {
+        placeholder = 'Manufacturer';
+        extraAttrs = `maxlength="100"`;
+    } else {
+        extraAttrs = `maxlength="255"`;
+    }
+    
+    return `<td><input type="text" class="form-control form-control-sm" 
+                value="${escapedVal}" 
+                onchange="updateItemField(${index}, '${col}', this.value.trim())"
+                ${extraEvents}
+                ${extraAttrs}
+                placeholder="${placeholder}"></td>`;
+}
+
 function renderSpecificItemsTable() {
     const tbody = document.getElementById('specificItemsTableBody');
     tbody.innerHTML = '';
     
     if (specificItemsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="14" class="text-center text-muted">No items added yet. Click "Add Item" to add one.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${totalColumns}" class="text-center text-muted">No items added yet. Click "Add Item" to add one.</td></tr>`;
         return;
     }
     
     specificItemsData.forEach((item, index) => {
         const row = document.createElement('tr');
-        const colorValue = item.color || '';
-        row.innerHTML = `
-            <td>
-                <input type="text" class="form-control form-control-sm" 
-                       id="colorText_${index}"
-                       value="${escapeHtml(colorValue)}" 
-                       onchange="updateItemField(${index}, 'color', this.value.trim())"
-                       maxlength="50"
-                       placeholder="Color name (e.g., Red, Blue, Black)">
-            </td>
-            <td>
-                <input type="text" class="form-control form-control-sm" 
-                       value="${escapeHtml(item.storage || '')}" 
-                       onchange="updateItemField(${index}, 'storage', this.value.trim())"
-                       maxlength="50"
-                       placeholder="e.g., 128GB">
-            </td>
-            <td class="sim-config-cell" style="${showSIMConfig ? '' : 'display: none;'}">
-                <select class="form-select form-select-sm" 
-                        onchange="updateItemField(${index}, 'sim_configuration', this.value)">
-                    <option value="">Select</option>
-                    <option value="Single SIM" ${item.sim_configuration === 'Single SIM' ? 'selected' : ''}>Single SIM</option>
-                    <option value="Dual SIM" ${item.sim_configuration === 'Dual SIM' ? 'selected' : ''}>Dual SIM</option>
-                    <option value="eSIM" ${item.sim_configuration === 'eSIM' ? 'selected' : ''}>eSIM</option>
-                    <option value="Dual SIM + eSIM" ${item.sim_configuration === 'Dual SIM + eSIM' ? 'selected' : ''}>Dual SIM + eSIM</option>
-                </select>
-            </td>
-            <td>
-                <input type="text" class="form-control form-control-sm serial-number-input" 
-                       value="${escapeHtml(item.serial_number || '')}" 
-                       onchange="updateItemField(${index}, 'serial_number', this.value.trim())"
-                       onblur="validateSerialNumber(${index}, this)"
-                       maxlength="100"
-                       placeholder="Required"
-                       data-index="${index}"
-                       required>
-            </td>
-            <td class="imei-cell" style="${showIMEI ? '' : 'display: none;'}">
-                <input type="text" class="form-control form-control-sm imei-input" 
-                       value="${escapeHtml(item.imei || '')}" 
-                       onchange="updateItemField(${index}, 'imei', this.value.trim())"
-                       onblur="validateIMEI(${index}, this)"
-                       maxlength="15"
-                       pattern="[0-9]{15}"
-                       placeholder="15 digits"
-                       data-index="${index}">
-            </td>
-            <td>
-                <select class="form-select form-select-sm" 
-                        onchange="updateItemField(${index}, 'condition', this.value)">
-                    <option value="New" ${item.condition === 'New' ? 'selected' : ''}>New</option>
-                    <option value="Refurbished" ${item.condition === 'Refurbished' ? 'selected' : ''}>Refurbished</option>
-                    <option value="Used" ${item.condition === 'Used' ? 'selected' : ''}>Used</option>
-                </select>
-            </td>
-            <td class="battery-cell" style="${showBatteryHealth ? '' : 'display: none;'}">
-                <input type="number" class="form-control form-control-sm" 
-                       value="${item.battery_health || ''}" 
-                       onchange="validateAndUpdateField(${index}, 'battery_health', this.value, 0, 100)"
-                       onblur="validateBatteryHealth(${index}, this)"
-                       min="0" max="100" step="1"
-                       placeholder="0-100">
-            </td>
-            <td>
-                <input type="text" class="form-control form-control-sm" 
-                       value="${escapeHtml(item.manufacturer || '')}" 
-                       onchange="updateItemField(${index}, 'manufacturer', this.value.trim())"
-                       maxlength="100"
-                       placeholder="Manufacturer">
-            </td>
-            <td>
-                <input type="number" class="form-control form-control-sm" 
-                       value="${item.warranty_months || 0}" 
-                       onchange="validateAndUpdateField(${index}, 'warranty_months', this.value, 0, 999)"
-                       onblur="validateWarrantyMonths(${index}, this)"
-                       min="0" max="999" step="1"
-                       placeholder="Months">
-            </td>
+        let html = '';
+        
+        // Dynamic characteristic columns
+        charFields.forEach(field => {
+            html += buildCharFieldCell(index, field, item);
+        });
+        
+        // Always-present pricing columns
+        html += `
             <td>
                 <input type="number" step="0.01" class="form-control form-control-sm" 
                        value="${item.cost_price || ''}" 
                        onchange="updateItemField(${index}, 'cost_price', this.value)"
-                       min="0"
-                       placeholder="0.00">
+                       min="0" placeholder="0.00">
             </td>
             <td>
                 <input type="number" step="0.01" class="form-control form-control-sm" 
                        value="${item.selling_price || ''}" 
                        onchange="updateItemField(${index}, 'selling_price', this.value)"
-                       min="0"
-                       placeholder="0.00"
-                       required>
+                       min="0" placeholder="0.00" required>
             </td>
             <td>
                 <input type="number" step="0.01" class="form-control form-control-sm" 
                        value="${item.wholesale_price || ''}" 
                        onchange="updateItemField(${index}, 'wholesale_price', this.value)"
-                       min="0"
-                       placeholder="Optional">
+                       min="0" placeholder="Optional">
             </td>
             <td>
                 <span class="badge bg-${item.status === 'available' ? 'success' : (item.status === 'sold' ? 'danger' : 'secondary')}">
@@ -874,8 +876,9 @@ function renderSpecificItemsTable() {
                 `}
             </td>
         `;
-        tbody.appendChild(row);
         
+        row.innerHTML = html;
+        tbody.appendChild(row);
     });
 }
 
@@ -883,68 +886,6 @@ function renderSpecificItemsTable() {
 function updateItemField(index, field, value) {
     if (index >= 0 && index < specificItemsData.length) {
         specificItemsData[index][field] = value;
-    }
-}
-
-function validateAndUpdateField(index, field, value, min, max) {
-    const numValue = parseFloat(value);
-    if (isNaN(numValue) || value === '') {
-        if (field === 'battery_health' || field === 'warranty_months') {
-            updateItemField(index, field, '');
-            return;
-        }
-    }
-    
-    if (!isNaN(numValue)) {
-        if (numValue < min) {
-            value = min;
-        } else if (numValue > max) {
-            value = max;
-        }
-    }
-    
-    updateItemField(index, field, value);
-}
-
-function validateBatteryHealth(index, input) {
-    const value = parseFloat(input.value);
-    if (input.value !== '' && (isNaN(value) || value < 0 || value > 100)) {
-        input.classList.add('is-invalid');
-        Swal.fire({
-            icon: 'warning',
-            title: 'Invalid Battery Health',
-            text: 'Battery health must be between 0 and 100%',
-            timer: 2000,
-            showConfirmButton: false
-        });
-        input.value = '';
-        updateItemField(index, 'battery_health', '');
-    } else {
-        input.classList.remove('is-invalid');
-        if (value >= 0 && value <= 100) {
-            updateItemField(index, 'battery_health', value);
-        }
-    }
-}
-
-function validateWarrantyMonths(index, input) {
-    const value = parseInt(input.value);
-    if (input.value !== '' && (isNaN(value) || value < 0 || value > 999)) {
-        input.classList.add('is-invalid');
-        Swal.fire({
-            icon: 'warning',
-            title: 'Invalid Warranty',
-            text: 'Warranty months must be between 0 and 999',
-            timer: 2000,
-            showConfirmButton: false
-        });
-        input.value = 0;
-        updateItemField(index, 'warranty_months', 0);
-    } else {
-        input.classList.remove('is-invalid');
-        if (value >= 0 && value <= 999) {
-            updateItemField(index, 'warranty_months', value);
-        }
     }
 }
 
@@ -978,26 +919,32 @@ function validateIMEI(index, input) {
 }
 
 function addSpecificItemRow() {
-    specificItemsData.push({
+    // Build new item with only the assigned characteristic columns + always fields
+    const newItem = {
         id: null,
         product_id: <?= $product['id'] ?>,
         branch_id: <?= $product['branch_id'] ?? $_SESSION['branch_id'] ?? 'null' ?>,
-        color: '',
-        storage: '',
-        sim_configuration: showSIMConfig ? '' : null,
-        serial_number: '',
-        imei: showIMEI ? '' : null,
-        battery_health: showBatteryHealth ? '' : null,
-        manufacturer: '',
-        warranty_months: 0,
-        warranty_terms: '',
-        condition: 'New',
-        trade_in_eligible: 0,
         cost_price: '',
         selling_price: '',
         wholesale_price: '',
         status: 'available'
+    };
+    
+    // Add default values for each assigned characteristic
+    charFields.forEach(field => {
+        const col = field.column;
+        if (field.field_type === 'boolean') {
+            newItem[col] = 0;
+        } else if (field.field_type === 'number') {
+            newItem[col] = '';
+        } else if (col === 'condition') {
+            newItem[col] = 'New';
+        } else {
+            newItem[col] = '';
+        }
     });
+    
+    specificItemsData.push(newItem);
     renderSpecificItemsTable();
 }
 
@@ -1058,7 +1005,7 @@ function deleteSpecificItem(index, itemId) {
                     renderSpecificItemsTable();
                     Swal.fire('Success', 'Item deleted successfully', 'success');
                     setTimeout(() => window.location.reload(), 1000);
-    } else {
+                } else {
                     Swal.fire('Error', data.message || 'Failed to delete item', 'error');
                 }
             })
@@ -1078,23 +1025,28 @@ function saveSpecificItems() {
         const item = specificItemsData[i];
         const itemNum = i + 1;
         
-        // Validate serial number or IMEI is required (only for smartphone/tablet)
-        if (showIMEI && !item.serial_number && !item.imei) {
-            validationErrors.push(`Item ${itemNum}: Must have either Serial Number or IMEI`);
-        } else if (!showIMEI && !item.serial_number) {
-            validationErrors.push(`Item ${itemNum}: Serial Number is required`);
-        }
+        // Validate required characteristic fields
+        charFields.forEach(field => {
+            const col = field.column;
+            if (field.is_required) {
+                const val = item[col];
+                if (!val || (typeof val === 'string' && val.trim() === '')) {
+                    validationErrors.push(`Item ${itemNum}: ${field.label} is required`);
+                }
+            }
+        });
         
-        // Validate serial number if provided
-        if (item.serial_number && item.serial_number.trim().length === 0) {
-            validationErrors.push(`Item ${itemNum}: Serial Number cannot be empty`);
-        }
-        
-        // Validate IMEI format if provided (only for smartphone/tablet)
-        if (showIMEI && item.imei && item.imei.trim() !== '') {
-            const imei = item.imei.trim();
-            if (!/^\d{15}$/.test(imei)) {
+        // Validate IMEI format if present
+        if (hasIMEI && item.imei && item.imei.trim() !== '') {
+            if (!/^\d{15}$/.test(item.imei.trim())) {
                 validationErrors.push(`Item ${itemNum}: IMEI must be exactly 15 digits`);
+            }
+        }
+        
+        // If has both serial_number and imei fields, at least one is needed
+        if (hasSerialNumber && hasIMEI) {
+            if (!item.serial_number && !item.imei) {
+                validationErrors.push(`Item ${itemNum}: Must have either Serial Number or IMEI`);
             }
         }
         
@@ -1103,20 +1055,18 @@ function saveSpecificItems() {
             validationErrors.push(`Item ${itemNum}: Selling Price is required and must be greater than 0`);
         }
         
-        // Validate battery health
-        if (item.battery_health !== '' && item.battery_health !== null && item.battery_health !== undefined) {
-            const battery = parseFloat(item.battery_health);
-            if (isNaN(battery) || battery < 0 || battery > 100) {
-                validationErrors.push(`Item ${itemNum}: Battery health must be between 0 and 100%`);
-            }
+        // Validate field lengths
+        if (item.color && item.color.length > 50) {
+            validationErrors.push(`Item ${itemNum}: Color cannot exceed 50 characters`);
         }
-        
-        // Validate warranty months
-        if (item.warranty_months !== '' && item.warranty_months !== null && item.warranty_months !== undefined) {
-            const warranty = parseInt(item.warranty_months);
-            if (isNaN(warranty) || warranty < 0 || warranty > 999) {
-                validationErrors.push(`Item ${itemNum}: Warranty months must be between 0 and 999`);
-            }
+        if (item.storage && item.storage.length > 50) {
+            validationErrors.push(`Item ${itemNum}: Storage cannot exceed 50 characters`);
+        }
+        if (item.manufacturer && item.manufacturer.length > 100) {
+            validationErrors.push(`Item ${itemNum}: Manufacturer cannot exceed 100 characters`);
+        }
+        if (item.serial_number && item.serial_number.length > 100) {
+            validationErrors.push(`Item ${itemNum}: Serial Number cannot exceed 100 characters`);
         }
     }
     
@@ -1190,19 +1140,10 @@ function saveSpecificItems() {
                     if (result.updated) updated += result.updated;
                     if (result.errors) errors = errors.concat(result.errors);
                 } else {
-                    // Include both message and errors array
                     if (result.errors && result.errors.length > 0) {
-                        // Use specific errors from the array
                         errors = errors.concat(result.errors);
                     } else if (result.message) {
-                        // If no errors array but there's a message, check if message contains error details
-                        if (result.message.includes(':') && result.message.length > 50) {
-                            // Message likely contains error details, use it
-                            errors.push(result.message);
-                        } else {
-                            // Generic message, try to be more helpful
-                            errors.push(result.message || 'Failed to save');
-                        }
+                        errors.push(result.message || 'Failed to save');
                     } else {
                         errors.push('Failed to save');
                     }
@@ -1234,29 +1175,7 @@ function saveSpecificItems() {
                     window.location.reload();
                 });
             } else {
-                // Build error message from all sources
-                let errorMessage = '';
-                if (errors.length > 0) {
-                    errorMessage = errors.join('<br>');
-                } else {
-                    // Check if result has specific error messages
-                    results.forEach(result => {
-                        if (!result.success) {
-                            if (result.errors && result.errors.length > 0) {
-                                if (errorMessage) errorMessage += '<br>';
-                                errorMessage += result.errors.join('<br>');
-                            } else if (result.message) {
-                                if (errorMessage) errorMessage += '<br>';
-                                errorMessage += result.message;
-                            }
-                        }
-                    });
-                }
-                
-                if (!errorMessage) {
-                    errorMessage = 'Failed to save items';
-                }
-                
+                let errorMessage = errors.length > 0 ? errors.join('<br>') : 'Failed to save items';
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
