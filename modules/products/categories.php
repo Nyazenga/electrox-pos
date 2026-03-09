@@ -344,7 +344,7 @@ require_once APP_PATH . '/includes/header.php';
                     </div>
                     <div class="card-body">
                         <form id="addCharForm" onsubmit="return addCharacteristic(event)">
-                            <div class="row g-2">
+                            <div class="row g-2 align-items-end">
                                 <div class="col-md-3">
                                     <label class="form-label">Name (key) <span class="text-danger">*</span></label>
                                     <input type="text" class="form-control form-control-sm" id="newCharName" 
@@ -373,9 +373,9 @@ require_once APP_PATH . '/includes/header.php';
                                     <input type="text" class="form-control form-control-sm" id="newCharOptions" 
                                            placeholder="Comma-separated: S,M,L,XL">
                                 </div>
-                                <div class="col-md-1 d-flex align-items-end">
-                                    <button type="submit" class="btn btn-primary btn-sm w-100">
-                                        <i class="bi bi-plus"></i> Add
+                                <div class="col-auto">
+                                    <button type="submit" class="btn btn-primary btn-sm">
+                                        <i class="bi bi-plus-lg"></i> Add
                                     </button>
                                 </div>
                             </div>
