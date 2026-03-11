@@ -841,24 +841,39 @@ require_once APP_PATH . '/includes/header.php';
     setTimeout(initSettingsMenu, 100);
 })();
 
-function selectLayout(layout, element) {
-    document.querySelectorAll('.layout-option').forEach(opt => opt.classList.remove('active'));
-    if (element) {
-        element.classList.add('active');
+// Make selectLayout globally accessible
+window.selectLayout = function(layout, element) {
+    try {
+        var allOptions = document.querySelectorAll('.layout-option');
+        for (var i = 0; i < allOptions.length; i++) {
+            allOptions[i].classList.remove('active');
+        }
+        
+        if (element) {
+            element.classList.add('active');
+        }
+        
+        var radioInput = document.querySelector('input[value="' + layout + '"]');
+        if (radioInput) {
+            radioInput.checked = true;
+        }
+    } catch (error) {
+        console.error('Error in selectLayout:', error);
     }
-    const radioInput = document.querySelector(`input[value="${layout}"]`);
-    if (radioInput) {
-        radioInput.checked = true;
-    }
-}
+};
 
-function installWebApp() {
-    if ('serviceWorker' in navigator) {
-        Swal.fire('Web App', 'Web app installation feature to be implemented', 'info');
+// Make installWebApp globally accessible
+window.installWebApp = function() {
+    if (typeof Swal !== 'undefined') {
+        if ('serviceWorker' in navigator) {
+            Swal.fire('Web App', 'Web app installation feature to be implemented', 'info');
+        } else {
+            Swal.fire('Not Supported', 'Web app installation is not supported in this browser', 'warning');
+        }
     } else {
-        Swal.fire('Not Supported', 'Web app installation is not supported in this browser', 'warning');
+        alert('Web app installation feature to be implemented');
     }
-}
+};
 
 // Make cart layout cards clickable
 document.addEventListener('DOMContentLoaded', function() {
@@ -915,9 +930,10 @@ document.addEventListener('DOMContentLoaded', function() {
 // Printer Management Functions
 let currentBranchId = <?= json_encode($auth->getUser()['branch_id'] ?? 0) ?>;
 
-let currentEditingPrinterId = null;
+var currentEditingPrinterId = null;
 
-function openAddPrinterModal() {
+// Make printer functions globally accessible
+window.openAddPrinterModal = function() {
     currentEditingPrinterId = null;
     document.getElementById('addPrinterModalLabel').textContent = 'Add Printer';
     document.getElementById('addPrinterForm').reset();
@@ -928,7 +944,7 @@ function openAddPrinterModal() {
     modal.show();
 }
 
-function editPrinter(printerId) {
+window.editPrinter = function(printerId) {
     currentEditingPrinterId = printerId;
     
     // Fetch printer details
@@ -971,7 +987,7 @@ function editPrinter(printerId) {
     });
 }
 
-function refreshDeviceList() {
+window.refreshDeviceList = function() {
     const deviceList = document.getElementById('deviceList');
     deviceList.innerHTML = '<option value="">Loading devices...</option>';
     
@@ -1039,7 +1055,7 @@ function refreshDeviceList() {
     });
 }
 
-function loadPrinters() {
+window.loadPrinters = function() {
     fetch('<?= BASE_URL ?>/ajax/get_saved_printers.php', {
         method: 'GET',
         headers: {
@@ -1095,7 +1111,7 @@ function loadPrinters() {
     });
 }
 
-function savePrinter() {
+window.savePrinter = function() {
     const form = document.getElementById('addPrinterForm');
     const formData = new FormData(form);
     
@@ -1135,7 +1151,7 @@ function savePrinter() {
     });
 }
 
-function deletePrinter(printerId) {
+window.deletePrinter = function(printerId) {
     Swal.fire({
         title: 'Delete printer',
         text: 'Are you sure you want to delete this printer ?',
