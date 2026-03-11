@@ -406,7 +406,7 @@ require_once APP_PATH . '/includes/header.php';
             <form method="POST" id="homeLayoutForm">
                 <div class="row">
                     <div class="col-md-6">
-                        <div class="layout-option <?= $settings['pos_home_layout'] == 'grid' ? 'active' : '' ?>" onclick="selectLayout('grid')">
+                        <div class="layout-option <?= $settings['pos_home_layout'] == 'grid' ? 'active' : '' ?>" onclick="selectLayout('grid', this)">
                             <div class="layout-preview">
                                 <i class="bi bi-grid-3x3-gap"></i>
                             </div>
@@ -779,11 +779,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-function selectLayout(layout) {
+function selectLayout(layout, element) {
     document.querySelectorAll('.layout-option').forEach(opt => opt.classList.remove('active'));
-    const clickedElement = event ? event.currentTarget : window.event.currentTarget;
-    if (clickedElement) {
-        clickedElement.classList.add('active');
+    if (element) {
+        element.classList.add('active');
     }
     const radioInput = document.querySelector(`input[value="${layout}"]`);
     if (radioInput) {
