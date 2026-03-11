@@ -141,29 +141,6 @@ $settings = [
 require_once APP_PATH . '/includes/header.php';
 ?>
 
-<script>
-// Define selectLayout IMMEDIATELY so it's available when HTML onclick handlers are parsed
-window.selectLayout = function(layout, element) {
-    try {
-        var allOptions = document.querySelectorAll('.layout-option');
-        for (var i = 0; i < allOptions.length; i++) {
-            allOptions[i].classList.remove('active');
-        }
-        
-        if (element) {
-            element.classList.add('active');
-        }
-        
-        var radioInput = document.querySelector('input[value="' + layout + '"]');
-        if (radioInput) {
-            radioInput.checked = true;
-        }
-    } catch (error) {
-        console.error('Error in selectLayout:', error);
-    }
-};
-</script>
-
 <style>
 .settings-container {
     display: flex;
@@ -193,9 +170,6 @@ window.selectLayout = function(layout, element) {
     transition: all 0.3s;
     margin-bottom: 5px;
     border-radius: 8px;
-    user-select: none;
-    -webkit-user-select: none;
-    pointer-events: auto !important;
 }
 
 .settings-menu-item:hover {
@@ -432,7 +406,7 @@ window.selectLayout = function(layout, element) {
             <form method="POST" id="homeLayoutForm">
                 <div class="row">
                     <div class="col-md-6">
-                        <div class="layout-option <?= $settings['pos_home_layout'] == 'grid' ? 'active' : '' ?>" onclick="selectLayout('grid', this)">
+                        <div class="layout-option <?= $settings['pos_home_layout'] == 'grid' ? 'active' : '' ?>" onclick="selectLayout('grid')">
                             <div class="layout-preview">
                                 <i class="bi bi-grid-3x3-gap"></i>
                             </div>
@@ -442,7 +416,7 @@ window.selectLayout = function(layout, element) {
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <div class="layout-option <?= $settings['pos_home_layout'] == 'simple-grid' ? 'active' : '' ?>" onclick="selectLayout('simple-grid', this)">
+                        <div class="layout-option <?= $settings['pos_home_layout'] == 'simple-grid' ? 'active' : '' ?>" onclick="selectLayout('simple-grid')">
                             <div class="layout-preview">
                                 <i class="bi bi-grid"></i>
                             </div>
@@ -452,7 +426,7 @@ window.selectLayout = function(layout, element) {
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <div class="layout-option <?= $settings['pos_home_layout'] == 'list' ? 'active' : '' ?>" onclick="selectLayout('list', this)">
+                        <div class="layout-option <?= $settings['pos_home_layout'] == 'list' ? 'active' : '' ?>" onclick="selectLayout('list')">
                             <div class="layout-preview">
                                 <i class="bi bi-list-ul"></i>
                             </div>
@@ -462,7 +436,7 @@ window.selectLayout = function(layout, element) {
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <div class="layout-option <?= $settings['pos_home_layout'] == 'retail' ? 'active' : '' ?>" onclick="selectLayout('retail', this)">
+                        <div class="layout-option <?= $settings['pos_home_layout'] == 'retail' ? 'active' : '' ?>" onclick="selectLayout('retail')">
                             <div class="layout-preview">
                                 <i class="bi bi-shop"></i>
                             </div>
@@ -788,97 +762,24 @@ window.selectLayout = function(layout, element) {
 </div>
 
 <script>
-(function() {
-    'use strict';
-    
-    function initSettingsMenu() {
-        try {
-            var menuItems = document.querySelectorAll('.settings-menu-item');
-            
-            if (menuItems.length === 0) {
-                console.warn('No menu items found');
-                return;
-            }
-            
-            for (var i = 0; i < menuItems.length; i++) {
-                var item = menuItems[i];
-                
-                // Make sure it's clickable
-                item.style.cursor = 'pointer';
-                item.style.pointerEvents = 'auto';
-                
-                // Remove any existing listeners by cloning
-                var newItem = item.cloneNode(true);
-                item.parentNode.replaceChild(newItem, item);
-                item = newItem;
-                
-                // Add click handler
-                item.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    var section = this.getAttribute('data-section');
-                    if (!section) {
-                        console.error('No data-section attribute found');
-                        return;
-                    }
-                    
-                    // Remove active class from all items
-                    var allItems = document.querySelectorAll('.settings-menu-item');
-                    for (var j = 0; j < allItems.length; j++) {
-                        allItems[j].classList.remove('active');
-                    }
-                    
-                    // Add active class to clicked item
-                    this.classList.add('active');
-                    
-                    // Hide all sections
-                    var allSections = document.querySelectorAll('.settings-section');
-                    for (var k = 0; k < allSections.length; k++) {
-                        allSections[k].style.display = 'none';
-                    }
-                    
-                    // Show target section
-                    var targetSection = document.getElementById(section);
-                    if (targetSection) {
-                        targetSection.style.display = 'block';
-                    } else {
-                        console.error('Section not found:', section);
-                    }
-                });
-            }
-        } catch (error) {
-            console.error('Error initializing settings menu:', error);
-        }
-    }
-    
-    // Try multiple initialization methods
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initSettingsMenu);
-    } else {
-        // DOM already loaded
-        initSettingsMenu();
-    }
-    
-    // Also try after a short delay as fallback
-    setTimeout(initSettingsMenu, 100);
-})();
-
-// Make installWebApp globally accessible
-window.installWebApp = function() {
-    if (typeof Swal !== 'undefined') {
-        if ('serviceWorker' in navigator) {
-            Swal.fire('Web App', 'Web app installation feature to be implemented', 'info');
-        } else {
-            Swal.fire('Not Supported', 'Web app installation is not supported in this browser', 'warning');
-        }
-    } else {
-        alert('Web app installation feature to be implemented');
-    }
-};
-
-// Make cart layout cards clickable
+// Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', function() {
+    // Setup menu item click handlers
+    document.querySelectorAll('.settings-menu-item').forEach(item => {
+        item.addEventListener('click', function() {
+            document.querySelectorAll('.settings-menu-item').forEach(i => i.classList.remove('active'));
+            this.classList.add('active');
+            
+            const section = this.dataset.section;
+            document.querySelectorAll('.settings-section').forEach(s => s.style.display = 'none');
+            const targetSection = document.getElementById(section);
+            if (targetSection) {
+                targetSection.style.display = 'block';
+            }
+        });
+    });
+    
+    // Make cart layout cards clickable
     const cartLayoutCards = document.querySelectorAll('.cart-layout-card');
     
     cartLayoutCards.forEach(card => {
@@ -910,32 +811,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const printerMenuItem = document.querySelector('[data-section="printer"]');
     if (printerMenuItem) {
         printerMenuItem.addEventListener('click', function() {
-            setTimeout(function() {
-                loadPrinters();
-            }, 100);
+            loadPrinters();
         });
-    }
-    
-    // Initialize settings menu on page load
-    const activeMenuItem = document.querySelector('.settings-menu-item.active');
-    if (activeMenuItem) {
-        const section = activeMenuItem.dataset.section;
-        if (section) {
-            const targetSection = document.getElementById(section);
-            if (targetSection) {
-                targetSection.style.display = 'block';
-            }
-        }
     }
 });
 
 // Printer Management Functions
 let currentBranchId = <?= json_encode($auth->getUser()['branch_id'] ?? 0) ?>;
 
-var currentEditingPrinterId = null;
+let currentEditingPrinterId = null;
 
-// Make printer functions globally accessible
-window.openAddPrinterModal = function() {
+function openAddPrinterModal() {
     currentEditingPrinterId = null;
     document.getElementById('addPrinterModalLabel').textContent = 'Add Printer';
     document.getElementById('addPrinterForm').reset();
@@ -946,7 +832,7 @@ window.openAddPrinterModal = function() {
     modal.show();
 }
 
-window.editPrinter = function(printerId) {
+function editPrinter(printerId) {
     currentEditingPrinterId = printerId;
     
     // Fetch printer details
@@ -989,7 +875,7 @@ window.editPrinter = function(printerId) {
     });
 }
 
-window.refreshDeviceList = function() {
+function refreshDeviceList() {
     const deviceList = document.getElementById('deviceList');
     deviceList.innerHTML = '<option value="">Loading devices...</option>';
     
@@ -1057,7 +943,7 @@ window.refreshDeviceList = function() {
     });
 }
 
-window.loadPrinters = function() {
+function loadPrinters() {
     fetch('<?= BASE_URL ?>/ajax/get_saved_printers.php', {
         method: 'GET',
         headers: {
@@ -1113,7 +999,7 @@ window.loadPrinters = function() {
     });
 }
 
-window.savePrinter = function() {
+function savePrinter() {
     const form = document.getElementById('addPrinterForm');
     const formData = new FormData(form);
     
@@ -1153,7 +1039,7 @@ window.savePrinter = function() {
     });
 }
 
-window.deletePrinter = function(printerId) {
+function deletePrinter(printerId) {
     Swal.fire({
         title: 'Delete printer',
         text: 'Are you sure you want to delete this printer ?',
