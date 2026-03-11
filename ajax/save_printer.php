@@ -27,6 +27,7 @@ if (!$branchId) {
     exit;
 }
 
+$printerId = intval($_POST['printer_id'] ?? 0);
 $printerName = trim($_POST['printer_name'] ?? '');
 $connectionMode = $_POST['connection_mode'] ?? 'USB';
 $deviceId = trim($_POST['device_id'] ?? '');
@@ -68,27 +69,74 @@ try {
         $status = 'active';
     }
     
-    // Insert printer
-    $result = $db->executeQuery(
-        "INSERT INTO printers (branch_id, printer_name, connection_mode, device_id, paper_size, print_receipts, print_bills, cash_drawer_connected, status) 
-         VALUES (:branch_id, :printer_name, :connection_mode, :device_id, :paper_size, :print_receipts, :print_bills, :cash_drawer_connected, :status)",
-        [
-            ':branch_id' => $branchId,
-            ':printer_name' => $printerName,
-            ':connection_mode' => $connectionMode,
-            ':device_id' => $deviceId,
-            ':paper_size' => $paperSize,
-            ':print_receipts' => $printReceipts,
-            ':print_bills' => $printBills,
-            ':cash_drawer_connected' => $cashDrawerConnected,
-            ':status' => $status
-        ]
-    );
+    // Check if updating existing printer
+    if ($printerId > 0) {
+        // Verify printer belongs to user's branch
+        $existingPrinter = $db->getRow(
+            "SELECT * FROM printers WHERE id = :id AND branch_id = :branch_id",
+            [':id' => $printerId, ':branch_id' => $branchId]
+        );
+        
+        if (!$existingPrinter) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Printer not found or you do not have permission to update it'
+            ]);
+            exit;
+        }
+        
+        // Update printer
+        $result = $db->executeQuery(
+            "UPDATE printers SET 
+                printer_name = :printer_name,
+                connection_mode = :connection_mode,
+                device_id = :device_id,
+                paper_size = :paper_size,
+                print_receipts = :print_receipts,
+                print_bills = :print_bills,
+                cash_drawer_connected = :cash_drawer_connected,
+                status = :status
+             WHERE id = :id AND branch_id = :branch_id",
+            [
+                ':id' => $printerId,
+                ':branch_id' => $branchId,
+                ':printer_name' => $printerName,
+                ':connection_mode' => $connectionMode,
+                ':device_id' => $deviceId,
+                ':paper_size' => $paperSize,
+                ':print_receipts' => $printReceipts,
+                ':print_bills' => $printBills,
+                ':cash_drawer_connected' => $cashDrawerConnected,
+                ':status' => $status
+            ]
+        );
+        
+        $message = 'Printer updated successfully';
+    } else {
+        // Insert new printer
+        $result = $db->executeQuery(
+            "INSERT INTO printers (branch_id, printer_name, connection_mode, device_id, paper_size, print_receipts, print_bills, cash_drawer_connected, status) 
+             VALUES (:branch_id, :printer_name, :connection_mode, :device_id, :paper_size, :print_receipts, :print_bills, :cash_drawer_connected, :status)",
+            [
+                ':branch_id' => $branchId,
+                ':printer_name' => $printerName,
+                ':connection_mode' => $connectionMode,
+                ':device_id' => $deviceId,
+                ':paper_size' => $paperSize,
+                ':print_receipts' => $printReceipts,
+                ':print_bills' => $printBills,
+                ':cash_drawer_connected' => $cashDrawerConnected,
+                ':status' => $status
+            ]
+        );
+        
+        $message = 'Printer saved successfully';
+    }
     
     if ($result) {
         echo json_encode([
             'success' => true,
-            'message' => 'Printer saved successfully'
+            'message' => $message
         ]);
     } else {
         echo json_encode([

@@ -638,7 +638,7 @@ require_once APP_PATH . '/includes/header.php';
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h5>Configured Printers</h5>
                 <button type="button" class="btn btn-primary" onclick="openAddPrinterModal()">
-                    <i class="bi bi-plus-circle"></i> Add Printer
+                    <i class="bi bi-plus-circle"></i> Add New
                 </button>
             </div>
             
@@ -674,7 +674,7 @@ require_once APP_PATH . '/includes/header.php';
     </div>
 </div>
 
-<!-- Add Printer Modal -->
+<!-- Add/Edit Printer Modal -->
 <div class="modal fade" id="addPrinterModal" tabindex="-1" aria-labelledby="addPrinterModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -684,6 +684,7 @@ require_once APP_PATH . '/includes/header.php';
             </div>
             <div class="modal-body">
                 <form id="addPrinterForm">
+                    <input type="hidden" id="printerId" name="printer_id" value="">
                     <div class="mb-3">
                         <label class="form-label">Printer name</label>
                         <input type="text" class="form-control" id="printerName" name="printer_name" placeholder="Printer name" required>
@@ -827,12 +828,60 @@ document.addEventListener('DOMContentLoaded', function() {
 // Printer Management Functions
 let currentBranchId = <?= json_encode($auth->getUser()['branch_id'] ?? 0) ?>;
 
+let currentEditingPrinterId = null;
+
 function openAddPrinterModal() {
-    const modal = new bootstrap.Modal(document.getElementById('addPrinterModal'));
+    currentEditingPrinterId = null;
+    document.getElementById('addPrinterModalLabel').textContent = 'Add Printer';
     document.getElementById('addPrinterForm').reset();
+    document.getElementById('printerId').value = '';
     document.getElementById('deviceList').innerHTML = '<option value="">-- Select a device --</option>';
     refreshDeviceList();
+    const modal = new bootstrap.Modal(document.getElementById('addPrinterModal'));
     modal.show();
+}
+
+function editPrinter(printerId) {
+    currentEditingPrinterId = printerId;
+    
+    // Fetch printer details
+    fetch('<?= BASE_URL ?>/ajax/get_printer.php?printer_id=' + printerId, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.printer) {
+            const printer = data.printer;
+            
+            // Update modal title
+            document.getElementById('addPrinterModalLabel').textContent = 'Update printer';
+            
+            // Fill form fields
+            document.getElementById('printerId').value = printer.id;
+            document.getElementById('printerName').value = printer.printer_name;
+            document.getElementById('connectionMode').value = printer.connection_mode;
+            document.getElementById('paperSize').value = printer.paper_size;
+            document.getElementById('printReceiptsBills').checked = printer.print_receipts == 1 || printer.print_bills == 1;
+            document.getElementById('printerStatus').checked = printer.status === 'active';
+            document.getElementById('cashDrawerConnected').checked = printer.cash_drawer_connected == 1;
+            
+            // Set device list
+            document.getElementById('deviceList').innerHTML = `<option value="${printer.device_id}" selected>${printer.device_id}</option>`;
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('addPrinterModal'));
+            modal.show();
+        } else {
+            Swal.fire('Error', data.message || 'Failed to load printer details', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error loading printer:', error);
+        Swal.fire('Error', 'An error occurred while loading printer details', 'error');
+    });
 }
 
 function refreshDeviceList() {
@@ -915,31 +964,35 @@ function loadPrinters() {
         const printersList = document.getElementById('printers-list');
         
         if (data.success && data.printers && data.printers.length > 0) {
-            printersList.innerHTML = '';
+            // Create table structure
+            printersList.innerHTML = `
+                <table class="table table-hover">
+                    <thead style="background-color: #f8f9fa;">
+                        <tr>
+                            <th>Name</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="printers-table-body">
+                    </tbody>
+                </table>
+            `;
+            
+            const tbody = document.getElementById('printers-table-body');
             data.printers.forEach(printer => {
-                const printerCard = document.createElement('div');
-                printerCard.className = 'card mb-3';
-                printerCard.innerHTML = `
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="mb-1">${escapeHtml(printer.printer_name)}</h5>
-                                <p class="text-muted mb-0 small">
-                                    <span class="badge bg-secondary">${printer.connection_mode}</span>
-                                    <span class="badge bg-info">${printer.paper_size}</span>
-                                    ${printer.cash_drawer_connected == 1 ? '<span class="badge bg-success">Cash Drawer</span>' : ''}
-                                    <span class="badge ${printer.status == 'active' ? 'bg-success' : 'bg-secondary'}">${printer.status}</span>
-                                </p>
-                            </div>
-                            <div>
-                                <button class="btn btn-sm btn-danger" onclick="deletePrinter(${printer.id})">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${escapeHtml(printer.printer_name)}</td>
+                    <td>
+                        <button class="btn btn-sm btn-link text-primary p-0 me-2" onclick="editPrinter(${printer.id})" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-link text-danger p-0" onclick="deletePrinter(${printer.id})" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
                 `;
-                printersList.appendChild(printerCard);
+                tbody.appendChild(row);
             });
         } else {
             printersList.innerHTML = `
@@ -968,6 +1021,12 @@ function savePrinter() {
     formData.append('status', document.getElementById('printerStatus').checked ? 'active' : 'inactive');
     formData.append('cash_drawer_connected', document.getElementById('cashDrawerConnected').checked ? '1' : '0');
     
+    // Add printer_id if editing
+    const printerId = document.getElementById('printerId').value;
+    if (printerId) {
+        formData.append('printer_id', printerId);
+    }
+    
     fetch('<?= BASE_URL ?>/ajax/save_printer.php', {
         method: 'POST',
         body: formData
@@ -975,7 +1034,8 @@ function savePrinter() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            Swal.fire('Success', 'Printer saved successfully!', 'success');
+            const message = printerId ? 'Printer updated successfully!' : 'Printer saved successfully!';
+            Swal.fire('Success', message, 'success');
             bootstrap.Modal.getInstance(document.getElementById('addPrinterModal')).hide();
             loadPrinters();
         } else {
@@ -990,13 +1050,14 @@ function savePrinter() {
 
 function deletePrinter(printerId) {
     Swal.fire({
-        title: 'Delete Printer?',
-        text: 'Are you sure you want to delete this printer?',
+        title: 'Delete printer',
+        text: 'Are you sure you want to delete this printer ?',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#d33',
-        cancelButtonColor: '#3085d6',
-        confirmButtonText: 'Yes, delete it!'
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'DELETE',
+        cancelButtonText: 'CANCEL'
     }).then((result) => {
         if (result.isConfirmed) {
             fetch('<?= BASE_URL ?>/ajax/delete_printer.php', {
