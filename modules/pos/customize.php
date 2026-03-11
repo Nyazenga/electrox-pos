@@ -762,21 +762,33 @@ require_once APP_PATH . '/includes/header.php';
 </div>
 
 <script>
-document.querySelectorAll('.settings-menu-item').forEach(item => {
-    item.addEventListener('click', function() {
-        document.querySelectorAll('.settings-menu-item').forEach(i => i.classList.remove('active'));
-        this.classList.add('active');
-        
-        const section = this.dataset.section;
-        document.querySelectorAll('.settings-section').forEach(s => s.style.display = 'none');
-        document.getElementById(section).style.display = 'block';
+document.addEventListener('DOMContentLoaded', function() {
+    // Settings menu item click handlers
+    document.querySelectorAll('.settings-menu-item').forEach(item => {
+        item.addEventListener('click', function() {
+            document.querySelectorAll('.settings-menu-item').forEach(i => i.classList.remove('active'));
+            this.classList.add('active');
+            
+            const section = this.dataset.section;
+            document.querySelectorAll('.settings-section').forEach(s => s.style.display = 'none');
+            const targetSection = document.getElementById(section);
+            if (targetSection) {
+                targetSection.style.display = 'block';
+            }
+        });
     });
 });
 
 function selectLayout(layout) {
     document.querySelectorAll('.layout-option').forEach(opt => opt.classList.remove('active'));
-    event.currentTarget.classList.add('active');
-    document.querySelector(`input[value="${layout}"]`).checked = true;
+    const clickedElement = event ? event.currentTarget : window.event.currentTarget;
+    if (clickedElement) {
+        clickedElement.classList.add('active');
+    }
+    const radioInput = document.querySelector(`input[value="${layout}"]`);
+    if (radioInput) {
+        radioInput.checked = true;
+    }
 }
 
 function installWebApp() {
@@ -820,8 +832,22 @@ document.addEventListener('DOMContentLoaded', function() {
     const printerMenuItem = document.querySelector('[data-section="printer"]');
     if (printerMenuItem) {
         printerMenuItem.addEventListener('click', function() {
-            loadPrinters();
+            setTimeout(function() {
+                loadPrinters();
+            }, 100);
         });
+    }
+    
+    // Initialize settings menu on page load
+    const activeMenuItem = document.querySelector('.settings-menu-item.active');
+    if (activeMenuItem) {
+        const section = activeMenuItem.dataset.section;
+        if (section) {
+            const targetSection = document.getElementById(section);
+            if (targetSection) {
+                targetSection.style.display = 'block';
+            }
+        }
     }
 });
 
