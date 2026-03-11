@@ -170,6 +170,9 @@ require_once APP_PATH . '/includes/header.php';
     transition: all 0.3s;
     margin-bottom: 5px;
     border-radius: 8px;
+    user-select: none;
+    -webkit-user-select: none;
+    pointer-events: auto !important;
 }
 
 .settings-menu-item:hover {
@@ -764,19 +767,46 @@ require_once APP_PATH . '/includes/header.php';
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Settings menu item click handlers
-    document.querySelectorAll('.settings-menu-item').forEach(item => {
-        item.addEventListener('click', function() {
+    const menuItems = document.querySelectorAll('.settings-menu-item');
+    console.log('Found', menuItems.length, 'menu items');
+    
+    menuItems.forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            console.log('Menu item clicked:', this.dataset.section);
+            
+            // Remove active class from all items
             document.querySelectorAll('.settings-menu-item').forEach(i => i.classList.remove('active'));
+            // Add active class to clicked item
             this.classList.add('active');
             
+            // Get section ID from data attribute
             const section = this.dataset.section;
-            document.querySelectorAll('.settings-section').forEach(s => s.style.display = 'none');
+            console.log('Switching to section:', section);
+            
+            // Hide all sections
+            document.querySelectorAll('.settings-section').forEach(s => {
+                s.style.display = 'none';
+            });
+            
+            // Show target section
             const targetSection = document.getElementById(section);
             if (targetSection) {
                 targetSection.style.display = 'block';
+                console.log('Section displayed:', section);
+            } else {
+                console.error('Section not found:', section);
             }
         });
+        
+        // Also make sure it's clickable
+        item.style.cursor = 'pointer';
+        item.style.pointerEvents = 'auto';
     });
+    
+    console.log('Menu item handlers attached');
 });
 
 function selectLayout(layout, element) {
