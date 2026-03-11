@@ -141,6 +141,29 @@ $settings = [
 require_once APP_PATH . '/includes/header.php';
 ?>
 
+<script>
+// Define selectLayout IMMEDIATELY so it's available when HTML onclick handlers are parsed
+window.selectLayout = function(layout, element) {
+    try {
+        var allOptions = document.querySelectorAll('.layout-option');
+        for (var i = 0; i < allOptions.length; i++) {
+            allOptions[i].classList.remove('active');
+        }
+        
+        if (element) {
+            element.classList.add('active');
+        }
+        
+        var radioInput = document.querySelector('input[value="' + layout + '"]');
+        if (radioInput) {
+            radioInput.checked = true;
+        }
+    } catch (error) {
+        console.error('Error in selectLayout:', error);
+    }
+};
+</script>
+
 <style>
 .settings-container {
     display: flex;
@@ -765,27 +788,6 @@ require_once APP_PATH . '/includes/header.php';
 </div>
 
 <script>
-// Define selectLayout FIRST before any HTML that uses it
-window.selectLayout = function(layout, element) {
-    try {
-        var allOptions = document.querySelectorAll('.layout-option');
-        for (var i = 0; i < allOptions.length; i++) {
-            allOptions[i].classList.remove('active');
-        }
-        
-        if (element) {
-            element.classList.add('active');
-        }
-        
-        var radioInput = document.querySelector('input[value="' + layout + '"]');
-        if (radioInput) {
-            radioInput.checked = true;
-        }
-    } catch (error) {
-        console.error('Error in selectLayout:', error);
-    }
-};
-
 (function() {
     'use strict';
     
