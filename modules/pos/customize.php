@@ -765,49 +765,81 @@ require_once APP_PATH . '/includes/header.php';
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Settings menu item click handlers
-    const menuItems = document.querySelectorAll('.settings-menu-item');
-    console.log('Found', menuItems.length, 'menu items');
+(function() {
+    'use strict';
     
-    menuItems.forEach(item => {
-        item.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
+    function initSettingsMenu() {
+        try {
+            var menuItems = document.querySelectorAll('.settings-menu-item');
             
-            console.log('Menu item clicked:', this.dataset.section);
-            
-            // Remove active class from all items
-            document.querySelectorAll('.settings-menu-item').forEach(i => i.classList.remove('active'));
-            // Add active class to clicked item
-            this.classList.add('active');
-            
-            // Get section ID from data attribute
-            const section = this.dataset.section;
-            console.log('Switching to section:', section);
-            
-            // Hide all sections
-            document.querySelectorAll('.settings-section').forEach(s => {
-                s.style.display = 'none';
-            });
-            
-            // Show target section
-            const targetSection = document.getElementById(section);
-            if (targetSection) {
-                targetSection.style.display = 'block';
-                console.log('Section displayed:', section);
-            } else {
-                console.error('Section not found:', section);
+            if (menuItems.length === 0) {
+                console.warn('No menu items found');
+                return;
             }
-        });
-        
-        // Also make sure it's clickable
-        item.style.cursor = 'pointer';
-        item.style.pointerEvents = 'auto';
-    });
+            
+            for (var i = 0; i < menuItems.length; i++) {
+                var item = menuItems[i];
+                
+                // Make sure it's clickable
+                item.style.cursor = 'pointer';
+                item.style.pointerEvents = 'auto';
+                
+                // Remove any existing listeners by cloning
+                var newItem = item.cloneNode(true);
+                item.parentNode.replaceChild(newItem, item);
+                item = newItem;
+                
+                // Add click handler
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    var section = this.getAttribute('data-section');
+                    if (!section) {
+                        console.error('No data-section attribute found');
+                        return;
+                    }
+                    
+                    // Remove active class from all items
+                    var allItems = document.querySelectorAll('.settings-menu-item');
+                    for (var j = 0; j < allItems.length; j++) {
+                        allItems[j].classList.remove('active');
+                    }
+                    
+                    // Add active class to clicked item
+                    this.classList.add('active');
+                    
+                    // Hide all sections
+                    var allSections = document.querySelectorAll('.settings-section');
+                    for (var k = 0; k < allSections.length; k++) {
+                        allSections[k].style.display = 'none';
+                    }
+                    
+                    // Show target section
+                    var targetSection = document.getElementById(section);
+                    if (targetSection) {
+                        targetSection.style.display = 'block';
+                    } else {
+                        console.error('Section not found:', section);
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Error initializing settings menu:', error);
+        }
+    }
     
-    console.log('Menu item handlers attached');
-});
+    // Try multiple initialization methods
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initSettingsMenu);
+    } else {
+        // DOM already loaded
+        initSettingsMenu();
+    }
+    
+    // Also try after a short delay as fallback
+    setTimeout(initSettingsMenu, 100);
+})();
 
 function selectLayout(layout, element) {
     document.querySelectorAll('.layout-option').forEach(opt => opt.classList.remove('active'));
