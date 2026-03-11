@@ -416,7 +416,7 @@ require_once APP_PATH . '/includes/header.php';
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <div class="layout-option <?= $settings['pos_home_layout'] == 'simple-grid' ? 'active' : '' ?>" onclick="selectLayout('simple-grid')">
+                        <div class="layout-option <?= $settings['pos_home_layout'] == 'simple-grid' ? 'active' : '' ?>" onclick="selectLayout('simple-grid', this)">
                             <div class="layout-preview">
                                 <i class="bi bi-grid"></i>
                             </div>
@@ -426,7 +426,7 @@ require_once APP_PATH . '/includes/header.php';
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <div class="layout-option <?= $settings['pos_home_layout'] == 'list' ? 'active' : '' ?>" onclick="selectLayout('list')">
+                        <div class="layout-option <?= $settings['pos_home_layout'] == 'list' ? 'active' : '' ?>" onclick="selectLayout('list', this)">
                             <div class="layout-preview">
                                 <i class="bi bi-list-ul"></i>
                             </div>
@@ -436,7 +436,7 @@ require_once APP_PATH . '/includes/header.php';
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <div class="layout-option <?= $settings['pos_home_layout'] == 'retail' ? 'active' : '' ?>" onclick="selectLayout('retail')">
+                        <div class="layout-option <?= $settings['pos_home_layout'] == 'retail' ? 'active' : '' ?>" onclick="selectLayout('retail', this)">
                             <div class="layout-preview">
                                 <i class="bi bi-shop"></i>
                             </div>
