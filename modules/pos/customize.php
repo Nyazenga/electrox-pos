@@ -618,13 +618,37 @@ require_once APP_PATH . '/includes/header.php';
         <!-- Printer Setup -->
         <div id="printer" class="settings-section" style="display: none;">
             <h4 class="mb-4">Printer Setup</h4>
-            <form method="POST">
-                <div class="mb-3">
-                    <label>Printer Name</label>
-                    <input type="text" name="setting_pos_printer_setup" value="<?= escapeHtml($settings['pos_printer_setup']) ?>" class="form-control">
+            <p class="text-muted mb-4">Please follow the below instructions.</p>
+            
+            <div class="mb-4">
+                <ol class="mb-4" style="line-height: 2;">
+                    <li>Download the printer setup 
+                        <a href="<?= BASE_URL ?>/printersetupwifi_v2.0.zip" class="btn btn-sm btn-primary ms-2" download>
+                            <i class="bi bi-download"></i> Download
+                        </a>
+                    </li>
+                    <li>Unzip the setup zip file.</li>
+                    <li>Click on the setup.exe and install the software.</li>
+                    <li>Run the Thermal printer setup shortcut on the desktop.</li>
+                    <li>Refresh the device list.</li>
+                    <li>Select the correct device.</li>
+                </ol>
+            </div>
+            
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5>Configured Printers</h5>
+                <button type="button" class="btn btn-primary" onclick="openAddPrinterModal()">
+                    <i class="bi bi-plus-circle"></i> Add Printer
+                </button>
+            </div>
+            
+            <div id="printers-list">
+                <!-- Printers will be loaded here via AJAX -->
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-printer" style="font-size: 48px; opacity: 0.3;"></i>
+                    <p class="mt-2">You do not have printers yet.</p>
                 </div>
-                <button type="submit" class="btn btn-primary">Save</button>
-            </form>
+            </div>
         </div>
         
         <!-- Web App -->
@@ -646,6 +670,92 @@ require_once APP_PATH . '/includes/header.php';
                 </div>
                 <button type="submit" class="btn btn-primary">Save</button>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Printer Modal -->
+<div class="modal fade" id="addPrinterModal" tabindex="-1" aria-labelledby="addPrinterModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addPrinterModalLabel">Add Printer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addPrinterForm">
+                    <div class="mb-3">
+                        <label class="form-label">Printer name</label>
+                        <input type="text" class="form-control" id="printerName" name="printer_name" placeholder="Printer name" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label mb-0">Print receipts and bills</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="printReceiptsBills" name="print_receipts_bills" checked>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Connection mode</label>
+                        <select class="form-select" id="connectionMode" name="connection_mode" required>
+                            <option value="USB" selected>USB</option>
+                            <option value="Network">Network</option>
+                            <option value="Bluetooth">Bluetooth</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label mb-0">Refresh the device list.</label>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="refreshDeviceList()">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                            <i class="bi bi-info-circle text-muted ms-2" data-bs-toggle="tooltip" title="Make sure the Thermal printer setup is running on your desktop"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Device list</label>
+                        <select class="form-select" id="deviceList" name="device_id" required>
+                            <option value="">-- Select a device --</option>
+                        </select>
+                        <small class="text-muted">If no devices appear, make sure the Thermal printer setup is running.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Select paper size</label>
+                        <select class="form-select" id="paperSize" name="paper_size" required>
+                            <option value="80mm" selected>80mm</option>
+                            <option value="58mm">58mm</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label mb-0">Status</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="printerStatus" name="status" checked>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label mb-0">Connect the cash drawer to the printer</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="cashDrawerConnected" name="cash_drawer_connected">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="savePrinter()">Save</button>
+            </div>
         </div>
     </div>
 </div>
@@ -704,7 +814,220 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Hover effects are handled by CSS
     });
+    
+    // Load printers when printer section is shown
+    const printerMenuItem = document.querySelector('[data-section="printer"]');
+    if (printerMenuItem) {
+        printerMenuItem.addEventListener('click', function() {
+            loadPrinters();
+        });
+    }
 });
+
+// Printer Management Functions
+let currentBranchId = <?= json_encode($auth->getUser()['branch_id'] ?? 0) ?>;
+
+function openAddPrinterModal() {
+    const modal = new bootstrap.Modal(document.getElementById('addPrinterModal'));
+    document.getElementById('addPrinterForm').reset();
+    document.getElementById('deviceList').innerHTML = '<option value="">-- Select a device --</option>';
+    refreshDeviceList();
+    modal.show();
+}
+
+function refreshDeviceList() {
+    const deviceList = document.getElementById('deviceList');
+    deviceList.innerHTML = '<option value="">Loading devices...</option>';
+    
+    // Try to detect printers from localhost service (Sales Intellect style)
+    // The ESC/POS Thermal Printer Partner service runs on localhost:8080 (or similar)
+    const servicePorts = [8080, 3000, 5000, 9000];
+    let devicesFound = false;
+    
+    // Try multiple ports
+    Promise.all(servicePorts.map(port => {
+        return fetch(`http://localhost:${port}/api/printers`, {
+            method: 'GET',
+            mode: 'cors',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        }).then(response => {
+            if (response.ok) {
+                return response.json();
+            }
+            throw new Error('Service not available');
+        }).then(data => {
+            if (data && data.printers && data.printers.length > 0) {
+                devicesFound = true;
+                deviceList.innerHTML = '<option value="">-- Select a device --</option>';
+                data.printers.forEach(printer => {
+                    const option = document.createElement('option');
+                    option.value = printer.id || printer.name;
+                    option.textContent = printer.name || printer.id;
+                    option.dataset.connection = printer.connection || 'USB';
+                    deviceList.appendChild(option);
+                });
+            }
+        }).catch(() => {
+            // Service not available on this port, continue
+        });
+    })).then(() => {
+        if (!devicesFound) {
+            // Fallback: Use AJAX to get printers from server (which may query localhost service)
+            fetch('<?= BASE_URL ?>/ajax/get_printers.php', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.printers && data.printers.length > 0) {
+                    deviceList.innerHTML = '<option value="">-- Select a device --</option>';
+                    data.printers.forEach(printer => {
+                        const option = document.createElement('option');
+                        option.value = printer.id || printer.name;
+                        option.textContent = printer.name || printer.id;
+                        deviceList.appendChild(option);
+                    });
+                } else {
+                    deviceList.innerHTML = '<option value="">No devices found. Make sure Thermal printer setup is running.</option>';
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching printers:', error);
+                deviceList.innerHTML = '<option value="">Error loading devices. Make sure Thermal printer setup is running.</option>';
+            });
+        }
+    });
+}
+
+function loadPrinters() {
+    fetch('<?= BASE_URL ?>/ajax/get_saved_printers.php', {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        const printersList = document.getElementById('printers-list');
+        
+        if (data.success && data.printers && data.printers.length > 0) {
+            printersList.innerHTML = '';
+            data.printers.forEach(printer => {
+                const printerCard = document.createElement('div');
+                printerCard.className = 'card mb-3';
+                printerCard.innerHTML = `
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-1">${escapeHtml(printer.printer_name)}</h5>
+                                <p class="text-muted mb-0 small">
+                                    <span class="badge bg-secondary">${printer.connection_mode}</span>
+                                    <span class="badge bg-info">${printer.paper_size}</span>
+                                    ${printer.cash_drawer_connected == 1 ? '<span class="badge bg-success">Cash Drawer</span>' : ''}
+                                    <span class="badge ${printer.status == 'active' ? 'bg-success' : 'bg-secondary'}">${printer.status}</span>
+                                </p>
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-danger" onclick="deletePrinter(${printer.id})">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                printersList.appendChild(printerCard);
+            });
+        } else {
+            printersList.innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-printer" style="font-size: 48px; opacity: 0.3;"></i>
+                    <p class="mt-2">You do not have printers yet.</p>
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        console.error('Error loading printers:', error);
+    });
+}
+
+function savePrinter() {
+    const form = document.getElementById('addPrinterForm');
+    const formData = new FormData(form);
+    
+    // Add branch_id
+    formData.append('branch_id', currentBranchId);
+    
+    // Get checkbox values
+    formData.append('print_receipts', document.getElementById('printReceiptsBills').checked ? '1' : '0');
+    formData.append('print_bills', document.getElementById('printReceiptsBills').checked ? '1' : '0');
+    formData.append('status', document.getElementById('printerStatus').checked ? 'active' : 'inactive');
+    formData.append('cash_drawer_connected', document.getElementById('cashDrawerConnected').checked ? '1' : '0');
+    
+    fetch('<?= BASE_URL ?>/ajax/save_printer.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire('Success', 'Printer saved successfully!', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('addPrinterModal')).hide();
+            loadPrinters();
+        } else {
+            Swal.fire('Error', data.message || 'Failed to save printer', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error saving printer:', error);
+        Swal.fire('Error', 'An error occurred while saving the printer', 'error');
+    });
+}
+
+function deletePrinter(printerId) {
+    Swal.fire({
+        title: 'Delete Printer?',
+        text: 'Are you sure you want to delete this printer?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, delete it!'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            fetch('<?= BASE_URL ?>/ajax/delete_printer.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ printer_id: printerId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire('Deleted!', 'Printer has been deleted.', 'success');
+                    loadPrinters();
+                } else {
+                    Swal.fire('Error', data.message || 'Failed to delete printer', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting printer:', error);
+                Swal.fire('Error', 'An error occurred while deleting the printer', 'error');
+            });
+        }
+    });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 </script>
 
 <?php require_once APP_PATH . '/includes/footer.php'; ?>
