@@ -564,27 +564,31 @@ require_once APP_PATH . '/includes/header.php';
     height: auto;
     max-height: none;
     text-align: left;
-    padding: 10px;
+    padding: 4px 8px;
+    min-height: 50px;
 }
 .product-card .product-image {
-    width: 80px;
-    height: 80px;
+    width: 50px;
+    height: 50px;
     flex-shrink: 0;
-    margin-right: 10px;
+    margin-right: 8px;
     margin-bottom: 0;
 }
 .product-card .product-name {
     flex: 1;
     margin: 0;
     max-height: none;
-    font-size: 12px;
+    font-size: 11px;
+    line-height: 1.2;
+    padding: 2px 0;
 }
 .product-card .product-price {
     margin-top: 0;
     margin-left: auto;
     background: var(--primary-blue);
     color: white;
-    font-size: 12px;
+    font-size: 11px;
+    padding: 3px 6px;
 }
 <?php elseif ($homeLayout == 'retail'): ?>
 .product-grid {
@@ -1060,7 +1064,7 @@ require_once APP_PATH . '/includes/header.php';
             </div>
         <?php endif; ?>
         <div class="search-bar">
-            <input type="text" id="productSearch" placeholder="Search All or Scan Barcode" autofocus>
+            <input type="text" id="productSearch" placeholder="Search name, code, barcode, serial, or IMEI" autofocus>
             <i class="bi bi-search"></i>
             <i class="bi bi-upc-scan" style="margin-left: 10px; cursor: pointer;" title="Barcode Scanner" onclick="focusBarcodeInput()"></i>
         </div>
@@ -1087,7 +1091,15 @@ require_once APP_PATH . '/includes/header.php';
                              (SELECT MIN(psl.selling_price) FROM product_specific_list psl 
                               WHERE psl.product_id = p.id AND psl.status = 'available' AND psl.selling_price > 0) as specific_min_price,
                              (SELECT MAX(psl.selling_price) FROM product_specific_list psl 
-                              WHERE psl.product_id = p.id AND psl.status = 'available' AND psl.selling_price > 0) as specific_max_price
+                              WHERE psl.product_id = p.id AND psl.status = 'available' AND psl.selling_price > 0) as specific_max_price,
+                             (SELECT GROUP_CONCAT(DISTINCT NULLIF(TRIM(psl.serial_number), '') ORDER BY psl.id SEPARATOR ' ')
+                              FROM product_specific_list psl
+                              WHERE psl.product_id = p.id AND psl.status = 'available'
+                              AND (psl.branch_id = p.branch_id OR psl.branch_id IS NULL)) AS specific_serials_list,
+                             (SELECT GROUP_CONCAT(DISTINCT NULLIF(TRIM(psl.imei), '') ORDER BY psl.id SEPARATOR ' ')
+                              FROM product_specific_list psl
+                              WHERE psl.product_id = p.id AND psl.status = 'available'
+                              AND (psl.branch_id = p.branch_id OR psl.branch_id IS NULL)) AS specific_imeis_list
                              FROM products p 
                              LEFT JOIN product_categories pc ON p.category_id = pc.id 
                              WHERE p.status = 'Active' AND p.quantity_in_stock > 0";
@@ -1158,6 +1170,8 @@ require_once APP_PATH . '/includes/header.php';
                      data-is-specific="<?= $isSpecificProduct ? '1' : '0' ?>"
                      data-product-stock="<?= $product['quantity_in_stock'] ?>"
                      data-product-barcode="<?= escapeHtml($product['barcode'] ?? '') ?>"
+                     data-product-serials="<?= escapeHtml($product['specific_serials_list'] ?? '') ?>"
+                     data-product-imeis="<?= escapeHtml($product['specific_imeis_list'] ?? '') ?>"
                      data-is-trade-in="<?= ($product['is_trade_in'] ?? 0) ? '1' : '0' ?>"
                      onclick="addToCartFromCard(this)">
                     <div class="product-info" onclick="event.stopPropagation(); showProductInfo(<?= $product['id'] ?>)">
@@ -1802,6 +1816,25 @@ function filterProducts() {
     });
 }
 
+/**
+ * Find a product card by barcode, serial number, or IMEI (matches data attributes on grid).
+ */
+function findProductCardByScanToken(code) {
+    const token = (code || '').trim();
+    if (token.length < 3) return null;
+    const tokenLower = token.toLowerCase();
+    for (const c of document.querySelectorAll('.product-card')) {
+        const bc = (c.getAttribute('data-product-barcode') || '').trim();
+        if (bc && bc === token) return c;
+        const serRaw = (c.getAttribute('data-product-serials') || '').trim();
+        const imeRaw = (c.getAttribute('data-product-imeis') || '').trim();
+        const serParts = serRaw ? serRaw.toLowerCase().split(/\s+/).filter(Boolean) : [];
+        const imeParts = imeRaw ? imeRaw.toLowerCase().split(/\s+/).filter(Boolean) : [];
+        if (serParts.includes(tokenLower) || imeParts.includes(tokenLower)) return c;
+    }
+    return null;
+}
+
 // Barcode scanning functionality
 let barcodeTimeout;
 const barcodeInput = document.getElementById('barcodeInput');
@@ -1817,6 +1850,8 @@ function focusBarcodeInput() {
 }
 
 if (barcodeInput) {
+    let isProcessingBarcodeInput = false; // Flag to prevent double processing
+    
     barcodeInput.addEventListener('input', function(e) {
         const barcode = this.value.trim();
         
@@ -1825,33 +1860,21 @@ if (barcodeInput) {
         
         // Wait for user to finish typing (barcode scanners typically send data quickly)
         barcodeTimeout = setTimeout(() => {
-            if (barcode.length >= 3) { // Minimum barcode length
-                // Find product by barcode
-                const productCard = document.querySelector(`.product-card[data-product-barcode="${barcode}"]`);
+            if (barcode.length >= 3 && !isProcessingBarcodeInput) { // Minimum barcode length
+                isProcessingBarcodeInput = true;
+                
+                const productCard = findProductCardByScanToken(barcode);
                 if (productCard) {
-                    // Add to cart
                     addToCartFromCard(productCard);
-                    // Clear barcode input
                     this.value = '';
-                    // Show success feedback
-                    const productName = productCard.dataset.productName;
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Product Found',
-                        text: productName + ' added to cart',
-                        timer: 1500,
-                        showConfirmButton: false
-                    });
                 } else {
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'Product Not Found',
-                        text: 'No product found with barcode: ' + barcode,
-                        timer: 2000,
-                        showConfirmButton: false
-                    });
                     this.value = '';
                 }
+                
+                // Reset flag after a short delay
+                setTimeout(() => {
+                    isProcessingBarcodeInput = false;
+                }, 500);
             }
         }, 500); // Wait 500ms after last keystroke
     });
@@ -1860,65 +1883,157 @@ if (barcodeInput) {
     barcodeInput.addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
             e.preventDefault();
+            
+            // Prevent double processing
+            if (isProcessingBarcodeInput) {
+                this.value = '';
+                return;
+            }
+            
             const barcode = this.value.trim();
             if (barcode.length >= 3) {
+                isProcessingBarcodeInput = true;
                 clearTimeout(barcodeTimeout);
-                const productCard = document.querySelector(`.product-card[data-product-barcode="${barcode}"]`);
+                
+                const productCard = findProductCardByScanToken(barcode);
                 if (productCard) {
                     addToCartFromCard(productCard);
                     this.value = '';
-                    const productName = productCard.dataset.productName;
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Product Found',
-                        text: productName + ' added to cart',
-                        timer: 1500,
-                        showConfirmButton: false
-                    });
                 } else {
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'Product Not Found',
-                        text: 'No product found with barcode: ' + barcode,
-                        timer: 2000,
-                        showConfirmButton: false
-                    });
                     this.value = '';
                 }
+                
+                // Reset flag after a short delay
+                setTimeout(() => {
+                    isProcessingBarcodeInput = false;
+                }, 500);
             }
         }
     });
 }
 
-// Search functionality
-document.getElementById('productSearch').addEventListener('input', function(e) {
-    const search = e.target.value.toLowerCase();
-    const favoriteIds = <?= json_encode(!empty($favorites) ? array_column($favorites, 'id') : []) ?>;
-    
-    document.querySelectorAll('.product-card').forEach(card => {
-        const text = card.textContent.toLowerCase();
-        const categoryId = card.dataset.categoryId || 'no-category';
-        const productId = parseInt(card.dataset.productId);
-        const isTradeIn = card.dataset.isTradeIn === '1';
+// Barcode scanning detection for productSearch field
+let productSearchBarcodeBuffer = '';
+let productSearchLastKeyTime = 0;
+let productSearchKeyCount = 0;
+let productSearchInputTimer = null;
+let isProcessingBarcode = false; // Flag to prevent double processing
+
+const productSearch = document.getElementById('productSearch');
+if (productSearch) {
+    // Detect barcode scanner input (rapid keystrokes ending with Enter)
+    productSearch.addEventListener('keypress', function(e) {
+        const currentTime = Date.now();
         
-        // Check if matches search
-        const matchesSearch = text.includes(search);
-        
-        // Check if matches current filter
-        let matchesFilter = true;
-        if (currentCategory === 'favorite') {
-            matchesFilter = favoriteIds.includes(productId);
-        } else if (currentCategory === 'trade-in') {
-            matchesFilter = isTradeIn;
-        } else if (currentCategory === 'no-category') {
-            matchesFilter = categoryId === 'no-category';
-        } else if (currentCategory !== 'all') {
-            matchesFilter = categoryId == currentCategory;
+        // If more than 100ms since last key, reset (likely manual typing)
+        if (currentTime - productSearchLastKeyTime > 100) {
+            productSearchBarcodeBuffer = '';
+            productSearchKeyCount = 0;
         }
         
-        card.style.display = (matchesSearch && matchesFilter) ? 'block' : 'none';
+        productSearchLastKeyTime = currentTime;
+        productSearchKeyCount++;
+        
+        // If Enter is pressed, check if this was a barcode scan
+        if (e.key === 'Enter' || e.keyCode === 13) {
+            e.preventDefault();
+            
+            // Prevent double processing
+            if (isProcessingBarcode) {
+                this.value = '';
+                productSearchBarcodeBuffer = '';
+                productSearchKeyCount = 0;
+                return false;
+            }
+            
+            const scannedBarcode = this.value.trim();
+            
+            // If we detected rapid input (barcode scanner) or the value looks like a barcode
+            if (scannedBarcode.length >= 3 && (productSearchKeyCount >= 3 || productSearchKeyCount === scannedBarcode.length)) {
+                isProcessingBarcode = true;
+                
+                const productCard = findProductCardByScanToken(scannedBarcode);
+                if (productCard) {
+                    // Add to cart
+                    addToCartFromCard(productCard);
+                    // Clear search field and reset filter
+                    this.value = '';
+                    // Trigger input event to reset search filter
+                    this.dispatchEvent(new Event('input', { bubbles: true }));
+                } else {
+                    // Product not found by barcode - just clear the field and reset filter
+                    this.value = '';
+                    // Trigger input event to reset search filter
+                    this.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                
+                // Reset flag after a short delay
+                setTimeout(() => {
+                    isProcessingBarcode = false;
+                }, 500);
+            } else {
+                // Manual Enter press - just clear the field and reset filter
+                this.value = '';
+                // Trigger input event to reset search filter
+                this.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            
+            productSearchBarcodeBuffer = '';
+            productSearchKeyCount = 0;
+            return false;
+        }
+        
+        // Track characters for barcode detection
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            productSearchBarcodeBuffer += e.key;
+        }
     });
-});
+    
+    // Normal search functionality - filter products (no barcode auto-add here to prevent double processing)
+    productSearch.addEventListener('input', function(e) {
+        const value = this.value.trim();
+        
+        // Clear any existing timer
+        if (productSearchInputTimer) {
+            clearTimeout(productSearchInputTimer);
+        }
+        
+        // Only do normal search filtering, not barcode auto-add (that's handled by keypress Enter)
+        productSearchInputTimer = setTimeout(() => {
+            // Normal search functionality - filter products
+            const search = value.toLowerCase();
+            const favoriteIds = <?= json_encode(!empty($favorites) ? array_column($favorites, 'id') : []) ?>;
+            
+            document.querySelectorAll('.product-card').forEach(card => {
+                const text = card.textContent.toLowerCase();
+                const barcode = (card.dataset.productBarcode || '').toLowerCase();
+                const serials = (card.dataset.productSerials || '').toLowerCase();
+                const imeis = (card.dataset.productImeis || '').toLowerCase();
+                const categoryId = card.dataset.categoryId || 'no-category';
+                const productId = parseInt(card.dataset.productId);
+                const isTradeIn = card.dataset.isTradeIn === '1';
+                
+                // Match visible text, barcode, or linked device serial / IMEI (specific list)
+                const matchesSearch = search === '' || text.includes(search) || barcode.includes(search)
+                    || serials.includes(search) || imeis.includes(search);
+                
+                // Check if matches current filter
+                let matchesFilter = true;
+                if (currentCategory === 'favorite') {
+                    matchesFilter = favoriteIds.includes(productId);
+                } else if (currentCategory === 'trade-in') {
+                    matchesFilter = isTradeIn;
+                } else if (currentCategory === 'no-category') {
+                    matchesFilter = categoryId === 'no-category';
+                } else if (currentCategory !== 'all') {
+                    matchesFilter = categoryId == currentCategory;
+                }
+                
+                card.style.display = (matchesSearch && matchesFilter) ? 'block' : 'none';
+            });
+        }, 300);
+    });
+}
 
 // Cart functions
 window.addToCartFromCard = function(cardElement) {

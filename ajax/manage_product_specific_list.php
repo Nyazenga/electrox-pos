@@ -58,6 +58,7 @@ try {
             $errors = [];
             
             foreach ($entries as $entryIndex => $entry) {
+                $entry = normalizeSpecificListEntryFromClient($entry);
                 $entryNum = $entryIndex + 1;
                 
                 // Validate required fields
@@ -285,6 +286,7 @@ try {
             $errors = [];
             
             foreach ($entries as $entryIndex => $entry) {
+                $entry = normalizeSpecificListEntryFromClient($entry);
                 $id = intval($entry['id'] ?? 0);
                 if ($id <= 0) {
                     $errors[] = "Entry " . ($entryIndex + 1) . ": Invalid ID";

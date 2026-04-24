@@ -394,6 +394,43 @@ function getCategoryCharacteristics($categoryId, $db = null) {
 }
 
 /**
+ * Map a category characteristic row to the product_specific_list column name.
+ * When system_column is missing, custom names (e.g. "colour", "storage_capacity")
+ * must still align with real table columns or the UI saves to the wrong keys.
+ */
+function resolveCharacteristicListColumn(array $characteristic) {
+    $system = trim((string)($characteristic['system_column'] ?? ''));
+    if ($system !== '') {
+        return $system;
+    }
+    $name = strtolower(trim((string)($characteristic['name'] ?? '')));
+    static $aliases = [
+        'colour' => 'color',
+        'device_colour' => 'color',
+        'storage_capacity' => 'storage',
+        'storage_size' => 'storage',
+        'memory' => 'storage',
+    ];
+    if (isset($aliases[$name])) {
+        return $aliases[$name];
+    }
+    return (string)($characteristic['name'] ?? '');
+}
+
+/**
+ * Normalize keys sent from the manage-specific-items UI (aliases → canonical columns).
+ */
+function normalizeSpecificListEntryFromClient(array $entry) {
+    if (empty($entry['color']) && !empty($entry['colour'])) {
+        $entry['color'] = $entry['colour'];
+    }
+    if (empty($entry['storage']) && !empty($entry['storage_capacity'])) {
+        $entry['storage'] = $entry['storage_capacity'];
+    }
+    return $entry;
+}
+
+/**
  * Check if a product has serial number or IMEI (unique products that must have qty=1)
  * Products with serial/IMEI are unique items like smartphones and laptops
  * @deprecated Use productRequiresSpecificList() instead

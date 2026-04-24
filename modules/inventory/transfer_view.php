@@ -205,7 +205,19 @@ function updateTransferStatus(transferId, status) {
             status: status
         })
     })
-    .then(response => response.json())
+    .then(async (response) => {
+        const text = await response.text();
+        let data = {};
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch (e) {
+            throw new Error('Server returned non-JSON (often a PHP error). First part: ' + text.substring(0, 280));
+        }
+        if (!response.ok) {
+            throw new Error(data.message || ('HTTP ' + response.status));
+        }
+        return data;
+    })
     .then(data => {
         if (data.success) {
             Swal.fire({
@@ -230,7 +242,7 @@ function updateTransferStatus(transferId, status) {
         Swal.fire({
             icon: 'error',
             title: 'Error!',
-            text: 'An error occurred while updating the status',
+            text: error.message || 'An error occurred while updating the status',
             confirmButtonColor: '#d33'
         });
     });

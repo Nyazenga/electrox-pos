@@ -652,7 +652,7 @@ $editCharFields = [];
 $editHasSerialNumber = false;
 $editHasIMEI = false;
 foreach ($editCategoryCharacteristics as $char) {
-    $col = $char['system_column'] ?? $char['name'];
+    $col = resolveCharacteristicListColumn($char);
     $editCharFields[] = [
         'name' => $char['name'],
         'label' => $char['label'],

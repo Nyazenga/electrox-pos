@@ -355,6 +355,7 @@ try {
                             } else {
                                 throw new Exception("Source product not found for product ID: {$productId} in branch {$fromBranchId}");
                             }
+                            }
                         }
                     }
                 }

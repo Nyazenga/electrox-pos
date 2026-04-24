@@ -232,7 +232,7 @@ require_once APP_PATH . '/includes/header.php';
                         foreach ($categoryCharacteristics as $char) {
                             $viewCharFields[] = [
                                 'label' => $char['label'],
-                                'column' => $char['system_column'] ?? $char['name'],
+                                'column' => resolveCharacteristicListColumn($char),
                                 'field_type' => $char['field_type'],
                             ];
                         }
@@ -509,7 +509,7 @@ $charFields = [];
 $hasSerialNumber = false;
 $hasIMEI = false;
 foreach ($categoryCharacteristics as $char) {
-    $col = $char['system_column'] ?? $char['name'];
+    $col = resolveCharacteristicListColumn($char);
     $charFields[] = [
         'name' => $char['name'],
         'label' => $char['label'],
