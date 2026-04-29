@@ -115,6 +115,121 @@ if (!$transferId || !in_array($status, ['Pending', 'Approved', 'InTransit', 'Rec
     exit;
 }
 
+/**
+ * Parse transfer_items.serial_numbers payload and return selected specific-list IDs.
+ * Supports JSON payload from newer code and legacy comma/newline serial strings.
+ */
+function parseSpecificListIdsFromTransferItem($serialNumbersValue) {
+    $ids = [];
+    $serials = [];
+    $raw = trim((string)$serialNumbersValue);
+    if ($raw === '') {
+        return ['ids' => [], 'serials' => []];
+    }
+    $decoded = json_decode($raw, true);
+    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+        $entries = $decoded['specific_list_entries'] ?? [];
+        if (is_array($entries)) {
+            foreach ($entries as $entry) {
+                if (is_array($entry) && !empty($entry['id'])) {
+                    $ids[] = intval($entry['id']);
+                } elseif (is_numeric($entry)) {
+                    $ids[] = intval($entry);
+                }
+            }
+        }
+        return [
+            'ids' => array_values(array_unique(array_filter($ids, function($v) { return $v > 0; }))),
+            'serials' => []
+        ];
+    }
+
+    $parts = preg_split('/[\s,;]+/', $raw);
+    if (is_array($parts)) {
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if ($part !== '') {
+                $serials[] = $part;
+            }
+        }
+    }
+    return [
+        'ids' => [],
+        'serials' => array_values(array_unique($serials))
+    ];
+}
+
+function ensureDestinationProductForTransfer($db, $sourceProduct, $toBranchId, $userId) {
+    $destinationProduct = $db->getRow(
+        "SELECT * FROM products
+         WHERE branch_id = :branch_id
+         AND category_id <=> :category_id
+         AND COALESCE(product_name, '') = COALESCE(:product_name, '')
+         AND COALESCE(brand, '') = COALESCE(:brand, '')
+         AND COALESCE(model, '') = COALESCE(:model, '')
+         ORDER BY id DESC
+         LIMIT 1",
+        [
+            ':branch_id' => $toBranchId,
+            ':category_id' => $sourceProduct['category_id'] ?? null,
+            ':product_name' => $sourceProduct['product_name'] ?? null,
+            ':brand' => $sourceProduct['brand'] ?? null,
+            ':model' => $sourceProduct['model'] ?? null
+        ]
+    );
+    if ($destinationProduct) {
+        return intval($destinationProduct['id']);
+    }
+
+    if (!function_exists('generateProductCode')) {
+        throw new Exception("System error: Product code generation function not available");
+    }
+
+    $newProductData = [
+        'product_code' => '',
+        'category_id' => $sourceProduct['category_id'] ?? null,
+        'product_name' => $sourceProduct['product_name'] ?? null,
+        'brand' => $sourceProduct['brand'] ?? null,
+        'model' => $sourceProduct['model'] ?? null,
+        'expiry_date' => $sourceProduct['expiry_date'] ?? null,
+        'weight' => $sourceProduct['weight'] ?? null,
+        'unit_of_measure' => $sourceProduct['unit_of_measure'] ?? null,
+        'barcode' => $sourceProduct['barcode'] ?? null,
+        'description' => $sourceProduct['description'] ?? null,
+        'specifications' => $sourceProduct['specifications'] ?? null,
+        'cost_price' => $sourceProduct['cost_price'] ?? 0,
+        'selling_price' => $sourceProduct['selling_price'] ?? 0,
+        'reorder_level' => $sourceProduct['reorder_level'] ?? 0,
+        'branch_id' => $toBranchId,
+        'tax_id' => $sourceProduct['tax_id'] ?? null,
+        'quantity_in_stock' => 0,
+        'status' => 'Active',
+        'requires_specific_list' => $sourceProduct['requires_specific_list'] ?? 0,
+        'created_by' => $userId,
+        'source' => 'manual',
+        'created_at' => date('Y-m-d H:i:s'),
+        'images' => $sourceProduct['images'] ?? null
+    ];
+
+    $maxAttempts = 50;
+    $attempt = 0;
+    do {
+        $newProductCode = generateProductCode();
+        $existing = $db->getRow("SELECT id FROM products WHERE product_code = :code", [':code' => $newProductCode]);
+        $attempt++;
+        if ($attempt >= $maxAttempts) {
+            throw new Exception("Failed to generate unique product code after {$maxAttempts} attempts");
+        }
+    } while ($existing);
+    $newProductData['product_code'] = $newProductCode;
+
+    $newProductId = $db->insert('products', $newProductData);
+    if (!$newProductId) {
+        throw new Exception("Failed to create destination product: " . $db->getLastError());
+    }
+    return intval($newProductId);
+}
+
 try {
     writeTransferLog("Getting Database instance..." . PHP_EOL, $logFile);
     $db = Database::getInstance();
@@ -182,47 +297,112 @@ try {
                         // Check if product requires specific list
                         $requiresSpecificList = productRequiresSpecificList($fullSourceProduct, $db);
                         
-                        // Get specific_list_entries from transfer_item notes if available
-                        $specificListEntries = [];
                         if ($requiresSpecificList) {
-                            try {
-                                $columnCheck = $db->getRow("SHOW COLUMNS FROM transfer_items WHERE Field IN ('notes', 'metadata', 'specific_list_data')");
-                                if ($columnCheck && !empty($item['notes'])) {
-                                    $notesData = json_decode($item['notes'], true);
-                                    if (isset($notesData['specific_list_entries'])) {
-                                        $specificListEntries = $notesData['specific_list_entries'];
-                                    }
+                            $parsedSpecific = parseSpecificListIdsFromTransferItem($item['serial_numbers'] ?? '');
+                            $specificIds = $parsedSpecific['ids'];
+                            $specificSerials = $parsedSpecific['serials'];
+
+                            $selectedRows = [];
+                            if (!empty($specificIds)) {
+                                $selectedRows = $db->getRows(
+                                    "SELECT * FROM product_specific_list
+                                     WHERE id IN (" . implode(',', array_map('intval', $specificIds)) . ")
+                                     AND product_id = :product_id
+                                     AND branch_id = :branch_id
+                                     AND status = 'available'
+                                     LIMIT " . intval($quantity),
+                                    [':product_id' => $productId, ':branch_id' => $fromBranchId]
+                                );
+                            } elseif (!empty($specificSerials)) {
+                                $serialParams = [];
+                                $serialPlaceholders = [];
+                                foreach ($specificSerials as $idx => $serial) {
+                                    $key = ':serial_' . $idx;
+                                    $serialParams[$key] = $serial;
+                                    $serialPlaceholders[] = $key;
                                 }
-                            } catch (Exception $e) {
-                                // Column doesn't exist or no notes - try to get from product_specific_list
-                                error_log("Could not get specific_list_entries from transfer_item notes: " . $e->getMessage());
+                                $selectedRows = $db->getRows(
+                                    "SELECT * FROM product_specific_list
+                                     WHERE product_id = :product_id
+                                     AND branch_id = :branch_id
+                                     AND status = 'available'
+                                     AND serial_number IN (" . implode(',', $serialPlaceholders) . ")
+                                     LIMIT " . intval($quantity),
+                                    array_merge([':product_id' => $productId, ':branch_id' => $fromBranchId], $serialParams)
+                                );
+                            } else {
+                                // Fallback: use first available items for this product/branch
+                                $selectedRows = $db->getRows(
+                                    "SELECT * FROM product_specific_list
+                                     WHERE product_id = :product_id
+                                     AND branch_id = :branch_id
+                                     AND status = 'available'
+                                     ORDER BY id ASC
+                                     LIMIT " . intval($quantity),
+                                    [':product_id' => $productId, ':branch_id' => $fromBranchId]
+                                );
                             }
-                        }
-                        
-                        if ($requiresSpecificList && !empty($specificListEntries)) {
-                            // For unique products: DEACTIVATE source product and set stock to 0 (don't delete)
-                            $fromPreviousQuantity = (int)($fromProduct['quantity_in_stock'] ?? 0);
-                            
-                            // Deactivate and set stock to 0 (product is transferred, not deleted)
+
+                            $selectedRows = $selectedRows ?: [];
+                            if (count($selectedRows) < $quantity) {
+                                throw new Exception("Not enough specific-list items for product ID: {$productId} in source branch");
+                            }
+
+                            $destinationProductId = ensureDestinationProductForTransfer($db, $fullSourceProduct, $toBranchId, $userId);
+                            $movedCount = 0;
+                            foreach ($selectedRows as $selectedRow) {
+                                $updated = $db->update('product_specific_list', [
+                                    'product_id' => $destinationProductId,
+                                    'branch_id' => $toBranchId,
+                                    'transfer_item_id' => $item['id'] ?? null,
+                                    'updated_at' => date('Y-m-d H:i:s')
+                                ], ['id' => intval($selectedRow['id'])]);
+                                if ($updated === false) {
+                                    throw new Exception("Failed moving specific-list row ID: " . intval($selectedRow['id']));
+                                }
+                                $movedCount++;
+                            }
+
+                            // Recalculate source and destination product quantities from available specific-list rows.
+                            $sourceAvailableCount = getProductSpecificListCount($productId, $fromBranchId, 'available', $db);
+                            $destAvailableCount = getProductSpecificListCount($destinationProductId, $toBranchId, 'available', $db);
                             $db->update('products', [
-                                'status' => 'Inactive',
-                                'quantity_in_stock' => 0,
+                                'quantity_in_stock' => $sourceAvailableCount,
+                                'status' => $sourceAvailableCount > 0 ? 'Active' : 'Inactive',
                                 'updated_by' => $userId,
                                 'updated_at' => date('Y-m-d H:i:s')
                             ], ['id' => $productId, 'branch_id' => $fromBranchId]);
-                            
-                            // Create stock movement record
+                            $db->update('products', [
+                                'quantity_in_stock' => $destAvailableCount,
+                                'status' => 'Active',
+                                'updated_by' => $userId,
+                                'updated_at' => date('Y-m-d H:i:s')
+                            ], ['id' => $destinationProductId, 'branch_id' => $toBranchId]);
+
                             $db->insert('stock_movements', [
                                 'product_id' => $productId,
                                 'branch_id' => $fromBranchId,
                                 'movement_type' => 'Transfer',
-                                'quantity' => -$fromPreviousQuantity,
-                                'previous_quantity' => $fromPreviousQuantity,
-                                'new_quantity' => 0,
+                                'quantity' => -$movedCount,
+                                'previous_quantity' => (int)($fromProduct['quantity_in_stock'] ?? 0),
+                                'new_quantity' => $sourceAvailableCount,
                                 'reference_id' => $transferId,
                                 'reference_type' => 'Transfer',
                                 'user_id' => $userId,
-                                'notes' => 'Transfer Out (Unique Product Deactivated): ' . $transfer['transfer_number'],
+                                'notes' => 'Transfer Out (Specific Items): ' . $transfer['transfer_number'],
+                                'created_at' => date('Y-m-d H:i:s')
+                            ]);
+                            $db->insert('stock_movements', [
+                                'product_id' => $destinationProductId,
+                                'branch_id' => $toBranchId,
+                                'movement_type' => 'Transfer',
+                                'quantity' => $movedCount,
+                                'previous_quantity' => max(0, $destAvailableCount - $movedCount),
+                                'new_quantity' => $destAvailableCount,
+                                'reference_id' => $transferId,
+                                'reference_type' => 'Transfer',
+                                'user_id' => $userId,
+                                'notes' => 'Transfer In (Specific Items): ' . $transfer['transfer_number'],
                                 'created_at' => date('Y-m-d H:i:s')
                             ]);
                         } else {
@@ -247,10 +427,8 @@ try {
                                 'notes' => 'Transfer Out: ' . $transfer['transfer_number'],
                                 'created_at' => date('Y-m-d H:i:s')
                             ]);
-                        }
-                        
+
                         // Add to destination branch for normal products (not requiring specific list)
-                        if (!$requiresSpecificList) {
                             // Non-unique products: Normal handling
                             $toProduct = $db->getRow("SELECT quantity_in_stock FROM products WHERE id = :id AND branch_id = :branch_id", 
                                 [':id' => $productId, ':branch_id' => $toBranchId]);

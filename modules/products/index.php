@@ -145,7 +145,14 @@ if ($search) {
                           OR p.product_code LIKE :search3 
                           OR p.description LIKE :search4
                           OR CONCAT(COALESCE(p.brand, ''), ' ', COALESCE(p.model, '')) LIKE :search6
-                          OR CONCAT(COALESCE(p.product_name, ''), ' ', COALESCE(p.brand, ''), ' ', COALESCE(p.model, '')) LIKE :search7)";
+                          OR CONCAT(COALESCE(p.product_name, ''), ' ', COALESCE(p.brand, ''), ' ', COALESCE(p.model, '')) LIKE :search7
+                          OR EXISTS (
+                                SELECT 1
+                                FROM product_specific_list psl
+                                WHERE psl.product_id = p.id
+                                AND (psl.branch_id = p.branch_id OR psl.branch_id IS NULL)
+                                AND (psl.serial_number LIKE :search8_serial OR psl.imei LIKE :search8_imei)
+                          ))";
     $searchTerm = "%$search%";
     $params[':search1'] = $searchTerm;
     $params[':search2'] = $searchTerm;
@@ -154,6 +161,8 @@ if ($search) {
     $params[':search5'] = $searchTerm;
     $params[':search6'] = $searchTerm;
     $params[':search7'] = $searchTerm;
+    $params[':search8_serial'] = $searchTerm;
+    $params[':search8_imei'] = $searchTerm;
 }
 
 $whereClause = implode(' AND ', $whereConditions);
@@ -251,7 +260,7 @@ require_once APP_PATH . '/includes/header.php';
             </div>
             <div class="col-md-2">
                 <label class="form-label">Search</label>
-                <input type="text" name="search" class="form-control" placeholder="Brand, Model, Product Name, Code..." value="<?= escapeHtml($search) ?>">
+                <input type="text" name="search" class="form-control" placeholder="Brand, model, code, serial, IMEI..." value="<?= escapeHtml($search) ?>">
             </div>
             <div class="col-md-1 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel"></i> Filter</button>

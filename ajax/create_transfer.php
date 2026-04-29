@@ -93,6 +93,7 @@ try {
         $productId = intval($item['product_id'] ?? 0);
         $quantity = intval($item['quantity'] ?? 0);
         $serialNumbers = trim($item['serial_numbers'] ?? '');
+        $specificListEntries = $item['specific_list_entries'] ?? [];
         
         if ($productId <= 0 || $quantity <= 0) {
             continue;
@@ -109,12 +110,35 @@ try {
             exit;
         }
         
+        // Persist selected specific-list entries in transfer_items.serial_numbers as JSON payload.
+        // We keep backward compatibility with plain serial text for legacy transfers.
+        $serialNumbersPayload = null;
+        if (is_array($specificListEntries) && !empty($specificListEntries)) {
+            $entryIds = [];
+            foreach ($specificListEntries as $entry) {
+                if (is_array($entry) && !empty($entry['id'])) {
+                    $entryIds[] = intval($entry['id']);
+                } elseif (is_numeric($entry)) {
+                    $entryIds[] = intval($entry);
+                }
+            }
+            $entryIds = array_values(array_unique(array_filter($entryIds, function($v) { return $v > 0; })));
+            if (!empty($entryIds)) {
+                $serialNumbersPayload = json_encode([
+                    'specific_list_entries' => $entryIds
+                ]);
+            }
+        }
+        if ($serialNumbersPayload === null && !empty($serialNumbers)) {
+            $serialNumbersPayload = $serialNumbers;
+        }
+
         // Create transfer item
         $itemData = [
             'transfer_id' => $transferId,
             'product_id' => $productId,
             'quantity' => $quantity,
-            'serial_numbers' => !empty($serialNumbers) ? $serialNumbers : null
+            'serial_numbers' => $serialNumbersPayload
         ];
         
         $itemId = $db->insert('transfer_items', $itemData);
